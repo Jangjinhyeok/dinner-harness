@@ -35,8 +35,10 @@ Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requ
   Live `HANDOFF.md` / `RESULT.md` are never clobbered (skip-if-exists).
 - **codex** — transforms the portable subset to Codex-native paths: curated `AGENTS.md`,
   17 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`).
-  Claude-only machinery (subagent routing, hooks, Two-CLI roles, 7 routing skills) is dropped
-  — see `CODEX-COVERAGE.md`.
+  Claude-machinery (subagent routing, hooks, Two-CLI roles, 7 routing skills) is currently
+  **dropped** by the codex adapter — newer Codex does support hooks and custom agents, but porting
+  is deferred due to orchestration / session-pair semantic limits (a design decision, not an
+  architectural impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
 
 ## Targets
 

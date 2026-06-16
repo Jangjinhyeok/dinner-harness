@@ -2,10 +2,10 @@
 
 이 문서는 Codex의 `~/.codex/AGENTS.md`로 로드되는 사용자 레벨 지침이다. 프로젝트별 `AGENTS.md`가 있으면 그것과 함께 들어가며, 프로젝트별 지침이 더 구체적이고 우선한다. 목적은 도메인과 무관한 **메타 원칙**과 **개인 작업 스타일**을 명문화하는 것이다.
 
-이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. Claude 전용 기제(Two-CLI 역할 모드, subagent 위임 라우팅, hook enforcement)는 Codex에 실행 대응물이 없어 **의도적으로 제외**됐다(전체 coverage 회계는 dinner-harness `CODEX-COVERAGE.md` 참조). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
+이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. Claude 전용 기제(Two-CLI 역할 모드, subagent 위임 라우팅, hook enforcement)는 이 codex 설치에 **포팅돼 있지 않다** — 현행 Codex는 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱 한계로 포팅 보류다(아키텍처 불가가 아닌 설계 결정; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
 
 > **Codex 환경 안전 노트 (중요):**
-> - **Enforcement 부재**: `secret_scan`·`scope_check` 류의 hook 차단은 Codex에서 **작동하지 않는다**. 시크릿 유출·스코프 침범 방지는 이 문서에서 **advisory(권고)**일 뿐이며, 실제 안전망은 **사용자와 Codex sandbox의 책임**이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
+> - **Enforcement 미배포**: `secret_scan`·`scope_check` 류의 hook 차단은 **이 codex 설치엔 배포돼 있지 않다**(현행 Codex는 hooks를 지원하나 미포팅 — `CODEX-RECON.md` 참조). 따라서 시크릿 유출·스코프 침범 방지는 이 문서에서 **advisory(권고)**일 뿐이며, 실제 안전망은 **사용자와 Codex sandbox의 책임**이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
 > - **MCP**: Codex MCP 서버는 머신별 수동 등록이다(`~/.codex/config.toml` `[mcp_servers]`). 이 문서는 MCP를 구성하지 않는다.
 
 ---

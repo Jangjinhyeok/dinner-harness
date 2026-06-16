@@ -34,8 +34,9 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
   라이브 `HANDOFF.md` / `RESULT.md`는 절대 덮어쓰지 않는다(skip-if-exists).
 - **codex** — portable subset을 Codex-native 경로로 transform: curated `AGENTS.md`,
   `skills/` 아래 17 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`).
-  Claude 전용 machinery(subagent routing, hooks, Two-CLI roles, 7 routing skills)는 drop된다
-  — `CODEX-COVERAGE.md` 참조.
+  Claude-machinery(subagent routing, hooks, Two-CLI roles, 7 routing skills)는 현재 codex adapter가
+  **드롭**한다 — Codex 신버전도 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱 한계로
+  포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
 
 ## Targets
 

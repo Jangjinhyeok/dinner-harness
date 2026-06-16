@@ -2,7 +2,39 @@
 
 codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
-> ※ Cycle 1 feasibility recon. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`다 — 이 문서의 일부 degraded/merged 판정은 Cycle 2에서 최종 **dropped**로 갱신됐다(예: subagents, agent-routing, 7 routing skills).
+> **⚠️ 이 문서는 2개 시점이 섞여 있다.** 아래 "Method & evidence"~"Open Questions"는 **Cycle 1 (2026-06-16) build-time recon** — rulesync 산출물 + Codex **0.111.0** 실측 기준의 historical 기록이다. 그 본문의 "Codex has no hook system / no native subagent execution" 류 판정은 **그 시점·그 버전 기준**이며, 바로 아래 **"2026-06 재-recon 갱신"** 섹션이 현행 Codex 기준으로 이를 **정정·supersede**한다. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`.
+
+## 2026-06 재-recon 갱신 (현행 Codex — supersedes 'Codex-can't' framing below)
+
+**헤드라인: 메커니즘은 따라잡았으나 시맨틱은 부분적.** 아래 Cycle-1 본문이 "Codex가 hooks/subagent를 못 한다"고 한 것은 **아키텍처 불가가 아니라 당시 버전(0.111.0) 기준의 미지원**이었다. 현행 Codex는 둘 다 지원한다 — 단 orchestration·auto-routing·세션페어 시맨틱 부재로 **hooks만 완전 포팅 가치**가 있다. (실제 포팅은 별도 cycle; 본 갱신은 문서 정정만.)
+
+### (a) Codex 현행 native capability
+- **hooks** — `~/.codex/hooks.json` / config.toml `[hooks]`. 이벤트: PreToolUse·PostToolUse·UserPromptSubmit·SessionStart·SubagentStart/Stop 등. stdin JSON, exit 0/2, `type:"command"` + `commandWindows`. → Claude hook contract와 거의 동형(`lib/common.py` 재사용 가능).
+- **custom agents** — `~/.codex/agents/*.toml`. 필드: name·description·developer_instructions + model·sandbox_mode·mcp_servers. **명시 호출만·max_depth=1·agent↔agent 없음**(Claude hub-leaf fan-out 불가).
+- **rules** — AGENTS.md + nested override(cwd-dir) + profiles. (출처: developers.openai.com/codex.)
+
+### (b) 버전 선결조건
+사용자 설치 = Codex **0.111.0**. hooks ~v0.117·subagents ~v0.13x 이후 추가 → **현재 미지원**(`~/.codex`에 `agents/`·`hooks.json` 부재). **포팅 선결 = 업그레이드(무료, ≠결제).**
+
+### (c) 포팅 feasibility 매트릭스
+| 부품 | 판정 |
+|---|---|
+| **hooks 5** | 포팅 가치 — `secret_scan`·`suggest_compact`·`learning_log` **NATIVE**, `scope_check`·`route_nudge` caveat. contract 일치·`lib/common` 재사용 |
+| **agents 21** | flat standalone만 — `_core`·`_gamedev` caveat, `_ue`·`_unity` hub-leaf **STILL-DEGRADED**(max_depth=1) |
+| **rules·roles·routing 별칭** | **드롭 유지** (시맨틱 부재/중복) |
+| **harness/learnings-review skill** | QOL caveat |
+
+### (d) 권고 tier
+- **GO**: hooks 포팅 (메커니즘·contract 일치).
+- **MAYBE**: `_core`·`_gamedev` flat agents, learnings-review.
+- **DON'T**: hub-leaf(`_ue`·`_unity`) agents, rules, roles, routing 별칭 — 시맨틱 부재로 드롭 유지.
+
+### (e) 미검증 (실 포팅 cycle에서 확인)
+hook stdout context 주입 · config syntax · max_depth hub→leaf 동작 · project override — 4건 전부 실 포팅 전 검증 필요.
+
+---
+
+_(이하 Cycle 1 build-time recon — Codex 0.111.0·rulesync 기준 historical. 위 "2026-06 재-recon 갱신"이 현행 기준으로 정정함.)_
 
 ## Method & evidence
 
