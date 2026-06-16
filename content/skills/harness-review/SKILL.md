@@ -1,6 +1,6 @@
 ---
 name: harness-review
-description: "Review this Claude Code harness (~/.claude: agents, skills, hooks, rules, roles, CLAUDE.md, README) through two lenses: (A) wiring integrity — overlap/duplication, dangling references, dormant parts, sunset candidates; (B) behavioral conformance — mine transcripts + hook logs to check whether the harness is actually used as designed (intent vs reality: routing actuation, mode usage, hook firing, dead weight). Proposes concrete fixes and applies the approved ones. Use when the user asks to review/audit the .claude config or harness — e.g. 'claude 구조 리뷰', 'harness 리뷰', '구조 점검', 'agent/skill 정합 확인', '실사용 정합 감사', 'conformance 감사', '의도대로 쓰이는지 확인', 'review my claude structure'."
+description: "Review the dinner-harness repo — source-of-truth for the Claude Code / Codex harness (~/.claude and ~/.codex are generated outputs): content/ + assets/ (agents, skills, hooks, rules, roles, instructions, README) — through two lenses: (A) wiring integrity — overlap/duplication, dangling references, dormant parts, sunset candidates; (B) behavioral conformance — mine transcripts + hook logs to check whether the harness is actually used as designed (intent vs reality: routing actuation, mode usage, hook firing, dead weight). Proposes concrete fixes and applies the approved ones. Use when the user asks to review/audit the .claude config or harness — e.g. 'claude 구조 리뷰', 'harness 리뷰', '구조 점검', 'agent/skill 정합 확인', '실사용 정합 감사', 'conformance 감사', '의도대로 쓰이는지 확인', 'review my claude structure'."
 argument-hint: "[mode: wiring|conformance|all] [area: agents|skills|hooks|rules|all]"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Task, Edit, Write, AskUserQuestion
@@ -10,7 +10,7 @@ origin: self
 
 # Harness Review — Claude 구조 정합 점검
 
-이 harness(`~/.claude/`) 자체를 리뷰한다. 코드가 아니라 harness 자신을 두 렌즈로 본다:
+이 harness를 리뷰한다 — **source-of-truth는 dinner-harness repo**(`content/`·`assets/`)이고, `~/.claude`·`~/.codex`는 install로 생성된 output이다(거기 직접 적용한 수정은 다음 install에 덮인다). 코드가 아니라 harness 자신을 두 렌즈로 본다:
 
 - **(A) 배선 (wiring)** — agent·skill·hook·rule·CLAUDE.md가 정적으로 제대로 연결됐는지: 중복·고아·휴면·dangling·일몰.
 - **(B) 행동 정합 (conformance)** — transcript·hook log를 근거로 harness가 *설계 의도대로 실제 쓰이는지*: 라우팅 actuation, 모드 사용, hook 발화, 데드웨이트 (의도 vs 실사용).
@@ -23,7 +23,7 @@ origin: self
 
 **렌즈 선택** (인자): `wiring`(배선 — default) | `conformance`(행동 정합) | `all`(둘 다). 인자에 모드가 없어도 '실사용/의도대로/conformance/감사' 뉘앙스면 conformance로 해석한다.
 
-- **배선(wiring) 범위**: `agents/`, `skills/`, `hooks/`, `rules/`, `roles/`, `CLAUDE.md`, `README.md`, `templates/`. (`ecc-reference/`는 lookup-only.) `agents`|`skills`|`hooks`|`rules`로 좁힐 수 있다.
+- **배선(wiring) 범위 (repo 기준)**: `content/agents/`, `content/skills/`, `assets/claude/hooks/`, `content/rules/`, `content/roles/`, `content/instructions/CLAUDE.md`, `assets/claude/README.md`, `assets/codex/AGENTS.md`, `content/templates/`. (`content/ecc-reference/`는 lookup-only.) `agents`|`skills`|`hooks`|`rules`로 좁힐 수 있다. *(비-repo flat install(`~/.claude`)을 직접 리뷰할 땐 같은 항목이 `~/.claude/agents/` 등 flat 경로에 있다 — 단 수정은 repo에서 하고 install로 전파.)*
 - **행동 정합(conformance) 근거**: `projects/**/*.jsonl`(대화·tool_use 이력) + `hooks/logs/*`(hook 발화). 아래 '행동 정합 카탈로그' A~G 차원으로 본다.
 
 ## 작동 흐름 (5단계)
@@ -50,9 +50,9 @@ findings를 심각도(High/Med/Low)로 묶어 제시한다. **각 actionable 항
 
 `AskUserQuestion`(또는 명시 목록)으로 **어떤 항목을 적용할지** 사용자가 고르게 한다. 일괄 승인/부분 승인/전부 보류 모두 허용. **승인 전에는 어떤 파일도 수정하지 않는다.**
 
-### Phase 4 — APPLY
+### Phase 4 — APPLY (repo에 적용 → install로 전파)
 
-승인된 항목만 `Edit`/`Write`로 적용한다. `surgical-changes` 원칙 — 승인 범위 밖 한 줄도 건드리지 않는다.
+승인된 항목만 **repo의 canonical 트리**(`content/`·`assets/`)에 `Edit`/`Write`로 적용한다. **`~/.claude`·`~/.codex`를 직접 수정하지 않는다** — generated output이라 다음 install에 덮인다. repo 적용 후 `py -3 install.py --target claude|codex --allow-live`로 라이브에 전파한다(install은 copy-only). `surgical-changes` 원칙 — 승인 범위 밖 한 줄도 건드리지 않는다.
 
 - **always-block 인프라 파일은 자동 수정 금지** (안전 규약 참조) → 적용하지 말고 "수동 적용용 정확한 내용/위치"를 출력.
 - 적용 후 변경을 재확인 (해당 파일 re-read 대신 Edit 성공 여부로 판정).
@@ -129,7 +129,7 @@ Phase 1에서 Explore에 넘길 **실사용 행동** 체크리스트. "설계가
 
 ## 안전 규약 (scope_check / hooks 인지)
 
-- **always-block 파일은 자동 수정 금지** — `settings.json`, `hooks/handlers/*`, `hooks/launchers/*` 및 README가 always-block으로 지정한 인프라 파일. 이들은 Phase 4에서 Edit/Write하지 말고 **수동 적용 안내**로만 출력 (off-ceremony 필요 시 `hooks/README.md` 참조).
+- **always-block 파일은 자동 수정 금지** — repo에선 `assets/claude/settings.json.template`·`assets/claude/hooks/handlers/*`·`assets/claude/hooks/launchers/*`(설치 시 `~/.claude`의 `settings.json`·`hooks/`로 감) 및 README가 always-block으로 지정한 인프라 파일. 이들은 Phase 4에서 Edit/Write하지 말고 **수동 적용 안내**로만 출력 (off-ceremony 필요 시 `assets/claude/hooks/README.md` 참조).
 - `secret_scan`(enforce)·`scope_check`(dryrun)이 Edit/Write/Bash를 가로챈다. 적용 중 hook이 막으면 우회하지 말고 사용자에게 보고.
 - 새 파일 생성·일반 콘텐츠 파일(`agents/*`, `skills/*`, `rules/*`, `CLAUDE.md`, `README.md`) 수정은 정상 경로.
 

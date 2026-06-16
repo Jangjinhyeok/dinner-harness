@@ -7,7 +7,7 @@
 |  | `secret_scan` | `scope_check` | `suggest_compact` | `learning_log` | `route_nudge` |
 |---|---|---|---|---|---|
 | 이벤트 | PreToolUse | PreToolUse | PreToolUse | PostToolUse | UserPromptSubmit |
-| matcher | Edit · Write · Bash | Edit · Write | Edit · Write | Bash | 없음 (전체 프롬프트) |
+| matcher | Edit · Write · Bash · PowerShell | Edit · Write | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
 | 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 위임 nudge를 stdout으로 출력 |
 | 룰셋 | `rules/secret_patterns.json` | `rules/scope_protect.json` + `HANDOFF.md`의 scope 블록 | 없음 (`COMPACT_THRESHOLD` env, 기본 50) | 없음 (핸들러 내장 패턴) | 없음 (핸들러 내장 regex) |
 | 모드 env var | `CLAUDE_SECRET_SCAN_MODE` | `CLAUDE_SCOPE_WHITELIST_MODE` | 없음 (항상 advisory) | 없음 (항상 advisory) | 없음 (항상 advisory) |

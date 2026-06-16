@@ -2,6 +2,8 @@
 
 codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
+> ※ Cycle 1 feasibility recon. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`다 — 이 문서의 일부 degraded/merged 판정은 Cycle 2에서 최종 **dropped**로 갱신됐다(예: subagents, agent-routing, 7 routing skills).
+
 ## Method & evidence
 
 Grounded in three primary sources (not docs alone):

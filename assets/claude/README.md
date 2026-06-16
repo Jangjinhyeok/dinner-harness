@@ -24,9 +24,9 @@
 ├── roles/                     # Two-CLI workflow 역할 정의
 │   ├── ROLE_ARCHITECT.md      # 설계·영향분석·검토 세션
 │   └── ROLE_BUILDER.md        # 구현·빌드검증·self-review 세션
-├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log)
+├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
 │   ├── launchers/             # 인자 없는 절대경로 BAT wrapper
-│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log)
+│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge)
 │   ├── lib/                   # fail-open / timeout 공통 wrapper
 │   ├── rules/                 # 패턴·스코프 룰셋 JSON
 │   ├── tests/                 # run_handler 안전 계약 unittest (stdlib only)
@@ -73,10 +73,10 @@
 
 | hook | 이벤트·matcher | 역할 | 출처 |
 |---|---|---|---|
-| `secret_scan` | Pre · Edit·Write·Bash | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
+| `secret_scan` | Pre · Edit·Write·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
 | `scope_check` | Pre · Edit·Write | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
-| `learning_log` | Post · Bash | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
+| `learning_log` | Post · Bash·PowerShell | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
 | `route_nudge` | UserPromptSubmit | 프롬프트의 UE 도메인 신호를 regex 검출 → 위임 nudge 주입(단일 도메인→leaf, 멀티/일반→`unreal-specialist` 허브). 차단 없음, 항상 exit 0 (advisory) | 2026-06-16, commit 09aa4f9 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
@@ -172,7 +172,7 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 | Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소 |
 | Two-CLI workflow infra | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함 | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
-| hooks (enforcement) | `secret_scan`, `scope_check`, `suggest_compact`, `learning_log` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
+| hooks (enforcement) | `secret_scan`, `scope_check`, `suggest_compact`, `learning_log`, `route_nudge` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`, 적합 specialist를 self-route→`route_nudge`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
 
 ### 주요 변경 이력
 

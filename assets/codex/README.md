@@ -1,4 +1,5 @@
-# assets/codex (Cycle 2 placeholder)
+# assets/codex
 
-Codex-native raw assets live here once the codex adapter is built (Cycle 2).
-Empty in Cycle 1. See `../../harness.toml` and `../../adapters/`.
+Codex-native raw: curated `AGENTS.md` (installs to `~/.codex/AGENTS.md`). The codex
+adapter (`../../adapters/codex.py`) consumes this. Per-content native/degraded/dropped
+accounting is in `../../CODEX-COVERAGE.md`; see also `../../harness.toml` `[targets.codex]`.
