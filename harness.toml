@@ -48,3 +48,24 @@ skip_if_exists = [
 # lossless-diff comparison: runtime/cache artifacts that are not harness content.
 exclude_dir_names = ["__pycache__", "logs", "_staging"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
+
+[targets.codex]
+# codex target: portable subset only (Cycle 2, D1/D7/D8). No templating, no skip-if-exists.
+# Claude-only machinery (agents, hooks, roles, agent-routing, _mode) is dropped — accounted
+# for in CODEX-COVERAGE.md. MCP is out of scope (no canonical source; D5).
+copy = [
+  ["assets/codex/AGENTS.md",  "AGENTS.md"],
+  ["content/ecc-reference",   "ecc-reference"],
+  ["content/docs",            "docs"],
+  ["content/templates",       "templates"],
+]
+
+# Skills: copy content/skills/* EXCEPT the Claude-machinery skills (D8). The dropped ones
+# route to Claude subagents (bp/gas/umg/ue/repl) or operate on the ~/.claude harness
+# (harness-review, learnings-review) and have no Codex execution equivalent.
+skills_src = "content/skills"
+skills_dest = "skills"
+skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review"]
+
+exclude_dir_names = ["__pycache__", "logs", "_staging"]
+exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
