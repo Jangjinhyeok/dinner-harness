@@ -6,31 +6,58 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
 ## 2026-06 재-recon 갱신 (현행 Codex — supersedes 'Codex-can't' framing below)
 
-**헤드라인: 메커니즘은 따라잡았으나 시맨틱은 부분적.** 아래 Cycle-1 본문이 "Codex가 hooks/subagent를 못 한다"고 한 것은 **아키텍처 불가가 아니라 당시 버전(0.111.0) 기준의 미지원**이었다. 현행 Codex는 둘 다 지원한다 — 단 orchestration·auto-routing·세션페어 시맨틱 부재로 **hooks만 완전 포팅 가치**가 있다. (실제 포팅은 별도 cycle; 본 갱신은 문서 정정만.)
+> **0.140 더 깊은 조사 (직전 commit `00e1dfe`의 매트릭스를 supersede):** 직전 갱신이 hub-leaf를 STILL-DEGRADED로 본 것은 **부정확**했다. Codex `0.140.0`의 subagent **orchestration**(spawn→wait→synthesise, `max_depth=1`, `max_threads=6`, prompt-driven)이 hub→leaf를 **지원**한다(depth-1 fit). 정정값은 (c)·(d), 실행 플랜은 아래 "Porting Plan" 섹션.
 
-### (a) Codex 현행 native capability
-- **hooks** — `~/.codex/hooks.json` / config.toml `[hooks]`. 이벤트: PreToolUse·PostToolUse·UserPromptSubmit·SessionStart·SubagentStart/Stop 등. stdin JSON, exit 0/2, `type:"command"` + `commandWindows`. → Claude hook contract와 거의 동형(`lib/common.py` 재사용 가능).
-- **custom agents** — `~/.codex/agents/*.toml`. 필드: name·description·developer_instructions + model·sandbox_mode·mcp_servers. **명시 호출만·max_depth=1·agent↔agent 없음**(Claude hub-leaf fan-out 불가).
-- **rules** — AGENTS.md + nested override(cwd-dir) + profiles. (출처: developers.openai.com/codex.)
+**헤드라인: 메커니즘을 따라잡았고 시맨틱도 대부분 맞다 — 잔존 한계는 depth-2 다중hop·세션페어뿐.** 아래 Cycle-1 본문이 "Codex가 hooks/subagent를 못 한다"고 한 것은 **아키텍처 불가가 아니라 당시 버전(0.111.0) 기준의 미지원**이었다. 현행 Codex(`0.140.0`)는 hooks·subagents가 **stable**이고 orchestration이 hub→leaf를 커버한다.
+
+### (a) Codex 현행 native capability (0.140.0 기준)
+- **hooks** — `~/.codex/hooks.json` / config.toml `[hooks]`. 이벤트: PreToolUse·PostToolUse·UserPromptSubmit·SessionStart·SubagentStart/Stop 등. stdin JSON, exit 0/2, `type:"command"` + `commandWindows`. UserPromptSubmit는 `hookSpecificOutput.additionalContext`(+ plain stdout)로 context 주입. → Claude hook contract와 거의 동형(`lib/common.py` 재사용 가능).
+- **custom agents + orchestration** — `~/.codex/agents/*.toml`(name·description·developer_instructions + model·sandbox_mode·mcp_servers). parent가 child를 **spawn→route→wait→synthesise consolidated response**(spawn_agent/wait/close_agent). **`max_depth=1`**(root→직접 children; grandchildren 차단), **`max_threads=6`**, **prompt-driven**(모델이 프롬프트 보고 spawn — 호스트 API 아님), parent↔child만(peer 없음). → **hub→leaf 위임은 depth-1로 fit**(Claude hub-leaf 1-hop과 동형). 잔존 한계 = **depth-2 다중hop**(gameplay-programmer→unreal-specialist→ue-gas류).
+- **rules** — AGENTS.md + nested override(cwd-dir) + profiles. (출처: developers.openai.com/codex + Codex 0.140 KB.)
 
 ### (b) 버전 선결조건
-사용자 설치 = Codex **0.111.0**. hooks ~v0.117·subagents ~v0.13x 이후 추가 → **현재 미지원**(`~/.codex`에 `agents/`·`hooks.json` 부재). **포팅 선결 = 업그레이드(무료, ≠결제).**
+최신 = Codex **`0.140.0`**(2026-06-15, hooks·subagents **stable**, GPT-5.5). 사용자 설치 = **0.111.0**(`~/.codex`에 `agents/`·`hooks.json` 부재) → **업그레이드(무료, ≠결제) 시 전부 가용**. 포팅 = **codex adapter v2**(`codex.py` 확장)로 repo canonical → `~/.codex` 생성(source-of-truth 유지).
 
-### (c) 포팅 feasibility 매트릭스
+### (c) 포팅 feasibility 매트릭스 (0.140 정정)
 | 부품 | 판정 |
 |---|---|
-| **hooks 5** | 포팅 가치 — `secret_scan`·`suggest_compact`·`learning_log` **NATIVE**, `scope_check`·`route_nudge` caveat. contract 일치·`lib/common` 재사용 |
-| **agents 21** | flat standalone만 — `_core`·`_gamedev` caveat, `_ue`·`_unity` hub-leaf **STILL-DEGRADED**(max_depth=1) |
-| **rules·roles·routing 별칭** | **드롭 유지** (시맨틱 부재/중복) |
-| **harness/learnings-review skill** | QOL caveat |
+| **hooks 5** | **GO** — 전부 NATIVE-PORTABLE(`secret_scan`·`scope_check`·`suggest_compact`·`learning_log`·`route_nudge`). contract 일치·`lib/common` 재사용·stdin 필드 교집합 |
+| **agents 21** (_core·_gamedev·**hub-leaf 포함**) | **PORTABLE-WITH-CAVEAT** — orchestration이 hub→leaf 지원. caveat = depth-1·prompt-driven(developer_instructions에 spawn 규칙 enumerate) |
+| **agent-routing** | **부분복원** — `route_nudge` hook이 specialist nudge 주입 |
+| **`_mode` 조건부** | STILL-DEGRADED — file-glob → cwd-dir override만 |
+| **Two-CLI roles** | STILL-DEGRADED — 세션페어 없음 |
+| **depth-2 다중hop** | **STILL-DROPPED** — grandchildren 차단(`max_depth=1`) |
+| **routing 별칭 skills**(bp/gas/umg/ue/repl) | 중복 — prompt-driven spawn이 대체 |
 
-### (d) 권고 tier
-- **GO**: hooks 포팅 (메커니즘·contract 일치).
-- **MAYBE**: `_core`·`_gamedev` flat agents, learnings-review.
-- **DON'T**: hub-leaf(`_ue`·`_unity`) agents, rules, roles, routing 별칭 — 시맨틱 부재로 드롭 유지.
+### (d) 권고 tier (0.140 정정)
+- **GO**: hooks 5 (전부 native-portable).
+- **PORTABLE-WITH-CAVEAT**: agents 대부분 — `_core`·`_gamedev` flat + **`_ue`·`_unity` hub-leaf**(depth-1 orchestration), learnings-review.
+- **STILL-DROPPED**: `_mode` file-glob 조건부 · Two-CLI 세션페어 · **depth-2 다중hop** · routing 별칭 skills.
 
-### (e) 미검증 (실 포팅 cycle에서 확인)
-hook stdout context 주입 · config syntax · max_depth hub→leaf 동작 · project override — 4건 전부 실 포팅 전 검증 필요.
+### (e) 미검증 → 3 해소, 1 잔존 (0.140 조사)
+- ✅ route_nudge stdout→context (`UserPromptSubmit.hookSpecificOutput.additionalContext` + plain stdout 수용)
+- ✅ config syntax (config.toml `[hooks]` / hooks.json)
+- ✅ hub→leaf depth (depth-1 fit)
+- ⚠️ **잔존 = depth-2 다중hop 위임**(grandchildren 차단) — 실 포팅 cycle preflight에서 우회 설계.
+
+## Porting Plan (Codex ≥0.140 업그레이드 후 실행 — codex adapter v2)
+
+> 실행 = **별도 cycle**(이 플랜이 그 HANDOFF의 기반). 본 cycle은 플랜 기록만.
+
+**선결**: 사용자 Codex 0.111.0 → **≥0.140 업그레이드**(무료). 포팅은 hand-edit 아니라 **codex adapter v2(`codex.py` 확장)**로 repo canonical → `~/.codex` 생성(source-of-truth 유지).
+
+**Preflight (업그레이드 직후 실증 → 최종 scope 확정)**:
+1. hook 발화 — PreToolUse `exit 2` block, UserPromptSubmit `additionalContext` 렌더.
+2. hub→leaf — prompt-driven spawn→wait→synthesise 실동작(depth-1).
+3. depth-2 차단 확인 — grandchildren 거부.
+
+**Phase A — hooks (GO)**: `assets/claude/hooks/handlers/*.py` + `lib/common.py` + `rules/*.json` → `~/.codex/hooks/`; `codex.py`가 `~/.codex/config.toml [hooks]`(or hooks.json) 등록 생성(matcher per hook·`commandWindows`). 이벤트 매핑 PreToolUse/PostToolUse/UserPromptSubmit. stdin 필드 교집합이라 핸들러 거의 무변경(검증). 비파괴+백업.
+
+**Phase B — agents (PORTABLE-WITH-CAVEAT)**: `content/agents/**.md` → `~/.codex/agents/*.toml`(body→developer_instructions·model·sandbox_mode·mcp_servers). hub agent는 developer_instructions에 "언제 어떤 leaf를 spawn"을 enumerate(prompt-driven, depth-1).
+
+**Phase C — routing 부분복원**: Phase A의 `route_nudge`가 specialist nudge 주입(agent-routing 대체).
+
+**Still-dropped (미포팅·문서화)**: `_mode` file-glob 조건부 · Two-CLI 세션페어 · **depth-2 다중hop** · routing 별칭 skills.
 
 ---
 
