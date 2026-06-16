@@ -1,0 +1,7 @@
+# Preserve exact bytes on every platform so the canonical tree round-trips
+# losslessly into ~/.claude. The source tree is LF except where noted below.
+* text=auto eol=lf
+
+# Legacy CRLF source files: preserved as CRLF on checkout so the round-trip is
+# byte-identical to the current ~/.claude original (else Gate 2 diff != 0).
+assets/claude/README.md text eol=crlf

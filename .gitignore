@@ -1,0 +1,7 @@
+# dinner-harness repo — ignore build/runtime artifacts only.
+# Canonical content (content/, assets/, adapters/, harness.toml, install.py) is tracked.
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

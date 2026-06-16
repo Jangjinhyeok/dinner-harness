@@ -1,0 +1,74 @@
+{
+  "_template": "Copy this file to settings.json (which is gitignored, machine-specific) and replace <USERNAME> with your Windows username. Absolute BAT paths are required by the Claude Code Windows hook command argument-escaping workaround — see hooks/README.md.",
+  "extraKnownMarketplaces": {},
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "PowerShell(git reset --hard*)",
+      "PowerShell(git clean -f*)",
+      "PowerShell(git push --force*)",
+      "PowerShell(git push -f *)",
+      "Bash(cat *.env*)",
+      "Bash(type *.env*)",
+      "Bash(*>.env*)",
+      "Read(**/.env*)",
+      "Read(**/.credentials*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/<USERNAME>/.claude/hooks/launchers/secret_scan.cmd"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/<USERNAME>/.claude/hooks/launchers/scope_check.cmd"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/<USERNAME>/.claude/hooks/launchers/suggest_compact.cmd"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/<USERNAME>/.claude/hooks/launchers/learning_log.cmd"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/<USERNAME>/.claude/hooks/launchers/route_nudge.cmd"
+          }
+        ]
+      }
+    ]
+  }
+}

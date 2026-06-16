@@ -1,0 +1,67 @@
+# Claude Code runtime data
+projects/
+todos/
+tasks/
+sessions/
+session-env/
+shell-snapshots/
+statsig/
+ide/
+cache/
+paste-cache/
+file-history/
+backups/
+telemetry/
+plugins/
+history.jsonl
+.last-cleanup
+.last-update-result.json
+mcp-needs-auth-cache.json
+daemon/
+
+# Nested Claude directory (auto-generated)
+.claude/
+
+# Local settings (machine-specific)
+settings.json
+settings.local.json
+settings.json.bak*
+
+# Bug report evidence (local-only)
+bug-report-evidence/
+
+# IDE config
+.idea/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Hook runtime artifacts
+hooks/logs/*.log
+hooks/logs/*.error.log
+hooks/logs/.compact_count_*
+!hooks/logs/.gitkeep
+
+# Backup files from refactor cycles
+*.bak
+*.b1_backup
+*.b*_backup
+
+# Secret-bearing files (defense-in-depth; hook catches but never commit)
+.credentials*
+.env
+.env.*
+!.env.example
+
+# Generic log/tmp/cache
+*.log
+*.tmp
+*.cache
+
+# OS artifacts
+Thumbs.db
+.DS_Store
+desktop.ini

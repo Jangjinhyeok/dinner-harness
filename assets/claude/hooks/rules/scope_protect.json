@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "always_block": [
+    { "match": "exact",  "path": "settings.json" },
+    { "match": "exact",  "path": "settings.local.json" },
+    { "match": "prefix", "path": "hooks/handlers/" },
+    { "match": "prefix", "path": "hooks/lib/" },
+    { "match": "prefix", "path": "hooks/launchers/" },
+    { "match": "prefix", "path": "hooks/rules/" }
+  ]
+}

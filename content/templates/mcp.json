@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "unreal": {
+      "command": "<FILL IN — server launcher, e.g. uv>",
+      "args": ["<FILL IN — exact args from the chosen repo README, e.g. run, /abs/path/to/server.py>"],
+      "env": {}
+    },
+    "unity": {
+      "command": "<FILL IN — server launcher, e.g. uv or node>",
+      "args": ["<FILL IN — exact args from the chosen repo README>"],
+      "env": {}
+    }
+  }
+}
