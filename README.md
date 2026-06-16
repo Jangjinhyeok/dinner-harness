@@ -1,20 +1,21 @@
 # dinner-harness
 
-Single source of truth for a custom Claude Code **and** Codex harness.
+**한국어** | [English](README.en.md)
 
-Hand-edit the canonical tree in this repo; **never hand-edit `~/.claude` or `~/.codex`
-directly** — they are generated outputs. Regenerate a target with the installer.
+커스텀 Claude Code **및** Codex 하네스의 single source of truth.
+
+이 repo의 canonical 트리를 손-편집한다. **`~/.claude`·`~/.codex`를 직접 편집하지 말 것** — 둘 다 생성된 출력이다. 타깃은 installer로 재생성한다.
 
 ## Layout
 
-- `content/` — tool-neutral harness content (instructions, rules, skills, agents, roles,
-  templates, ecc-reference, docs). The codex adapter transforms this; the claude adapter
-  copies it verbatim.
+- `content/` — tool-neutral 하네스 콘텐츠 (instructions, rules, skills, agents, roles,
+  templates, ecc-reference, docs). codex adapter는 이를 transform하고, claude adapter는
+  verbatim copy한다.
 - `assets/claude/` — claude-native raw (Python hooks, launchers, settings template,
-  hand-written docs). Copied verbatim; the codex adapter ignores it.
+  손-작성 문서). verbatim copy되며 codex adapter는 무시한다.
 - `assets/codex/` — codex-native raw (curated `AGENTS.md`).
-- `adapters/` — per-target renderers (`claude.py`, `codex.py`).
-- `harness.toml` — manifest: targets, template vars, copy / template(merge) / skip / exclude.
+- `adapters/` — 타깃별 renderer (`claude.py`, `codex.py`).
+- `harness.toml` — manifest: targets, template 변수, copy / template(merge) / skip / exclude.
 - `install.py` — CLI entry: `install --target claude|codex [--dest PATH] [--dry-run] [--allow-live]`.
 
 ## Install
@@ -24,23 +25,23 @@ py -3 install.py --target claude --dest C:/Users/<you>/.claude
 py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 ```
 
-Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requires
-`--allow-live`. Use `--dry-run` to preview the plan without writing.
+`--dest` 생략 시 `~/.<target>`이 기본값이며, 라이브 디렉터리에 쓰려면 `--allow-live`가 필요하다.
+`--dry-run`으로 쓰기 없이 plan을 미리 본다.
 
-- **claude** — verbatim copy of the inclusion set (88 files); `settings.json` is generated
-  from `settings.json.template` (substitute `<USERNAME>`, strip `_template`) and **merged**
-  with the existing file so machine/runtime keys (e.g. `skipWorkflowUsageWarning`) survive.
-  Live `HANDOFF.md` / `RESULT.md` are never clobbered (skip-if-exists).
-- **codex** — transforms the portable subset to Codex-native paths: curated `AGENTS.md`,
-  17 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`).
-  Claude-only machinery (subagent routing, hooks, Two-CLI roles, 7 routing skills) is dropped
-  — see `CODEX-COVERAGE.md`.
+- **claude** — inclusion set(88 files)의 verbatim copy. `settings.json`은
+  `settings.json.template`에서 생성(`<USERNAME>` 치환, `_template` strip)되어 기존 파일과
+  **merge**되므로 머신/runtime 키(예: `skipWorkflowUsageWarning`)가 보존된다.
+  라이브 `HANDOFF.md` / `RESULT.md`는 절대 덮어쓰지 않는다(skip-if-exists).
+- **codex** — portable subset을 Codex-native 경로로 transform: curated `AGENTS.md`,
+  `skills/` 아래 17 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`).
+  Claude 전용 machinery(subagent routing, hooks, Two-CLI roles, 7 routing skills)는 drop된다
+  — `CODEX-COVERAGE.md` 참조.
 
 ## Targets
 
-- **claude** — implemented & live: repo is the source of truth for `~/.claude`. The inclusion
-  set round-trips byte-identical (proven diff-0).
-- **codex** — implemented & live: `~/.codex` deployed non-destructively (runtime preserved).
+- **claude** — implemented & live: repo가 `~/.claude`의 source of truth다. inclusion set이
+  byte-identical로 round-trip된다(diff-0 증명).
+- **codex** — implemented & live: `~/.codex`에 비파괴 배포됨(runtime 보존).
 
-See `CODEX-RECON.md` for the codex feasibility analysis (build vs adopt) and
-`CODEX-COVERAGE.md` for the per-content native/degraded/dropped accounting.
+codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 native/degraded/dropped
+회계는 `CODEX-COVERAGE.md` 참조.
