@@ -3,7 +3,8 @@
 stdlib only. Invoked by install.py. Three operations, driven by harness.toml's
 [targets.claude]:
   - copy          : verbatim byte-exact copy (file or recursive dir, honoring excludes)
-  - template      : <USERNAME> substitution; for JSON dests, drop strip_keys
+  - template/merge: <USERNAME> substitution; for JSON dests drop strip_keys; a `merge`
+                    entry preserves existing dest keys the template does not own
   - skip_if_exists: write only when the dest does not already exist (never clobber)
 
 Returns a plan: list of (action, dest_path) describing what was (or would be) done.
@@ -53,19 +54,25 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     for src_rel, dest_rel in target_cfg.get("copy", []):
         _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run)
 
-    # 2. templated files (variable substitution; JSON strip_keys). Written as bytes so
-    #    line endings are not platform-translated.
+    # 2. templated / merged files (variable substitution; JSON strip_keys). A `merge`
+    #    entry preserves existing-dest keys the template does not own (e.g. runtime
+    #    flags like skipWorkflowUsageWarning) so install does not clobber machine state.
+    #    Written as bytes so line endings are not platform-translated.
     for entry in target_cfg.get("template", []):
         src = repo_root / entry["src"]
         dest = dest_root / entry["dest"]
         text = src.read_text(encoding="utf-8").replace(token, username)
         strip_keys = entry.get("strip_keys", [])
-        if strip_keys and dest.name.endswith(".json"):
+        merge = entry.get("merge", False)
+        if dest.name.endswith(".json") and (strip_keys or merge):
             data = json.loads(text)
             for k in strip_keys:
                 data.pop(k, None)
+            if merge and dest.is_file():
+                existing = json.loads(dest.read_text(encoding="utf-8"))
+                data = {**existing, **data}  # template keys win; existing-only keys kept
             text = json.dumps(data, indent=2) + "\n"
-        plan.append(("template", dest))
+        plan.append(("merge" if merge else "template", dest))
         if not dry_run:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(text.encode("utf-8"))

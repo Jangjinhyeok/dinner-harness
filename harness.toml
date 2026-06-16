@@ -34,7 +34,7 @@ copy = [
 # real username and, for JSON dests, drops `strip_keys` (machine/runtime-only fields).
 # Inline-table array so these stay direct keys of [targets.claude] regardless of order.
 template = [
-  { src = "assets/claude/settings.json.template", dest = "settings.json", strip_keys = ["_template"] },
+  { src = "assets/claude/settings.json.template", dest = "settings.json", strip_keys = ["_template"], merge = true },
 ]
 
 # Workflow state files: written only when the dest does not already exist

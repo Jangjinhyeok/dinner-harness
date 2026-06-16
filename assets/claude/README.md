@@ -1,6 +1,6 @@
-# dinner-claude
+# ~/.claude (dinner-harness 산출물)
 
-개인 Claude Code 설정. `~/.claude/` 백업 및 동기화용 private repo.
+개인 Claude Code 설정. **source-of-truth는 `dinner-harness` repo**이며, 이 `~/.claude/`는 `install --target claude`로 생성된 출력이다. 손-편집은 repo의 canonical 트리(`content/`·`assets/claude/`)에서 하고 install로 반영한다 — `~/.claude/`를 직접 편집하면 다음 install에서 덮어쓰인다.
 
 ## 구조
 
@@ -108,26 +108,31 @@ MCP는 위 "작동 방식"의 4가지(①auto-load ②조건부 inject ③명시
 
 ## 설치 (새 PC)
 
-1. 이 repo의 **Code → Download ZIP** 클릭
-2. 압축을 풀고 내용을 `~/.claude/` 에 복사
-   - Windows: `%USERPROFILE%\.claude\`
-   - 기존 `~/.claude/`가 있으면 백업 후 복사
-3. **Python 설치 확인** — hooks는 `py -3`로 핸들러를 실행하므로 Python이 필요하다. `py -3 --version`이 동작하지 않으면 [python.org](https://www.python.org/downloads/) 또는 `winget install Python.Python.3`로 설치한다 (공식 설치본에 `py` launcher 포함). Python이 없어도 hooks는 fail-open이라 작업을 막진 않지만 시크릿·스코프 검사 자체가 돌지 않는다.
-4. `settings.json.template`을 `settings.json`으로 복사하고 `<USERNAME>`을 실제 Windows 사용자명으로 치환 — hook 등록이 여기서 켜진다. (`settings.json`은 절대경로가 박혀 machine-specific이라 git 제외)
-5. Claude Code 재시작
-6. **(선택) Context7 MCP** — `research-first`(CLAUDE.md §1.5)를 버전별 최신 API 문서로 강화한다. machine-specific이라 repo엔 없으니 새 머신마다 등록한다:
+이 harness는 `dinner-harness` repo가 source-of-truth다. 새 PC 셋업:
+
+1. `dinner-harness` repo를 clone.
+2. **Python 설치 확인** — installer·hooks는 `py -3`로 동작(stdlib only, 외부 dep 0). `py -3 --version`이 안 되면 [python.org](https://www.python.org/downloads/) 또는 `winget install Python.Python.3` (공식 설치본에 `py` launcher 포함). Python이 없어도 hooks는 fail-open이라 작업을 막진 않지만 시크릿·스코프 검사 자체가 돌지 않는다.
+3. repo에서 install:
+   ```
+   py -3 install.py --target claude --allow-live
+   ```
+   `~/.claude/`를 생성·갱신한다. `settings.json`은 template에서 `<USERNAME>` 치환 후 기존 파일과 **merge**된다(hooks/permissions는 template, `skipWorkflowUsageWarning` 같은 runtime키는 보존). 라이브 `HANDOFF.md`/`RESULT.md`는 skip(비클로버). 기존 `~/.claude/`가 있으면 install 전에 백업 권장.
+4. Claude Code 재시작.
+5. **(선택) Context7 MCP** — `research-first`(CLAUDE.md §1.5)를 버전별 최신 API 문서로 강화한다. machine-specific이라 repo엔 없으니 새 머신마다 등록한다:
    ```
    claude mcp add --transport http --scope user context7 https://mcp.context7.com/mcp
    ```
    키 없이 동작하며(표준 rate limit), 더 높은 한도를 원하면 [context7.com/dashboard](https://context7.com/dashboard)에서 키를 발급받아 헤더로 추가한다(키는 본인 셸에서 직접 — 채팅/커밋에 노출 금지): `… https://mcp.context7.com/mcp --header "CONTEXT7_API_KEY: <key>"`. 등록은 `~/.claude.json`(user config, git 제외)에 저장된다.
 
-## 동기화 방식
+## 동기화 방식 (repo = source-of-truth)
 
-이 repo는 단순 백업이다. 로컬 `~/.claude/`를 직접 수정한 후, 의미 있는 변경은 주기적으로 GitHub 웹 UI를 통해 반영한다:
+`~/.claude/`는 **생성된 출력**이고, 편집은 `dinner-harness` repo의 canonical 트리에서 한다:
 
-1. 변경된 파일을 GitHub repo의 해당 위치로 이동
-2. "Add file → Upload files" 또는 "Edit this file"
-3. Commit message 작성 후 commit
+1. repo의 `content/`(tool-neutral) 또는 `assets/claude/`(claude-native raw)를 손-편집.
+2. `py -3 install.py --target claude --allow-live`로 `~/.claude/` 갱신 (Codex도 쓰면 `--target codex`로 `~/.codex/` 갱신 — codex는 portable 부분만 transform, `CODEX-COVERAGE.md` 참조).
+3. repo를 commit/push.
+
+직접 `~/.claude/`를 편집하면 다음 install에서 덮어쓰여 사라진다 — 항상 repo에서 편집한다. (옛 모델: 로컬 직접 수정 + GitHub 웹 UI 수동 백업 — 폐기됨.)
 
 ## Layer 구조
 
