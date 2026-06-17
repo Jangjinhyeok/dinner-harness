@@ -46,7 +46,7 @@ skip_if_exists = [
 
 # Directory basenames and file suffixes pruned from every copy AND from the
 # lossless-diff comparison: runtime/cache artifacts that are not harness content.
-exclude_dir_names = ["__pycache__", "logs", "_staging"]
+exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
 
 [targets.codex]
@@ -69,5 +69,5 @@ skills_src = "content/skills"
 skills_dest = "skills"
 skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review"]
 
-exclude_dir_names = ["__pycache__", "logs", "_staging"]
+exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]

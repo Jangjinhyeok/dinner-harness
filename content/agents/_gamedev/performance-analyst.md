@@ -8,6 +8,7 @@ memory: project
 skills:
   - simplicity-first
   - surgical-changes
+  - perf-profile
 ---
 
 You are a Performance Analyst for an indie game project. You measure, analyze,

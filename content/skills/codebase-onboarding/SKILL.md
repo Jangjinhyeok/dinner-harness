@@ -154,7 +154,8 @@ out what's added. Keep it under ~100 lines.
 ### Recommend project conventions (UE5/Unity)
 
 If the project lacks them, recommend setting up the conventions the `_gamedev` agents
-expect (templates live in `~/.claude/templates/`):
+expect (templates live in the installed harness `templates/` dir — `~/.claude/templates/` on
+Claude, `~/.codex/templates/` on Codex):
 - `docs/engine-reference/<engine>/VERSION.md` — pin the engine version; powers the agents' "Engine Version Safety".
 - `docs/architecture/` — adopt the ADR template for design decisions.
 
