@@ -86,6 +86,21 @@
 
 이 통신 파일들(`HANDOFF.md`, `RESULT.md`, `INPUT.md`) 중 하나라도 컨텍스트에 들어오는 순간 `~/.claude/rules/_mode/architect.md` 또는 `~/.claude/rules/_mode/builder.md`가 paths 매칭으로 자동 inject된다. 이는 모드 진입 키워드라는 텍스트 선언 trigger와는 별도로, 파일 진입이라는 trigger를 추가하는 hybrid 메커니즘이다. 사용자가 모드 선언을 잊고 통신 파일을 바로 Read해도 해당 모드의 핵심 규약이 reminder로 박힌다.
 
+### Cross-vendor 역할 분담
+
+Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**. 두 역할 모두 vendor-neutral한 협업 프로토콜이며 Claude·Codex 어느 쪽이든 어느 역할이든 맡을 수 있다. 예시 페어링:
+
+- **Codex = Architect, Claude = Builder** (설계·추론은 Codex, 코드베이스 내 구현은 Claude)
+- **Claude = Architect, Codex = Builder** (역방향)
+- 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
+
+통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 두 세션은 같은 프로젝트 디렉터리에서 같은 파일을 읽고 쓴다. 런타임 IPC나 MCP는 필요 없다.
+
+cross-vendor 시 주의:
+
+- **HANDOFF.md는 self-contained여야 한다.** Builder가 다른 vendor면 상대에게 없는 도구(특정 skill·subagent·`/명령`)를 전제하지 않는다. 게이트의 빌드·검증은 표준 CLI 명령으로 기술한다.
+- **Codex 세션은 path-매칭 auto-inject가 없다.** Claude는 `HANDOFF.md`/`RESULT.md`를 읽으면 `_mode` reminder가 자동으로 박히지만, Codex엔 그 기제가 없으므로 사용자가 모드를 **명시 선언**한다(`architect 모드`/`builder 모드`). Codex의 역할 프로토콜은 `~/.codex/AGENTS.md`의 Two-CLI 섹션(§7)에 있다.
+
 ### 모드를 사용하지 않아도 되는 경우
 
 다음 같은 작은 작업은 두 세션 워크플로우가 오버헤드만 큼:

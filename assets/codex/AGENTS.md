@@ -2,7 +2,7 @@
 
 이 문서는 Codex의 `~/.codex/AGENTS.md`로 로드되는 사용자 레벨 지침이다. 프로젝트별 `AGENTS.md`가 있으면 그것과 함께 들어가며, 프로젝트별 지침이 더 구체적이고 우선한다. 목적은 도메인과 무관한 **메타 원칙**과 **개인 작업 스타일**을 명문화하는 것이다.
 
-이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. Claude 전용 기제(Two-CLI 역할 모드, subagent 위임 라우팅, hook enforcement)는 이 codex 설치에 **포팅돼 있지 않다** — 현행 Codex는 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱 한계로 포팅 보류다(아키텍처 불가가 아닌 설계 결정; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
+이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. **Two-CLI 역할 모드(Architect/Builder)는 cross-vendor로 지원된다 — §7 참조.** 그 외 Claude 전용 기제(subagent 위임 라우팅, hook enforcement)는 이 codex 설치에 **포팅돼 있지 않고**, `_mode` 파일 자동 inject(paths 매칭)도 Codex 대응 기제가 없어 미대응이다(Two-CLI 모드는 명시 선언으로 진입 — §7). 현행 Codex는 hooks·custom agents를 지원하나 orchestration·hook 포팅은 설계 결정으로 보류다(아키텍처 불가가 아님; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
 
 > **Codex 환경 안전 노트 (중요):**
 > - **Enforcement 미배포**: `secret_scan`·`scope_check` 류의 hook 차단은 **이 codex 설치엔 배포돼 있지 않다**(현행 Codex는 hooks를 지원하나 미포팅 — `CODEX-RECON.md` 참조). 따라서 시크릿 유출·스코프 침범 방지는 이 문서에서 **advisory(권고)**일 뿐이며, 실제 안전망은 **사용자와 Codex sandbox의 책임**이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
@@ -106,6 +106,34 @@
 - 프로젝트별 `AGENTS.md`는 **그 프로젝트의 도메인 지식**(아키텍처, 컨벤션, 모듈 구조 등)을 담는다.
 - 충돌 시 프로젝트별이 우선한다.
 - 새 프로젝트를 시작할 때 이 문서를 복사하지 말고, 프로젝트별 `AGENTS.md`에는 그 프로젝트만의 정보를 담는다.
+
+---
+
+## 7. Two-CLI 역할 모드 (cross-vendor)
+
+큰 작업은 두 CLI 세션을 나눠 운용한다 — 한쪽은 설계·검토(**Architect**), 다른 쪽은 구현(**Builder**). 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다(예: **Codex=Architect, Claude=Builder**, 또는 역방향). 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다 — 두 세션이 같은 디렉터리에서 같은 파일을 읽고 쓴다.
+
+**진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
+
+### Architect 규약
+- 코드 파일에 직접 Edit/Write 하지 않는다(설계·분석·핸드오프 작성·결과 검토 담당). `HANDOFF.md`/`RESULT.md`는 작성 가능.
+- 흐름: 요청 청취 → 코드베이스 탐색(read) → 영향 범위 분석·보고 → 옵션 2~3개 제시 → 사용자와 방향 결정 → `HANDOFF.md` 작성 → "Builder 세션에서 HANDOFF.md 진행" 안내.
+- `HANDOFF.md` 구성: 목표 / 제약 / 영향 파일(수정·수정금지) / **게이트 단위 분해**(독립 검증 가능, 1~3 파일, 명확한 검증 기준) / 비기능 요건.
+- **게이트 크기**: 5파일 이상이면 더 작게 분해, 한 줄 수정이면 합친다. 각 게이트는 다음 게이트의 전제 조건을 명시한다.
+- **self-contained로 작성**: Builder가 다른 vendor일 수 있으니 상대에게 없는 skill·subagent·`/명령`을 전제하지 말고, 빌드·검증은 표준 CLI 명령으로 기술한다.
+- 서브에이전트 위임은 지원 시에만(Codex 0.140+ spawn/wait); 없으면 직접 탐색.
+- `RESULT.md` 검토: 읽고 → 실제 변경 파일 직접 확인(read/diff) → 의도 대비 차이 분석 → 이슈 견해 → 후속 HANDOFF 또는 종료.
+
+### Builder 규약
+- `HANDOFF.md`를 **읽기 전용 명세**로 받아 충실히 구현한다(명세를 수정하지 않는다).
+- 시작: HANDOFF.md 전 섹션 이해 자체 점검 → 모호하면 시작 전 질문 → Gate 1부터 순차.
+- 진입 응답: HANDOFF.md 있으면 "[요약] Gate 1부터 진행할까요?", 없으면 위치를 묻거나(단순 구현 요청이면 그대로 진행).
+- 게이트마다: 목표·검증기준 재확인 → 관련 파일 read → "수정 금지" 영역 침범 안 함 확인 → 구현 → 빌드/검증 → self-review(빌드·스코프·컨벤션·사이드이펙트) → 보고 후 **사용자 승인까지 대기**(자동 다음 게이트 금지).
+- 보고 형식: `[Gate N] Status: completed/blocked/questions` + 변경 파일(라인) + 검증(빌드/스코프/컨벤션 ✅❌) + "다음 게이트 진행할까요?".
+- 문제 발견 시 다음 게이트로 가지 말고 보고. HANDOFF가 명백히 틀렸으면 자체 수정 말고 중단·보고.
+- 완료/중단 후 `RESULT.md` 작성: 게이트별 상태 / 전체 변경 파일 / 핸드오프 준수 평가 / 발견 이슈 / 미해결 질문 / 다음 단계. 이후 "Architect 세션에서 RESULT.md 검토" 안내.
+
+> canonical source: dinner-harness `content/roles/ROLE_ARCHITECT.md`·`ROLE_BUILDER.md`. 원본이 실질 변경되면 이 섹션 재-curate.
 
 ---
 

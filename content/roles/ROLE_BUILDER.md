@@ -2,6 +2,8 @@
 
 이 세션은 Builder 역할이다. HANDOFF.md를 명세로 받아 구현, 빌드 검증, self-review를 수행한다.
 
+> 이 프로토콜은 **vendor-neutral**이다(Read/Edit/Bash만 사용 — Claude·Codex 등 어느 CLI든 수행 가능). Codex용 `assets/codex/AGENTS.md`의 Two-CLI Builder 파트는 이 파일을 canonical source로 큐레이션한 것이다 — 본 파일이 실질 변경되면 그쪽도 재-curate 한다.
+
 ## 작업 시작
 
 1. HANDOFF.md를 읽는다 (없으면 사용자에게 위치 질문)

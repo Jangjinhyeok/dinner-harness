@@ -5,10 +5,12 @@
 ## 도구 사용 제약
 
 - **금지**: Edit, Write (코드 파일에 대해)
-- **허용**: Read, Grep, Glob, Bash(읽기 명령만), Task (subagent)
+- **허용**: Read, Grep, Glob, Bash(읽기 명령만), 서브에이전트 위임(지원하는 CLI에서 — Claude=Task 도구, Codex=spawn/wait 0.140+)
 - **예외**: HANDOFF.md, RESULT.md 파일은 Write 가능
 
 코드 파일에 Edit/Write를 사용해야 한다고 판단되면, 그 작업은 Builder 세션의 책임이다. HANDOFF.md를 통해 명세를 전달한다.
+
+> **Cross-vendor 주의**: Builder가 다른 vendor(예: Codex)일 수 있다. HANDOFF.md는 self-contained로 작성한다 — 상대에게 없는 skill·subagent·`/명령`을 전제하지 말고, 빌드·검증은 표준 CLI 명령으로 기술한다.
 
 ## 작업 흐름
 

@@ -170,13 +170,15 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 | 컨텍스트·검증 skills | `verification-loop`, `eval-harness`, `strategic-compact`, `iterative-retrieval`, `scope-check`, `perf-profile`, `tech-debt` | 유한 context window + 내장 검증/압축 부재 | context가 사실상 무한 + 하네스가 검증·압축을 자동 수행 → 해당 skill 우선 일몰 |
 | Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소 |
 | Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소 |
-| Two-CLI workflow infra | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함 | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
+| Two-CLI workflow infra (cross-vendor) | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` (+ Codex `AGENTS.md` §7) | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함; 협업은 vendor를 가로질러 양방향(Codex/Claude × Architect/Builder) | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
 | hooks (enforcement) | `secret_scan`, `scope_check`, `suggest_compact`, `learning_log`, `route_nudge` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`, 적합 specialist를 self-route→`route_nudge`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
 
 ### 주요 변경 이력
 
 세부 변경은 git log에 있다. 아래는 milestone 수준 요약이다.
+
+**2026-06-17 — Two-CLI cross-vendor 양방향化.** 기존 Two-CLI(Architect/Builder)가 Claude 단일 vendor 전제였고 Codex 타깃엔 drop돼 있던 걸, vendor-mixed 양방향으로 정식화했다 — Codex/Claude 어느 쪽이든 어느 역할이든(예: Codex=Architect, Claude=Builder, 또는 역방향). 통신 버스는 그대로 파일(HANDOFF/RESULT/INPUT, 프로젝트 루트)이라 런타임 IPC/MCP 불필요. 변경: `CLAUDE.md §2`에 'Cross-vendor 역할 분담' 서브섹션, `ROLE_ARCHITECT.md`의 `Task` 도구 제약을 vendor-neutral화(+ self-contained HANDOFF 주의), `ROLE_BUILDER.md` canonical-source 노트, Codex `AGENTS.md §7`에 양 역할 프로토콜 curate(Codex엔 paths-매칭 auto-inject가 없어 모드 명시 선언으로 진입 — `rules/_mode/`만 여전히 dropped). adapter/install.py/harness.toml 무변경. 회계는 `CODEX-COVERAGE.md` D1·D6 갱신. 멀티에이전트 협업 '축 B' 중 human-orchestrated·file-mediated 차원으로, 현업 다수 패턴이며 hooks 안전망 안. (출처: 사용자 요청 — AI agent 간 협업을 harness에 적용.)
 
 **2026-06-16 — `harness-review` skill 추가 (2번째 L5 자작).** harness 구조(agents·skills·hooks·rules·CLAUDE.md) 자체의 배선 정합을 점검하는 전용 skill을 추가했다. 반복적으로 수행하던 구조 리뷰를 9개 카탈로그(Skill 배선·`skills:` preload 정합·`agent:` 바인딩·skill↔agent 중복/미연결·dangling 참조·휴면 skill·sync 부채·hook 무결성·일몰 대조)로 고정하고, DIAGNOSE(heavy-read는 Task→Explore 위임)→PROPOSE→APPROVE(게이트)→APPLY→REPORT 흐름으로 박제했다. user-invocable(`/harness-review`)이며, "승인 후 적용"이 메인 세션에서 일어나야 하므로 `context: fork`는 쓰지 않고 heavy-read만 격리한다. `arch-review`(소스 코드 SOLID/품질)와 구분되는 harness 전용 리뷰. always-block 인프라 파일은 자동 수정 대상에서 제외(수동 안내). (출처: 이 README '진화' 절의 "같은 질문 3번 이상 → skill로 박제" 규칙 — 반복된 구조 리뷰 요청을 crystallize.)
 
