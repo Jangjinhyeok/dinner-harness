@@ -74,7 +74,7 @@ The skills, agents, and hooks this harness ships. _A frontmatter-derived snapsho
 when skills/agents change._ For which items are native/degraded/dropped on the codex target,
 see `CODEX-COVERAGE.md`.
 
-### Skills (24)
+### Skills (26)
 
 **Meta-principles (5)**
 - `simplicity-first` — minimum-viable code; prevents over-engineering and speculative flexibility
@@ -106,6 +106,10 @@ see `CODEX-COVERAGE.md`.
 - `umg` — route UMG/CommonUI directly to `ue-umg-specialist`
 - `repl` — route replication/netcode directly to `ue-replication-specialist`
 - `ue-umg-review` — review/design UMG widgets (UE5)
+
+**Autonomous loop (2)**
+- `autonomous-loop` — risk-tiered self-correcting loop (human sets start/end only; agent owns the middle)
+- `adversarial-review` — default-to-reject multi-judge panel (mandatory for HIGH tier)
 
 **Harness (1)**
 - `harness-review` — review the dinner-harness repo itself through wiring + conformance lenses

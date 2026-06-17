@@ -24,8 +24,8 @@
    - 목표
    - 제약
    - 영향 파일 (수정, 수정 금지)
-   - 게이트 단위 작업 분해
-   - 각 게이트의 검증 방법
+   - 게이트 단위 작업 분해 — **각 게이트에 risk tier(LOW/HIGH) 태그**를 단다(per `~/.claude/rules/autonomy-policy.md`)
+   - 각 게이트의 검증 방법 — Builder가 **사람 round-trip 없이 자율 판정**할 수 있을 만큼 구체적인 성공 기준·검증 명령
    - 비기능 요건 (컨벤션, 주석 언어 등)
 8. 사용자에게 "Builder 세션에서 HANDOFF.md를 진행하라" 안내
 
@@ -48,9 +48,11 @@ Builder가 작업을 완료하고 RESULT.md를 작성하면:
 - 1~3개 파일 단위의 작은 변경
 - 명확한 검증 기준 (빌드 성공, 특정 테스트 통과, 수동 확인 항목)
 - 다음 게이트의 전제 조건 명시
+- **risk tier 태그**(LOW/HIGH). HIGH 게이트(replication·save format·live config·migration·security·비가역 등)는 **사람 종단 서명 지점과 blast-radius**를 명기한다 — Builder가 거기서 자동 진행하지 않고 정지하도록.
 
 너무 큰 게이트(파일 5개 이상)는 더 작게 분해한다.
 너무 작은 게이트(한 줄 수정)는 합친다.
+tier가 모호하면 HIGH로 단다(보수적 OR — `autonomy-policy.md`).
 
 ## 모드 진입 응답
 

@@ -20,31 +20,30 @@
 3. HANDOFF.md의 "수정 금지" 영역을 침범하지 않는지 확인
 4. 구현 (Edit, Write 사용)
 5. 빌드 명령 실행 또는 사용자에게 빌드 요청
-6. Self-review 수행:
-   - 빌드 성공 여부
-   - 스코프 준수 (수정 금지 영역 침범 안 함)
-   - 컨벤션 일치
-   - 명확하지 않은 사이드이펙트
+6. 게이트 검증 (HANDOFF의 게이트 risk tier에 따라 — per `~/.claude/rules/autonomy-policy.md`):
+   - **trivial한 LOW 게이트**(1~3개 작은 변경, 비위험): self-review(빌드·스코프·컨벤션·사이드이펙트)를 직접 수행
+   - **비-trivial 게이트 또는 모든 HIGH 게이트**: 단일 self-review 대신 `adversarial-review` skill(직교 축 다중 judge, 기본 판정 REJECT)로 중간 판단 — HIGH는 jury 필수·우회 불가(trivial이어도)
 7. 사용자에게 다음 형식으로 보고:
 
    ```
-   [Gate N] Status: completed / blocked / questions
+   [Gate N] Status: completed / blocked / questions   (tier: LOW / HIGH)
    변경 파일:
    - 파일 경로 (변경 라인)
    검증:
    - 빌드: ✅ / ❌
    - 스코프: ✅ / ❌
    - 컨벤션: ✅ / ❌
-   다음 게이트 진행할까요?
+   - 패널(비-trivial/HIGH): PASS / FAIL / —
+   [LOW: 자동 다음 게이트 진행] / [HIGH: 다음 게이트 진행 승인 요청]
    ```
 
-8. 사용자 승인 후 다음 게이트로
+8. **LOW 게이트**는 검증·패널 PASS 시 사용자 승인 없이 다음 게이트로 자동 진행. **HIGH 게이트**는 사용자 종단 서명까지 대기.
 
 ## 게이트 사이 원칙
 
-- 사용자 승인 없이 다음 게이트로 자동 진행 금지
-- 명백해 보이는 다운스트림 작업도 게이트를 건너뛰지 않는다
-- 한 게이트에서 문제가 발견되면 다음 게이트로 가지 말고 사용자에게 보고
+- **LOW 게이트는 검증/패널 통과 시 자동 진행한다. HIGH 게이트와 전체 작업 종료는 사용자 서명까지 대기한다** (per `autonomy-policy.md`).
+- LOW라도 게이트를 건너뛰지 않는다 — 각 게이트의 검증은 반드시 거친다(자동 진행 ≠ 검증 생략).
+- 한 게이트에서 BLOCK급 문제(패널 BLOCK·verify 실패)가 발견되면 다음 게이트로 가지 말고 정지·사용자 보고. tier가 모호하면 HIGH로 다뤄 보고한다.
 
 ## RESULT.md 작성
 
