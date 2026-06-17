@@ -29,16 +29,17 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requires
 `--allow-live`. Use `--dry-run` to preview the plan without writing.
 
-- **claude** — verbatim copy of the inclusion set (88 files); `settings.json` is generated
+- **claude** — verbatim copy of the inclusion set (87 files); `settings.json` is generated
   from `settings.json.template` (substitute `<USERNAME>`, strip `_template`) and **merged**
   with the existing file so machine/runtime keys (e.g. `skipWorkflowUsageWarning`) survive.
   Live `HANDOFF.md` / `RESULT.md` are never clobbered (skip-if-exists).
 - **codex** — transforms the portable subset to Codex-native paths: curated `AGENTS.md`,
   17 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`).
-  Claude-machinery (subagent routing, hooks, Two-CLI roles, 7 routing skills) is currently
-  **dropped** by the codex adapter — newer Codex does support hooks and custom agents, but porting
-  is deferred due to orchestration / session-pair semantic limits (a design decision, not an
-  architectural impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
+  Claude-machinery (subagent routing, hooks, `_mode` conditional inject, 7 Claude-machinery
+  skills [5 routing + 2 harness]) is currently **dropped** by the codex adapter, but the
+  **Two-CLI roles are cross-vendor curated into AGENTS.md §7**. Newer Codex does support hooks and
+  custom agents, but porting is deferred due to orchestration / session-pair semantic limits
+  (a design decision, not an architectural impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
 
 ## Targets
 

@@ -28,15 +28,16 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 `--dest` 생략 시 `~/.<target>`이 기본값이며, 라이브 디렉터리에 쓰려면 `--allow-live`가 필요하다.
 `--dry-run`으로 쓰기 없이 plan을 미리 본다.
 
-- **claude** — inclusion set(88 files)의 verbatim copy. `settings.json`은
+- **claude** — inclusion set(87 files)의 verbatim copy. `settings.json`은
   `settings.json.template`에서 생성(`<USERNAME>` 치환, `_template` strip)되어 기존 파일과
   **merge**되므로 머신/runtime 키(예: `skipWorkflowUsageWarning`)가 보존된다.
   라이브 `HANDOFF.md` / `RESULT.md`는 절대 덮어쓰지 않는다(skip-if-exists).
 - **codex** — portable subset을 Codex-native 경로로 transform: curated `AGENTS.md`,
   `skills/` 아래 17 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`).
-  Claude-machinery(subagent routing, hooks, Two-CLI roles, 7 routing skills)는 현재 codex adapter가
-  **드롭**한다 — Codex 신버전도 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱 한계로
-  포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
+  Claude-machinery(subagent routing, hooks, `_mode` 조건부 inject, 7 Claude-machinery skills
+  [routing 5 + harness 2])는 현재 codex adapter가 **드롭**하나, **Two-CLI 역할(roles)은 AGENTS.md §7로
+  cross-vendor curate된다**. Codex 신버전도 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱
+  한계로 포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
 
 ## Targets
 
