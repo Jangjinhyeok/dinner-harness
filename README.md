@@ -46,3 +46,84 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 
 codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 native/degraded/dropped
 회계는 `CODEX-COVERAGE.md` 참조.
+
+## 하네스 구성 (capabilities)
+
+이 하네스가 보유한 skills·agents·hooks. _frontmatter 파생 snapshot — skill/agent 변경 시 갱신 필요._ codex 타깃에서 어느 항목이 native/degraded/dropped인지는 `CODEX-COVERAGE.md` 참조.
+
+### Skills (24)
+
+**메타원칙 (5)**
+- `simplicity-first` — 최소 코드만, 과설계·추측 기반 유연성 방지
+- `surgical-changes` — 요청 범위 밖 수정·무관 리팩토링 차단 (라이브 서비스 핵심)
+- `think-before-coding` — 코딩 전 가정 명시·옵션 제시·질문
+- `goal-driven-execution` — 모호한 작업을 검증 가능한 목표로 변환
+- `search-first` — 코드 작성 전 기존 구현·라이브러리 검색·채택
+
+**컨텍스트·검증 (7)**
+- `verification-loop` — 세션 변경 검증 시스템
+- `eval-harness` — eval-driven development 평가 프레임워크
+- `strategic-compact` — 논리적 구간에서 수동 context compaction 제안
+- `iterative-retrieval` — 컨텍스트 점진 정제 (subagent context 문제)
+- `scope-check` — 원 계획 대비 scope creep 감사·정량화
+- `perf-profile` — 병목 분석·예산 대비 측정·최적화 우선순위
+- `tech-debt` — 기술 부채 추적·분류·상환 스케줄
+
+**워크플로 (5)**
+- `changelog` — git 커밋에서 changelog 자동 생성 (내부 + 플레이어용)
+- `hotfix` — 긴급 수정 워크플로 (심각도·롤백 플랜·감사 추적)
+- `codebase-onboarding` — 낯선 코드베이스 분석·온보딩 가이드 (엔진 인식)
+- `arch-review` — 아키텍처·품질 코드 리뷰 (SOLID·테스트 가능성·성능)
+- `learnings-review` — `learning_log` 포착 반복 실패를 CLAUDE.md/메모리로 승격
+
+**UE 라우팅 (6)**
+- `ue` — 멀티 서브시스템 Unreal 작업을 `unreal-specialist` 허브로 라우팅
+- `bp` — Blueprint 아키텍처를 `ue-blueprint-specialist`로 직접 라우팅
+- `gas` — GAS를 `ue-gas-specialist`로 직접 라우팅
+- `umg` — UMG/CommonUI를 `ue-umg-specialist`로 직접 라우팅
+- `repl` — replication/netcode를 `ue-replication-specialist`로 직접 라우팅
+- `ue-umg-review` — UMG 위젯 리뷰·설계 (UE5)
+
+**harness (1)**
+- `harness-review` — dinner-harness repo 자체를 wiring·conformance 두 렌즈로 리뷰
+
+### Agents (21)
+
+**_core (6)**
+- `architect` — 시스템 설계·확장성·기술 결정
+- `code-reviewer` — 코드 품질·보안·유지보수성 리뷰
+- `cpp-build-resolver` — C++ 빌드·CMake·링커·템플릿 에러 해결 (최소 변경)
+- `cpp-reviewer` — C++ 메모리 안전·모던 idiom·동시성·성능 리뷰
+- `planner` — 복잡 기능·리팩토링 계획
+- `tdd-guide` — 테스트 우선 방법론 (80%+ 커버리지)
+
+**_gamedev (5)**
+- `gameplay-programmer` — 게임 메커닉·전투·플레이어 시스템 구현
+- `network-programmer` — 멀티플레이어 netcode·lag 보상·매치메이킹
+- `performance-analyst` — 성능 프로파일링·병목·최적화 전략
+- `tools-programmer` — 에디터 확장·콘텐츠 도구·파이프라인 자동화
+- `ui-programmer` — 메뉴·HUD·인벤토리·UI 위젯 구현
+
+**_ue (5)**
+- `unreal-specialist` — UE5 작업 허브 (GAS·BP·UMG·replication sub로 fan-out)
+- `ue-blueprint-specialist` — Blueprint 아키텍처·BP/C++ 경계·최적화
+- `ue-gas-specialist` — GAS: ability·effect·attribute·tag·prediction
+- `ue-replication-specialist` — property replication·RPC·client prediction·relevancy
+- `ue-umg-specialist` — UMG/CommonUI: widget hierarchy·data binding·input
+
+**_unity (5)**
+- `unity-specialist` — Unity 작업 허브 (DOTS·shader·addressables·UI sub로 fan-out)
+- `unity-dots-specialist` — DOTS/ECS·Jobs·Burst
+- `unity-shader-specialist` — Shader Graph·VFX Graph·render pipeline (URP/HDRP)
+- `unity-addressables-specialist` — asset 로딩·번들·메모리·content catalog
+- `unity-ui-specialist` — UI Toolkit·UGUI·data binding·런타임 UI 성능
+
+### Hooks (5)
+
+상세 발화 흐름·운영 모드는 `assets/claude/README.md` + `assets/claude/hooks/README.md` 참조.
+
+- `secret_scan` (PreToolUse) — 입력에서 시크릿·민감 파일경로 regex 검출 (enforce, 차단형)
+- `scope_check` (PreToolUse) — cycle 스코프 밖 수정 + hook 인프라 보호 (dryrun, always-block 즉시 차단)
+- `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
+- `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
+- `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 위임 nudge 주입 (advisory)
