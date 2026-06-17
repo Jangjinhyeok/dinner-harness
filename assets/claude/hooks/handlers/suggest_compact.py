@@ -5,10 +5,6 @@ stderr at a threshold, then periodically. This hook NEVER blocks — it
 always exits 0. The suggestion is advisory; the user decides whether to
 compact (see skills/strategic-compact/SKILL.md decision guide).
 
-Staged here in the skill dir because hooks/handlers/ is always-block
-(scope_check). Install via the off-ceremony documented in
-hooks/README.md: move this file to hooks/handlers/suggest_compact.py.
-
 Config (env): COMPACT_THRESHOLD (default 50) — tool calls before the
 first suggestion; reminders fire every 25 calls thereafter.
 """

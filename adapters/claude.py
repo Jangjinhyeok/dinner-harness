@@ -3,7 +3,7 @@
 stdlib only. Invoked by install.py. Three operations, driven by harness.toml's
 [targets.claude]:
   - copy          : verbatim byte-exact copy (file or recursive dir, honoring excludes)
-  - template/merge: <USERNAME> substitution; for JSON dests drop strip_keys; a `merge`
+  - template/merge: <USERNAME> + <CLAUDE_HOME> substitution; for JSON dests drop strip_keys; a `merge`
                     entry preserves existing dest keys the template does not own
   - skip_if_exists: write only when the dest does not already exist (never clobber)
 
@@ -46,6 +46,7 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     repo_root = Path(repo_root)
     dest_root = Path(dest_root)
     token = vars_cfg.get("username_token", "<USERNAME>")
+    home_token = vars_cfg.get("claude_home_token", "<CLAUDE_HOME>")
     exclude_dirs = set(target_cfg.get("exclude_dir_names", []))
     exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
     plan = []
@@ -61,7 +62,7 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     for entry in target_cfg.get("template", []):
         src = repo_root / entry["src"]
         dest = dest_root / entry["dest"]
-        text = src.read_text(encoding="utf-8").replace(token, username)
+        text = src.read_text(encoding="utf-8").replace(token, username).replace(home_token, dest_root.as_posix())
         strip_keys = entry.get("strip_keys", [])
         merge = entry.get("merge", False)
         if dest.name.endswith(".json") and (strip_keys or merge):

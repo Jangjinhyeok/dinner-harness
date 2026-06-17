@@ -7,9 +7,12 @@ name = "dinner-harness"
 description = "Custom harness: tool-neutral content/ + claude-native assets/claude/, installed per target."
 
 [vars]
-# Token used inside templated source files; the adapter substitutes the real value
-# (resolved from the install environment / --username) at install time.
+# Tokens used inside templated source files; the adapter substitutes the real value
+# at install time. username_token from the install environment / --username;
+# claude_home_token from the install dest (drive + path), so hook command paths are
+# not pinned to C: and follow a custom --dest.
 username_token = "<USERNAME>"
+claude_home_token = "<CLAUDE_HOME>"
 
 [targets.claude]
 # Verbatim copies. Each entry: [src (repo-relative), dest (target-root-relative)].
