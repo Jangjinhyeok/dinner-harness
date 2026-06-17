@@ -37,9 +37,11 @@ Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requ
   17 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`).
   Claude-machinery (subagent routing, hooks, `_mode` conditional inject, 7 Claude-machinery
   skills [5 routing + 2 harness]) is currently **dropped** by the codex adapter, but the
-  **Two-CLI roles are cross-vendor curated into AGENTS.md §7**. Newer Codex does support hooks and
-  custom agents, but porting is deferred due to orchestration / session-pair semantic limits
-  (a design decision, not an architectural impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
+  **Two-CLI roles are cross-vendor curated into AGENTS.md §7** (bidirectional — see "Two-CLI
+  collaboration" below). What's dropped is `_mode`'s file-glob auto-inject (no Codex equivalent →
+  modes are entered by explicit declaration) plus hooks / subagent orchestration; the latter is
+  supported by newer Codex but adapter porting is deferred (a design decision, not an architectural
+  impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
 
 ## Targets
 
@@ -49,6 +51,22 @@ Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requ
 
 See `CODEX-RECON.md` for the codex feasibility analysis (build vs adopt) and
 `CODEX-COVERAGE.md` for the per-content native/degraded/dropped accounting.
+
+## Two-CLI collaboration (cross-vendor)
+
+Large work runs as two CLI sessions — **Architect** (design/review) and **Builder**
+(implementation). Both roles are vendor-neutral; either Codex or Claude can play either role
+(e.g. Codex=Architect / Claude=Builder, or the reverse). They communicate through project-root
+files `HANDOFF.md` (Architect→Builder), `RESULT.md` (Builder→Architect), and `INPUT.md`
+(optional) — a vendor-neutral bus needing no runtime IPC/MCP.
+
+- **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/` (auto-injected when a
+  communication file matches its paths glob).
+- **Codex**: the same protocol is curated into `assets/codex/AGENTS.md` §7. Codex has no paths
+  auto-inject, so modes are entered by **explicit declaration** ("architect/builder mode").
+
+Being file-based, it works on Codex 0.111+; only the Architect's optional subagent delegation
+uses 0.140+. Full protocol: `content/instructions/CLAUDE.md` §2.
 
 ## What's inside (capabilities)
 

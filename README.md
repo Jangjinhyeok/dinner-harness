@@ -36,8 +36,9 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
   `skills/` 아래 17 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`).
   Claude-machinery(subagent routing, hooks, `_mode` 조건부 inject, 7 Claude-machinery skills
   [routing 5 + harness 2])는 현재 codex adapter가 **드롭**하나, **Two-CLI 역할(roles)은 AGENTS.md §7로
-  cross-vendor curate된다**. Codex 신버전도 hooks·custom agents를 지원하나 orchestration·세션페어 시맨틱
-  한계로 포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
+  cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 드롭된 건 `_mode`의 file-glob 자동 inject
+  (Codex 대응 기제 없음 → 모드 명시 선언으로 진입)와 hooks·subagent orchestration이며, 후자는 Codex
+  신버전이 지원하나 adapter 포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
 
 ## Targets
 
@@ -47,6 +48,20 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 
 codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 native/degraded/dropped
 회계는 `CODEX-COVERAGE.md` 참조.
+
+## Two-CLI 협업 (cross-vendor)
+
+큰 작업은 두 CLI 세션을 나눠 운용한다 — **Architect**(설계·검토)와 **Builder**(구현). 두 역할은
+vendor-neutral하며 Codex·Claude 어느 쪽이든 어느 역할이든 맡는다(예: Codex=Architect / Claude=Builder,
+또는 역방향). 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·
+`INPUT.md`(선택) 파일 — 런타임 IPC/MCP 불필요한 vendor-neutral 버스다.
+
+- **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/`(통신 파일 paths 매칭 시 자동 inject).
+- **Codex**: 동일 프로토콜을 `assets/codex/AGENTS.md` §7로 curate. Codex엔 paths 자동 inject가 없어 모드는
+  **명시 선언**("architect/builder 모드")으로 진입한다.
+
+파일 기반이라 Codex 0.111+에서 동작하며, Architect의 옵션 서브에이전트 위임만 0.140+를 쓴다. 상세 규약은
+`content/instructions/CLAUDE.md` §2 참조.
 
 ## 하네스 구성 (capabilities)
 
