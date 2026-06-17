@@ -51,7 +51,7 @@ CLAUDE.md §2의 단일 세션 원칙을 따른다. 다음은 **메인 세션에
 
 ## 위임 시 규약
 
-- 허브/하위 specialist는 승인 게이트("May I write this to [filepath]?")를 지킨다 — 사용자 승인 전 Write/Edit 금지.
+- 승인 게이트는 **risk tier로 갈린다**(per `~/.claude/rules/autonomy-policy.md`). **LOW** tier 작업은 선언된 스코프(HANDOFF ` ```scope ` 또는 합의된 변경 범위) 안에서 specialist가 사용자 승인 없이 Write/Edit 한다 — `scope_check` hook이 범위 밖 수정을 deterministic하게 차단하는 안전망이다. **HIGH** tier 작업은 종전대로 승인 게이트("May I write this to [filepath]?")를 지킨다 — 사용자 종단 서명 전 Write/Edit 금지.
 - 독립적인 하위 작업은 병렬 Task로 띄운다.
 - 위임 프롬프트에 관련 파일 경로·설계 제약·성능 요구를 모두 담는다.
 

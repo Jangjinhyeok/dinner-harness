@@ -9,7 +9,7 @@ paths: ['**/HANDOFF.md', '**/INPUT.md']
 ## 행동 규약
 
 - HANDOFF.md는 read-only spec이다. Builder는 HANDOFF.md를 수정하지 않는다.
-- 각 게이트 완료마다 사용자에게 보고하고 다음 게이트 진행 승인을 받는다. 일괄 진행 금지.
+- 각 게이트는 risk tier로 갈린다(per `~/.claude/rules/autonomy-policy.md`). **LOW** 게이트는 검증·`adversarial-review` 패널 PASS 시 자동 진행, **HIGH** 게이트와 전체 종료는 사용자 종단 서명까지 대기. 검증 없는 일괄 스킵은 금지.
 - 모든 게이트 완료(또는 중단) 후 RESULT.md를 작성하여 Architect에게 결과를 넘긴다.
 - HANDOFF.md가 명시하지 않은 파일은 수정하지 않는다. CLAUDE.md, ROLE 파일, settings 등 인프라 파일도 마찬가지.
 
