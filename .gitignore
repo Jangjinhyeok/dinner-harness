@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+# hook handler logs (runtime; also excluded from the harness copy manifest)
+logs/
+# JetBrains IDE
+.idea/
