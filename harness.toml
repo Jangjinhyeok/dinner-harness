@@ -74,5 +74,20 @@ skills_src = "content/skills"
 skills_dest = "skills"
 skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review", "adversarial-review"]
 
+# Codex 0.140+ native hooks. Copy only the portable Python implementation;
+# Claude launchers are intentionally excluded because they point at ~/.claude.
+hooks_copy = [
+  ["assets/claude/hooks/handlers", "hooks/handlers"],
+  ["assets/claude/hooks/lib",      "hooks/lib"],
+  ["assets/claude/hooks/rules",    "hooks/rules"],
+  ["assets/claude/hooks/README.md", "hooks/README.md"],
+]
+hooks_json = true
+
+# Codex 0.140+ custom agents. Markdown frontmatter/body is converted to
+# ~/.codex/agents/*.toml by adapters/codex.py.
+agents_src = "content/agents"
+agents_dest = "agents"
+
 exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]

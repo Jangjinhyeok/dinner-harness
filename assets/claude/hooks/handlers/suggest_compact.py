@@ -32,7 +32,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 
 _HOOK_NAME = "suggest_compact"
 _EVENT = "PreToolUse"
-_TARGET_TOOLS = {"Edit", "Write"}
+_TARGET_TOOLS = {"Edit", "Write", "apply_patch"}  # apply_patch = Codex edit tool
 _DEFAULT_THRESHOLD = 50
 _REMINDER_INTERVAL = 25
 # Counter state lives under hooks/logs/ (gitignored, writable).

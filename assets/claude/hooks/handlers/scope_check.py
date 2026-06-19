@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
     get_cwd,
     get_env_override,
     log_event,
+    parse_apply_patch,
     read_hook_input,
     run_handler,
 )
@@ -46,10 +48,13 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 
 _HOOK_NAME = "scope_check"
 _EVENT = "PreToolUse"
-_CLAUDE_HOME = Path.home() / ".claude"
+_HARNESS_HOME = Path(os.environ.get("DINNER_HARNESS_HOME", str(_HOOKS_ROOT.parent))).resolve(strict=False)
 _RULES_PATH = _HOOKS_ROOT / "rules" / "scope_protect.json"
-_HANDOFF_PATH = _CLAUDE_HOME / "HANDOFF.md"
-_TARGET_TOOLS = {"Edit", "Write"}
+_HANDOFF_PATH = _HARNESS_HOME / "HANDOFF.md"
+# "apply_patch" is Codex 0.141's file-edit tool (CODEX-PREFLIGHT.md §3); it
+# carries the patch in tool_input.command, not a single file_path. Inert on
+# Claude (never emitted), active on Codex.
+_TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
 
 # Absolute-path detector. Matches Windows ``C:/...`` / ``C:\...`` and
 # POSIX-style ``/...``. Used in place of ``PurePath.is_absolute`` to
@@ -76,7 +81,7 @@ def _drive_lower(posix_path: str) -> str:
     return posix_path
 
 
-_CLAUDE_HOME_POSIX = _drive_lower(_CLAUDE_HOME.as_posix()).rstrip("/")
+_HARNESS_HOME_POSIX = _drive_lower(_HARNESS_HOME.as_posix()).rstrip("/")
 
 
 def _classify_pattern(spec: str) -> str:
@@ -143,7 +148,7 @@ def _load_always_block() -> list[Pattern]:
             continue
         # Join ~/.claude/ prefix with the relative path. Both sides are
         # already canonical POSIX, so no resolve() is required.
-        normalized = _CLAUDE_HOME_POSIX + "/" + rel.lstrip("/")
+        normalized = _HARNESS_HOME_POSIX + "/" + rel.lstrip("/")
         out.append(Pattern(raw=rel, normalized=normalized, match_type=match_type))
     return out
 
@@ -156,8 +161,8 @@ def _match_always_block(
     Always-block applies only inside ``~/.claude/`` (Section 2 / 6.4).
     """
     if not (
-        abs_path == _CLAUDE_HOME_POSIX
-        or abs_path.startswith(_CLAUDE_HOME_POSIX + "/")
+        abs_path == _HARNESS_HOME_POSIX
+        or abs_path.startswith(_HARNESS_HOME_POSIX + "/")
     ):
         return None
     for entry in entries:
@@ -212,6 +217,19 @@ def _load_handoff_scope(cwd: Path) -> Optional[list[Pattern]]:
     return patterns if patterns else None
 
 
+def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
+    """Return the file paths a tool call targets.
+
+    Edit/Write carry a single ``file_path``; Codex ``apply_patch`` carries a
+    patch body in ``command`` referencing one or more paths.
+    """
+    if tool_name == "apply_patch":
+        command = tool_input.get("command", "") or ""
+        return [p for p, _ in parse_apply_patch(command)]
+    file_path = tool_input.get("file_path", "") or ""
+    return [file_path] if file_path else []
+
+
 def main() -> None:
     payload = read_hook_input()
 
@@ -233,65 +251,70 @@ def main() -> None:
         exit_allow()
 
     tool_input = payload.get("tool_input") or {}
-    file_path = tool_input.get("file_path", "") or ""
-    if not file_path:
-        # Empty path is Claude Code's responsibility.
+    raw_paths = _extract_paths(tool_name, tool_input)
+    if not raw_paths:
+        # No resolvable path (empty Edit/Write, or an apply_patch we could not
+        # parse) — defer to the host.
         exit_allow()
 
     cwd = get_cwd(payload)
-    abs_path = _normalize_path(file_path, cwd)
+    abs_paths = [_normalize_path(p, cwd) for p in raw_paths]
 
+    # Always-block: any targeted path inside the harness home blocks the call.
     always_entries = _load_always_block()
-    hit = _match_always_block(abs_path, always_entries)
-    if hit is not None:
-        log_event(
-            _HOOK_NAME,
-            event=_EVENT,
-            decision="block",
-            reason=f"always_block:{hit.raw}",
-            tool_name=tool_name,
-            file_path=abs_path,
-            match_pattern=hit.raw,
-            match_type=hit.match_type,
-            mode=mode,
-        )
-        exit_block(
-            f"[scope_check:block] always-block: {abs_path} matched {hit.raw}"
-        )
+    for abs_path in abs_paths:
+        hit = _match_always_block(abs_path, always_entries)
+        if hit is not None:
+            log_event(
+                _HOOK_NAME,
+                event=_EVENT,
+                decision="block",
+                reason=f"always_block:{hit.raw}",
+                tool_name=tool_name,
+                file_path=abs_path,
+                match_pattern=hit.raw,
+                match_type=hit.match_type,
+                mode=mode,
+            )
+            exit_block(
+                f"[scope_check:block] always-block: {abs_path} matched {hit.raw}"
+            )
 
     scope_patterns = _load_handoff_scope(cwd)
     if not scope_patterns:
         # fail-open: codeblock absent / empty means this cycle opts out.
         exit_allow()
 
-    for p in scope_patterns:
-        if _matches(abs_path, p):
-            exit_allow()
+    # Scope codeblock: every targeted path must match an entry; the first
+    # out-of-scope path warns (dryrun) or blocks (enforce).
+    for abs_path in abs_paths:
+        if any(_matches(abs_path, p) for p in scope_patterns):
+            continue
+        fields = {
+            "event": _EVENT,
+            "tool_name": tool_name,
+            "file_path": abs_path,
+            "mode": mode,
+        }
+        if mode == "enforce":
+            log_event(
+                _HOOK_NAME,
+                decision="block",
+                reason="out_of_scope",
+                **fields,
+            )
+            exit_block(f"[scope_check:block] {abs_path} not in HANDOFF.md scope")
+        else:
+            # dryrun (default) and any unknown mode value collapsed to dryrun.
+            log_event(
+                _HOOK_NAME,
+                decision="warn",
+                reason="out_of_scope (dryrun)",
+                **fields,
+            )
+            exit_warn(f"[scope_check:warn:dryrun] {abs_path} not in HANDOFF.md scope")
 
-    fields = {
-        "event": _EVENT,
-        "tool_name": tool_name,
-        "file_path": abs_path,
-        "mode": mode,
-    }
-
-    if mode == "enforce":
-        log_event(
-            _HOOK_NAME,
-            decision="block",
-            reason="out_of_scope",
-            **fields,
-        )
-        exit_block(f"[scope_check:block] {abs_path} not in HANDOFF.md scope")
-    else:
-        # dryrun (default) and any unknown mode value collapsed to dryrun.
-        log_event(
-            _HOOK_NAME,
-            decision="warn",
-            reason="out_of_scope (dryrun)",
-            **fields,
-        )
-        exit_warn(f"[scope_check:warn:dryrun] {abs_path} not in HANDOFF.md scope")
+    exit_allow()
 
 
 if __name__ == "__main__":

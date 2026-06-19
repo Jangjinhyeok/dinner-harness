@@ -2,10 +2,10 @@
 
 이 문서는 Codex의 `~/.codex/AGENTS.md`로 로드되는 사용자 레벨 지침이다. 프로젝트별 `AGENTS.md`가 있으면 그것과 함께 들어가며, 프로젝트별 지침이 더 구체적이고 우선한다. 목적은 도메인과 무관한 **메타 원칙**과 **개인 작업 스타일**을 명문화하는 것이다.
 
-이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. **Two-CLI 역할 모드(Architect/Builder)는 cross-vendor로 지원된다 — §7 참조.** 그 외 Claude 전용 기제(subagent 위임 라우팅, hook enforcement)는 이 codex 설치에 **포팅돼 있지 않고**, `_mode` 파일 자동 inject(paths 매칭)도 Codex 대응 기제가 없어 미대응이다(Two-CLI 모드는 명시 선언으로 진입 — §7). 현행 Codex는 hooks·custom agents를 지원하나 orchestration·hook 포팅은 설계 결정으로 보류다(아키텍처 불가가 아님; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
+이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. **Two-CLI 역할 모드(Architect/Builder)는 cross-vendor로 지원된다 — §7 참조.** custom agents(21개) + hooks는 이제 이 codex 설치에 **포팅돼 있다**(adapter v2, Codex 0.141). 단 **hooks는 advisory다** — 발화·로그·warn은 하지만 hard block은 안 한다(Codex의 실제 차단은 PreToolUse 훅 exit-2가 아니라 sandbox/approval 레이어; 검증 = dinner-harness `CODEX-PREFLIGHT-2.md`). `_mode` 파일 자동 inject(paths 매칭)와 depth-2 다중hop 위임은 여전히 미대응이다(Two-CLI 모드는 명시 선언으로 진입 — §7; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
 
 > **Codex 환경 안전 노트 (중요):**
-> - **Enforcement 미배포**: `secret_scan`·`scope_check` 류의 hook 차단은 **이 codex 설치엔 배포돼 있지 않다**(현행 Codex는 hooks를 지원하나 미포팅 — `CODEX-RECON.md` 참조). 따라서 시크릿 유출·스코프 침범 방지는 이 문서에서 **advisory(권고)**일 뿐이며, 실제 안전망은 **사용자와 Codex sandbox의 책임**이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
+> - **Hooks는 advisory (hard block 아님)**: `secret_scan`·`scope_check` 훅은 이제 포팅돼 **발화·로그·warn은 하지만**, Codex 0.141에서 PreToolUse exit-2가 파일 편집(`apply_patch`)을 **차단하지 못한다**(검증 = `CODEX-PREFLIGHT-2.md`; 실제 차단점은 file-change approval·sandbox 레이어). 따라서 시크릿 유출·스코프 침범의 hard 방지는 **사용자 + Codex sandbox/approval의 책임**이며 이 훅들은 경고일 뿐이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
 > - **MCP**: Codex MCP 서버는 머신별 수동 등록이다(`~/.codex/config.toml` `[mcp_servers]`). 이 문서는 MCP를 구성하지 않는다.
 
 ---

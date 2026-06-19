@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import traceback
@@ -50,6 +51,42 @@ def get_cwd(payload: dict) -> Path:
 
 def get_env_override(name: str, default: Any = None) -> Any:
     return os.environ.get(name, default)
+
+
+# Codex 0.141 sends file edits as tool_name="apply_patch" with the patch body in
+# tool_input.command (a "*** Begin Patch ... *** End Patch" envelope) instead of
+# Claude's Edit/Write file_path+content shape (verified: CODEX-PREFLIGHT.md §3).
+# File paths live on the "*** Add/Update/Delete File:" and "*** Move to:" marker
+# lines; added content is the "+"-prefixed hunk lines.
+_APPLY_PATCH_PATH_RE = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$")
+
+
+def parse_apply_patch(command: str) -> list[tuple[str, str]]:
+    """Parse an apply_patch command body into ``[(path, added_text), ...]``.
+
+    One entry per referenced path (``added_text`` is ``""`` for a delete or a
+    rename-source marker). Best-effort: any non-marker, non-``+`` line is
+    ignored, so malformed input degrades to fewer entries rather than raising
+    (handlers fail-open regardless).
+    """
+    results: list[tuple[str, str]] = []
+    cur_path: str | None = None
+    added: list[str] = []
+
+    def _flush() -> None:
+        if cur_path is not None:
+            results.append((cur_path, "\n".join(added)))
+
+    for line in (command or "").splitlines():
+        m = _APPLY_PATCH_PATH_RE.match(line)
+        if m:
+            _flush()
+            cur_path = m.group(1).strip()
+            added = []
+        elif line.startswith("+"):
+            added.append(line[1:])
+    _flush()
+    return results
 
 
 def log_event(hook_name: str, **fields: Any) -> None:

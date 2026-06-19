@@ -42,6 +42,8 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
 ## Porting Plan (Codex ≥0.140 업그레이드 후 실행 — codex adapter v2)
 
+> **※ Cycle 3 구현 갱신 (2026-06-19):** 아래 Phase A(hooks)·Phase B(agents)가 `adapters/codex.py` v2로 **구현·로컬 검증**됨(Codex `0.141`). 산출물·검증·잔존 = `CODEX-COVERAGE.md` "Cycle 3 / adapter v2" 노트. **Preflight 완료**(`CODEX-PREFLIGHT.md`·`-2.md`): hooks.json 스키마 native 일치 ✓ / 편집 tool = `apply_patch`(`tool_input.command` 패치) → 핸들러 배선·검증 완료 ✓ / hub→leaf depth-1 동작·depth-2 차단 ✓ / skill 경로 `~/.codex/skills` 유효 ✓. **핵심 정정**: Codex 0.141은 PreToolUse exit-2로 `apply_patch`를 hard block하지 않음 → 포팅 hooks는 **advisory**(hard enforce = sandbox/approval 레이어). **남은 후속**: Phase C(route_nudge Codex 표현)·env 이름(`CLAUDE_*`) Codex 정리·(원하면) approval-layer enforce.
+
 > 실행 = **별도 cycle**(이 플랜이 그 HANDOFF의 기반). 본 cycle은 플랜 기록만.
 
 **선결**: 사용자 Codex 0.111.0 → **≥0.140 업그레이드**(무료). 포팅은 hand-edit 아니라 **codex adapter v2(`codex.py` 확장)**로 repo canonical → `~/.codex` 생성(source-of-truth 유지).

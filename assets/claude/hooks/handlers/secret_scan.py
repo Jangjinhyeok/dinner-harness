@@ -31,6 +31,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
     exit_warn,
     get_env_override,
     log_event,
+    parse_apply_patch,
     read_hook_input,
     run_handler,
 )
@@ -39,7 +40,9 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 _HOOK_NAME = "secret_scan"
 _EVENT = "PreToolUse"
 _RULES_PATH = _HOOKS_ROOT / "rules" / "secret_patterns.json"
-_TARGET_TOOLS = {"Edit", "Write", "Bash"}
+# "apply_patch" is Codex 0.141's file-edit tool (CODEX-PREFLIGHT.md §3); Claude
+# never emits it, so listing it here is inert on Claude and active on Codex.
+_TARGET_TOOLS = {"Edit", "Write", "Bash", "apply_patch"}
 
 
 class Match(NamedTuple):
@@ -117,6 +120,19 @@ def _scan(tool_name: str, tool_input: dict, patterns: dict) -> Optional[Match]:
         if m:
             return m
         return _scan_against(command, content_rules, "content", "<command>")
+
+    if tool_name == "apply_patch":
+        # Codex patch envelope: scan each referenced path (path_rules) and its
+        # added "+" content (content_rules). First match wins.
+        command = tool_input.get("command", "") or ""
+        for path, added in parse_apply_patch(command):
+            m = _scan_against(path, path_rules, "path", path or "<apply_patch path>")
+            if m:
+                return m
+            m = _scan_against(added, content_rules, "content", path or "<apply_patch content>")
+            if m:
+                return m
+        return None
 
     return None
 
