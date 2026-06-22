@@ -71,6 +71,48 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 파일 기반이라 Codex 0.111+에서 동작하며, Architect의 옵션 서브에이전트 위임만 0.140+를 쓴다. 상세 규약은
 `content/instructions/CLAUDE.md` §2 참조.
 
+## 사용법
+
+**전제**: `install.py`로 `~/.claude`(+`~/.codex`) 생성 완료. real backend로 Codex Builder를 돌리려면 `codex` CLI
+인증 + **codex 0.140+** 필요(미인증/실패 시 아래 dispatch는 자동으로 수동 fallback을 안내한다).
+
+### 1) 기본 — orchestrated single-pane (별도 Codex 터미널 불필요)
+
+작업할 프로젝트 디렉터리에서 인터랙티브 Claude를 띄우고:
+
+1. **`architect 모드`** 선언 → 작업 의도를 전달한다.
+2. Claude가 코드베이스를 탐색하고 옵션을 제시·합의한 뒤 **`HANDOFF.md`**(게이트·스코프·risk tier)를 작성한다.
+3. **HANDOFF를 승인**하면(= 시작 게이트), Claude가 자동으로
+   `py -3 ~/.claude/orchestrate.py build --repo . --backend real`을 호출해 **Codex Builder를 headless dispatch**한다.
+4. Codex가 스코프 안에서 구현하고 `RESULT.md`를 쓴다. controller-side safety net(scope/secret)이 hard gate.
+5. Claude가 `RESULT.md` + `git diff`를 **같은 세션에서 리뷰**한다. HIGH 게이트면 merge/apply 전 **사람 종단 서명**을 받는다.
+6. `BLOCKED`/codex 에러면 자동 진행하지 않고 수동 fallback(아래 ③)을 안내한다.
+
+> 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행한다 — Two-CLI는 오버헤드.
+
+### 2) orchestrator 직접 호출 (선택)
+
+```
+# 기존 HANDOFF.md로 Builder만 1회 (single-pane이 내부에서 쓰는 그 명령)
+py -3 ~/.claude/orchestrate.py build --repo . --backend real
+
+# Architect·Builder 양쪽 완전 headless (사람은 경계에만)
+py -3 ~/.claude/orchestrate.py run --goal "..." --backend real --repo .
+
+# CLI 없이 오프라인 스모크
+py -3 ~/.claude/orchestrate.py build --repo . --backend mock
+```
+
+### 3) 수동 dual-session (fallback·역방향 페어링)
+
+한 세션에서 `architect 모드`로 `HANDOFF.md`를 쓰고, **다른 세션(예: Codex 터미널)**에서 `builder 모드`로
+그 HANDOFF를 실행한 뒤 `RESULT.md`로 돌려준다. 통신은 프로젝트 루트의 버스 파일.
+
+### 4) 하네스 자체를 수정할 때
+
+`~/.claude`·`~/.codex`를 직접 고치지 말고 — repo의 canonical 트리(`content/`·`assets/`)를 편집 → `py -3 check.py`로
+정합 확인 → `py -3 install.py --target claude --allow-live`(필요 시 `--target codex`)로 재생성한다.
+
 ## 하네스 구성 (capabilities)
 
 이 하네스가 보유한 skills·agents·hooks. _frontmatter 파생 snapshot — skill/agent 변경 시 갱신 필요._ codex 타깃에서 어느 항목이 native/degraded/dropped인지는 `CODEX-COVERAGE.md` 참조.
