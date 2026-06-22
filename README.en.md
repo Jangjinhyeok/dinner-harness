@@ -59,13 +59,21 @@ See `CODEX-RECON.md` for the codex feasibility analysis (build vs adopt) and
 
 ## Two-CLI collaboration (cross-vendor)
 
-Large work runs as two CLI sessions — **Architect** (design/review) and **Builder**
-(implementation). Both roles are vendor-neutral; either Codex or Claude can play either role.
-**Default: Claude=Architect / Codex=Builder** (the reverse also works) — the Builder is the token
-sink, so it lands on the higher-quota plan (Codex) while the low-volume Architect runs on the
-quota-constrained one (Claude Pro). They communicate through project-root
-files `HANDOFF.md` (Architect→Builder), `RESULT.md` (Builder→Architect), and `INPUT.md`
-(optional) — a vendor-neutral bus needing no runtime IPC/MCP.
+Large work is split into two roles — **Architect** (design/review) and **Builder**
+(implementation). "Two-CLI" means **two roles / two CLI engines** (Claude·Codex), not two
+interactive terminals you tend. Both roles are vendor-neutral; either Codex or Claude can play
+either role. **Default: Claude=Architect / Codex=Builder** (the reverse also works) — the Builder
+is the token sink, so it lands on the higher-quota plan (Codex) while the low-volume Architect runs
+on the quota-constrained one (Claude Pro).
+
+Three operating modes (all communicate through project-root `HANDOFF.md` / `RESULT.md` /
+`INPUT.md` — a vendor-neutral bus needing no runtime IPC/MCP):
+- **orchestrated single-pane (default)** — one interactive Claude session auto-dispatches the Codex
+  Builder headless via `orchestrate.py build` after HANDOFF approval (**no separate Codex terminal**),
+  then reviews RESULT in the same session.
+- **manual dual-session** — a human opens both interactive sessions and couriers via the bus
+  (reverse pairing, same-vendor, or fallback).
+- **fully headless** — `orchestrate.py run` drives both sides headless.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/` (auto-injected when a
   communication file matches its paths glob).
