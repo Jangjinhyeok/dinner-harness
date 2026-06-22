@@ -30,8 +30,8 @@ fresh), so no session-resume is needed.
 # Offline smoke — no CLIs needed. Drives a full LOW cycle against a mock vendor.
 py -3 orchestrate.py run --goal "add a feature flag reader" --backend mock --yes --repo /path/to/scratch
 
-# Real cross-vendor run (Codex=Architect, Claude=Builder).
-py -3 orchestrate.py run --goal "..." --architect codex --builder claude \
+# Real cross-vendor run (default: Claude=Architect, Codex=Builder).
+py -3 orchestrate.py run --goal "..." --architect claude --builder codex \
     --backend real --repo /path/to/work-repo
 ```
 

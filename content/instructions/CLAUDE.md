@@ -88,13 +88,19 @@
 
 ### Cross-vendor 역할 분담
 
-Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**. 두 역할 모두 vendor-neutral한 협업 프로토콜이며 Claude·Codex 어느 쪽이든 어느 역할이든 맡을 수 있다. 예시 페어링:
+Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**. 두 역할 모두 vendor-neutral한 협업 프로토콜이며 Claude·Codex 어느 쪽이든 어느 역할이든 맡을 수 있다.
 
-- **Codex = Architect, Claude = Builder** (설계·추론은 Codex, 코드베이스 내 구현은 Claude)
-- **Claude = Architect, Codex = Builder** (역방향)
+**기본 페어링은 Claude = Architect, Codex = Builder다.** 근거는 token economy — 두 역할의 토큰 소비는 비대칭이다. **Builder가 token sink**다(여러 파일 Read, diff 생성, 빌드·에러 iterate 반복, 큰 컨텍스트, tool call 다발). 반면 **Architect는 low-volume·high-leverage**다(추론, 선별 Read, HANDOFF spec 작성, diff 검수). 따라서 토큰 무거운 Builder를 **quota 여유가 큰 plan(Codex)**에, 가벼운 Architect를 **quota가 빠듯한 plan(Claude Pro)**에 둔다 — Claude Max→Pro 다운그레이드로 Claude quota가 줄어든 상황의 합리적 배치다. 품질 축도 같은 방향이다: 설계 오류는 blast-radius가 크지만 Architect는 저volume이라, quota 빠듯하지만 추론 잘하는 모델에 정확히 들어맞는다.
+
+예시 페어링:
+
+- **Claude = Architect, Codex = Builder** (기본 — 설계·추론은 Claude, 토큰 무거운 구현·iterate는 Codex)
+- **Codex = Architect, Claude = Builder** (역방향 — Claude quota가 충분하거나 특정 작업에서 Codex 설계가 더 나을 때)
 - 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
 
 통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 두 세션은 같은 프로젝트 디렉터리에서 같은 파일을 읽고 쓴다. 런타임 IPC나 MCP는 필요 없다.
+
+**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, `py -3 ~/.claude/orchestrate.py build --repo . --backend real`로 **Codex Builder를 자동 dispatch**하고(headless), 돌아온 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch". (역방향·동일 vendor 2세션은 수동.)
 
 cross-vendor 시 주의:
 

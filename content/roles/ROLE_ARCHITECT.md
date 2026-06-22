@@ -27,7 +27,23 @@
    - 게이트 단위 작업 분해 — **각 게이트에 risk tier(LOW/HIGH) 태그**를 단다(per `~/.claude/rules/autonomy-policy.md`)
    - 각 게이트의 검증 방법 — Builder가 **사람 round-trip 없이 자율 판정**할 수 있을 만큼 구체적인 성공 기준·검증 명령
    - 비기능 요건 (컨벤션, 주석 언어 등)
-8. 사용자에게 "Builder 세션에서 HANDOFF.md를 진행하라" 안내
+8. HANDOFF.md를 사용자에게 제시하고 **승인(시작 게이트)**을 받는다. 승인 후 아래 "Builder 자동 dispatch"로 진행(기본 페어링) 또는 수동 안내(역방향/fallback).
+
+## Builder 자동 dispatch (Claude=Architect 기본 페어링)
+
+기본 페어링(Claude=Architect, Codex=Builder)에서, HANDOFF.md가 in-session 사람 승인을 받은 직후 — 사용자에게 Codex 터미널 수동 전환을 시키지 말고 **자동으로 Builder를 dispatch**한다:
+
+1. Bash로 호출: `py -3 ~/.claude/orchestrate.py build --repo . --backend real`
+   - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경을 작업 repo에 stage하고 RESULT.md를 쓴다.
+   - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex는 Claude hook을 안 쏘므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.
+   - tier-gate(verdict)는 advisory다 — 판정은 아래 in-session 리뷰가 한다.
+2. 결과 처리:
+   - `[outcome] BUILT` → RESULT.md + `git diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정.
+   - **HIGH 게이트 포함 시** merge/apply/commit 전 **사람 종단 서명**을 in-session에서 받는다(orchestrator는 stage만 하고 아무것도 merge/deploy 안 함).
+   - 재작업 필요 → 새 HANDOFF.md 작성 후 1번 재-dispatch.
+   - `[outcome] BLOCKED` 또는 명령 에러(codex 미인증/플래그 불일치 등) → **자동 진행하지 말고** 사용자에게 보고하고, 수동 fallback 안내: Codex 터미널에서 `builder 모드`로 HANDOFF.md 진행.
+
+> 역방향 페어링(Codex=Architect)이나 동일-vendor 2세션은 이 auto-dispatch 대상이 아니다 — 기존 수동 안내("Builder 세션에서 HANDOFF.md를 진행하라")를 쓴다.
 
 ## RESULT.md 검토 시
 

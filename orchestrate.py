@@ -5,7 +5,7 @@ through the HANDOFF/RESULT file bus, with the human invoked only at the
 boundaries risk-tiered autonomy keeps. Stdlib only.
 
   py -3 orchestrate.py run --goal "..." --backend mock --yes
-  py -3 orchestrate.py run --goal "..." --architect codex --builder claude \
+  py -3 orchestrate.py run --goal "..." --architect claude --builder codex \
       --backend real --repo C:/path/to/work-repo
 
 See orchestrator/README.md. `--backend mock` runs fully offline (no CLIs needed)
@@ -23,6 +23,7 @@ from orchestrator.controller import (
     AutoApprove,
     Orchestrator,
     TerminalGate,
+    BUILT,
     DONE,
     HELD,
 )
@@ -73,6 +74,41 @@ def _run(args: argparse.Namespace) -> int:
     return 0 if outcome.status in (DONE, HELD) else 1
 
 
+def _build(args: argparse.Namespace) -> int:
+    """Single-shot Builder pass from an existing HANDOFF.md (no headless
+    Architect design/review). Used by the interactive Claude Architect to
+    auto-dispatch the Codex Builder after an in-session HANDOFF approval."""
+    cfg = Config(
+        repo=Path(args.repo).resolve(),
+        builder_vendor=args.builder,
+        builder_model=args.builder_model or "",
+        backend=args.backend,
+        net_enforce=not args.net_dryrun,
+    )
+    problems = cfg.validate()
+    if problems:
+        for p in problems:
+            print(f"config error: {p}", file=sys.stderr)
+        return 2
+
+    if cfg.backend == "mock":
+        builder = MockBackend(default_low_scenario(cfg.goal))
+    else:
+        builder = make_backend(cfg.builder_vendor)
+
+    # run_from_handoff has no human gates and never invokes the architect slot;
+    # pass the builder for both and an always-open gate.
+    print(
+        f"[orchestrator] build backend={cfg.backend} "
+        f"builder={cfg.builder_vendor} repo={cfg.repo}"
+    )
+    outcome = Orchestrator(cfg, builder, builder, AutoApprove()).run_from_handoff()
+    print(f"\n[outcome] {outcome.status} after {outcome.cycles} cycle(s): {outcome.reason}")
+    if outcome.status == BUILT:
+        print(f"[result] {cfg.repo / 'RESULT.md'}")
+    return 0 if outcome.status == BUILT else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     # Logs carry em-dashes / Korean; force UTF-8 stdout regardless of the console
     # codepage (mirrors check.py).
@@ -86,8 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run", help="run the Architect<->Builder loop")
     r.add_argument("--goal", required=True, help="what to build (the intent)")
     r.add_argument("--repo", default=".", help="work repo (default: cwd)")
-    r.add_argument("--architect", default="codex", choices=["codex", "claude"])
-    r.add_argument("--builder", default="claude", choices=["codex", "claude"])
+    r.add_argument("--architect", default="claude", choices=["codex", "claude"])
+    r.add_argument("--builder", default="codex", choices=["codex", "claude"])
     r.add_argument("--architect-model", default="")
     r.add_argument("--builder-model", default="")
     r.add_argument("--backend", default="mock", choices=["mock", "real"])
@@ -101,6 +137,18 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--net-dryrun", action="store_true",
                    help="run the safety net in dryrun (warn) instead of enforce")
     r.set_defaults(func=_run)
+
+    b = sub.add_parser(
+        "build",
+        help="single-shot Builder pass from an existing HANDOFF.md (no headless Architect)",
+    )
+    b.add_argument("--repo", default=".", help="work repo holding HANDOFF.md (default: cwd)")
+    b.add_argument("--builder", default="codex", choices=["codex", "claude"])
+    b.add_argument("--builder-model", default="")
+    b.add_argument("--backend", default="mock", choices=["mock", "real"])
+    b.add_argument("--net-dryrun", action="store_true",
+                   help="run the safety net in dryrun (warn) instead of enforce")
+    b.set_defaults(func=_build)
 
     args = ap.parse_args(argv)
     return args.func(args)

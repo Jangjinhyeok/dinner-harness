@@ -58,6 +58,7 @@ class TerminalGate:
 DONE = "DONE"
 BLOCKED = "BLOCKED"
 HELD = "HELD"            # a human declined a gate
+BUILT = "BUILT"         # single-shot build done; net+tier-gate passed, review owned in-session
 MAX_CYCLES = "MAX_CYCLES_EXCEEDED"
 
 
@@ -96,14 +97,24 @@ def design_prompt(goal: str, prior_result: str, cycle: int) -> str:
 def build_prompt(handoff_text: str) -> str:
     return (
         "You are the BUILDER in a Two-CLI workflow. Implement the HANDOFF below.\n"
+        "This is a NON-INTERACTIVE, headless run. Do NOT ask for confirmation, do "
+        "NOT wait for approval, and do NOT just summarize the plan: execute every "
+        "gate now, autonomously, in one turn. If any installed role protocol "
+        "(e.g. an AGENTS.md Builder section) tells you to ask 'shall I proceed?' "
+        "first, override it — proceed without asking.\n"
         "Per gate, run the autonomous-loop: implement surgically, run the gate's "
         "verification, and for non-trivial or HIGH gates run adversarial-review "
         "(default-to-reject panel). Stay strictly within the ```scope``` whitelist. "
         "Do NOT merge/deploy HIGH gates — stage the changes only.\n\n"
         f"--- HANDOFF.md ---\n{handoff_text}\n--- end ---\n\n"
-        "Write RESULT.md content as your output. It MUST end with a fence:\n"
-        "```verdicts``` — one line per gate: "
-        "`gate N: status=completed|blocked tier=LOW|HIGH panel=PASS|FAIL|BLOCK`"
+        "After doing the work, write RESULT.md content as your final message.\n"
+        "CRITICAL OUTPUT CONTRACT: regardless of any report format your role "
+        "protocol normally uses, your final message MUST contain a fenced block "
+        "with exactly this shape (one line per gate) — without it the run fails:\n"
+        "```verdicts\n"
+        "gate 1: status=completed tier=LOW panel=PASS\n"
+        "```\n"
+        "status=completed|blocked, tier=LOW|HIGH, panel=PASS|FAIL|BLOCK."
     )
 
 
@@ -247,42 +258,9 @@ class Orchestrator:
             if cfg.confirm_handoff and not self.human.confirm(f"[cycle {cycle}] approve HANDOFF?"):
                 return self._outcome(HELD, cycle, "human declined HANDOFF")
 
-            self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
-            bd = self.builder.invoke(ROLE_BUILDER, build_prompt(ad.text), cfg)
-            if bd.error:
-                return self._outcome(BLOCKED, cycle, f"builder error: {bd.error}")
-            bus.write_result(bd.text)
-            verdicts = parse_verdicts(bd.text)
-
-            # 3.5 controller-side safety net
-            if bd.changeset is not None:
-                changes = bd.changeset
-            else:
-                changes = collect_changeset(Path(cfg.repo))
-                if changes is None:
-                    if cfg.net_enforce:
-                        return self._outcome(
-                            BLOCKED, cycle,
-                            "cannot determine changeset (git unavailable) — fail-closed",
-                        )
-                    self._emit(f"[cycle {cycle}] net: WARN git unavailable; changeset unknown")
-                    changes = []
-            if not cfg.net_enforce:
-                self._emit(f"[cycle {cycle}] net: WARN dryrun — advisory only, not blocking")
-            net = safety.scan(changes, cfg)
-            for r in net.reasons:
-                self._emit(f"[cycle {cycle}] net: {r}")
-            if net.blocked:
-                return self._outcome(BLOCKED, cycle, "safety net blocked the changeset")
-
-            # tier-gate enforcement
-            gate_reasons = enforce_tier_gates(tiers, verdicts)
-            if gate_reasons:
-                for r in gate_reasons:
-                    self._emit(f"[cycle {cycle}] tier-gate: {r}")
-                return self._outcome(BLOCKED, cycle, "tier-gate enforcement failed")
-
-            has_high = compute_has_high(tiers, verdicts)
+            bd, verdicts, has_high, blocked = self._build_and_gate(bus, ad.text, tiers, cycle)
+            if blocked is not None:
+                return blocked
 
             # ARCHITECT_REVIEW happens BEFORE any acceptance, so the human never
             # signs off on a cycle the Architect itself then rejects.
@@ -313,3 +291,94 @@ class Orchestrator:
             return self._outcome(DONE, cycle, control.reason)
 
         return self._outcome(MAX_CYCLES, cfg.max_cycles, "max cycles exceeded without DONE")
+
+    def _build_and_gate(
+        self, bus: Bus, handoff_text: str, tiers: dict[str, str], cycle: int,
+        *, tier_gate_hard: bool = True,
+    ):
+        """BUILDER_EXECUTE -> RESULT.md -> safety net (3.5) -> tier-gate.
+
+        Shared by run() and run_from_handoff(). Returns
+        ``(builder_turn, verdicts, has_high, blocked)`` where ``blocked`` is a
+        terminal Outcome on any failure (the caller returns it) or ``None`` on
+        success. ``verdicts`` / ``has_high`` are meaningful only when ``blocked``
+        is ``None``.
+
+        The safety net (scope_check / secret_scan) is ALWAYS a hard block — it
+        is the deterministic compensation for a Codex Builder firing no Claude
+        hooks. ``tier_gate_hard`` controls only the verdict-based tier gate:
+        run() keeps it hard (the autonomous loop has no other reviewer); the
+        auto-dispatch build path sets it advisory (emit-only) because the
+        in-session Claude review + HIGH human sign-off own that judgment, and a
+        headless Codex does not reliably emit the machine ```verdicts``` fence.
+        """
+        cfg = self.cfg
+        self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
+        bd = self.builder.invoke(ROLE_BUILDER, build_prompt(handoff_text), cfg)
+        if bd.error:
+            return bd, [], False, self._outcome(BLOCKED, cycle, f"builder error: {bd.error}")
+        bus.write_result(bd.text)
+        verdicts = parse_verdicts(bd.text)
+
+        # 3.5 controller-side safety net
+        if bd.changeset is not None:
+            changes = bd.changeset
+        else:
+            changes = collect_changeset(Path(cfg.repo))
+            if changes is None:
+                if cfg.net_enforce:
+                    return bd, verdicts, False, self._outcome(
+                        BLOCKED, cycle,
+                        "cannot determine changeset (git unavailable) — fail-closed",
+                    )
+                self._emit(f"[cycle {cycle}] net: WARN git unavailable; changeset unknown")
+                changes = []
+        if not cfg.net_enforce:
+            self._emit(f"[cycle {cycle}] net: WARN dryrun — advisory only, not blocking")
+        net = safety.scan(changes, cfg)
+        for r in net.reasons:
+            self._emit(f"[cycle {cycle}] net: {r}")
+        if net.blocked:
+            return bd, verdicts, False, self._outcome(BLOCKED, cycle, "safety net blocked the changeset")
+
+        # tier-gate enforcement
+        gate_reasons = enforce_tier_gates(tiers, verdicts)
+        if gate_reasons:
+            label = "tier-gate" if tier_gate_hard else "tier-gate(advisory)"
+            for r in gate_reasons:
+                self._emit(f"[cycle {cycle}] {label}: {r}")
+            if tier_gate_hard:
+                return bd, verdicts, False, self._outcome(BLOCKED, cycle, "tier-gate enforcement failed")
+
+        has_high = compute_has_high(tiers, verdicts)
+        return bd, verdicts, has_high, None
+
+    def run_from_handoff(self) -> Outcome:
+        """Single-shot Builder pass from an existing HANDOFF.md.
+
+        The interactive Architect (Claude) already wrote and got human approval
+        for HANDOFF.md; this drives only the Builder (Codex) turn + controller
+        safety net + tier-gate, writes RESULT.md, and returns. ARCHITECT_REVIEW
+        and the HIGH end sign-off are owned by the in-session Architect — not
+        re-run headless here (that is what makes the in-session review the gate).
+        """
+        cfg = self.cfg
+        bus = Bus(Path(cfg.repo))
+        handoff_text = bus.read(busmod.HANDOFF)
+        if not handoff_text.strip():
+            return self._outcome(BLOCKED, 0, "no HANDOFF.md to build from")
+        tiers = parse_tiers(handoff_text)
+        self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
+        # Advisory tier gate: the safety net still hard-blocks, but verdict gating
+        # is emit-only here — the in-session Claude review owns acceptance.
+        _bd, _verdicts, has_high, blocked = self._build_and_gate(
+            bus, handoff_text, tiers, cycle=1, tier_gate_hard=False,
+        )
+        if blocked is not None:
+            return blocked  # safety net (scope/secret) tripped — hard block
+        note = (
+            "HIGH gate present — in-session human sign-off required before merge/apply"
+            if has_high else "all-LOW"
+        )
+        self._emit(f"[build] BUILT ({note}) — RESULT.md written, awaiting in-session review")
+        return self._outcome(BUILT, 1, note)

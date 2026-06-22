@@ -7,5 +7,9 @@ __pycache__/
 *.pyd
 # hook handler logs (runtime; also excluded from the harness copy manifest)
 logs/
+# Two-CLI bus artifacts written when the orchestrator runs with --repo . here
+# (smoke/dev). The tracked templates live at assets/claude/*.template.md.
+HANDOFF.md
+RESULT.md
 # JetBrains IDE
 .idea/

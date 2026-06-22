@@ -113,7 +113,7 @@
 
 ## 7. Two-CLI 역할 모드 (cross-vendor)
 
-큰 작업은 두 CLI 세션을 나눠 운용한다 — 한쪽은 설계·검토(**Architect**), 다른 쪽은 구현(**Builder**). 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다(예: **Codex=Architect, Claude=Builder**, 또는 역방향). 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다 — 두 세션이 같은 디렉터리에서 같은 파일을 읽고 쓴다.
+큰 작업은 두 CLI 세션을 나눠 운용한다 — 한쪽은 설계·검토(**Architect**), 다른 쪽은 구현(**Builder**). 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다 — 두 세션이 같은 디렉터리에서 같은 파일을 읽고 쓴다.
 
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 
@@ -132,6 +132,11 @@
 - 진입 응답: HANDOFF.md 있으면 "[요약] Gate 1부터 진행할까요?", 없으면 위치를 묻거나(단순 구현 요청이면 그대로 진행).
 - 게이트마다: 목표·검증기준 재확인 → 관련 파일 read → "수정 금지" 영역 침범 안 함 확인 → 구현 → 빌드/검증 → self-review(빌드·스코프·컨벤션·사이드이펙트) → 보고. **Codex degraded 모델**: agent jury가 없으므로 **LOW 게이트**는 deterministic 검증 PASS 시 진행하되 결과를 사람이 종단 검토, **HIGH 게이트와 전체 종료**는 **매번 사람 승인까지 대기**(전환-전 보수 동작 유지 — 자율화의 안전 전제인 패널·hook이 Codex엔 없기 때문).
 - 보고 형식: `[Gate N] Status: completed/blocked/questions` + 변경 파일(라인) + 검증(빌드/스코프/컨벤션 ✅❌) + "다음 게이트 진행할까요?".
+- **헤드리스 orchestration 모드**(`codex exec`로 `orchestrate.py build`가 dispatch한 경우 — 인터랙티브 Claude Architect의 auto-dispatch): "Gate 1부터/다음 게이트 진행할까요?"라고 **묻지 말고** 전 게이트를 한 턴에 자율 실행한다. 그리고 최종 메시지에 머신 파싱용 fence를 **반드시** 포함한다(없으면 orchestrator가 fail-closed로 BLOCK):
+  ```verdicts
+  gate 1: status=completed tier=LOW panel=PASS
+  ```
+  (게이트당 한 줄. status=completed|blocked, tier=LOW|HIGH, panel=PASS|FAIL|BLOCK.) HIGH 게이트의 종단 사람 서명은 dispatch한 인터랙티브 Claude 세션이 받는다.
 - 문제 발견 시 다음 게이트로 가지 말고 보고. HANDOFF가 명백히 틀렸으면 자체 수정 말고 중단·보고.
 - 완료/중단 후 `RESULT.md` 작성: 게이트별 상태 / 전체 변경 파일 / 핸드오프 준수 평가 / 발견 이슈 / 미해결 질문 / 다음 단계. 이후 "Architect 세션에서 RESULT.md 검토" 안내.
 

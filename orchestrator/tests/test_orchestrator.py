@@ -16,6 +16,7 @@ from orchestrator.controller import (
     Orchestrator,
     compute_has_high,
     enforce_tier_gates,
+    BUILT,
     DONE,
     BLOCKED,
     HELD,
@@ -211,6 +212,62 @@ class TestHumanGates(unittest.TestCase):
             mock = MockBackend(_high_scenario())
             out = Orchestrator(cfg, mock, mock, _RejectGate(), log=lambda m: None).run()
             self.assertEqual(out.status, HELD, out.reason)
+
+
+class TestBuildFromHandoff(unittest.TestCase):
+    """run_from_handoff: single-shot Builder pass from an on-disk HANDOFF.md
+    (the interactive Architect's auto-dispatch path). No headless architect."""
+
+    def test_built_from_existing_handoff(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            # default_low_scenario's handoff carries a `gate 1: LOW` tiers fence.
+            sc = default_low_scenario("demo")
+            (repo / bus.HANDOFF).write_text(sc.handoffs[0], encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertTrue((repo / bus.RESULT).is_file())
+
+    def test_missing_handoff_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = _cfg(Path(d))
+            mock = MockBackend(default_low_scenario("demo"))
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+
+    def test_safety_net_blocks_out_of_scope(self):
+        # The safety net (scope_check) is ALWAYS a hard block in the build path —
+        # an out-of-scope change fails closed even though tier-gate is advisory.
+        handoff = "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\n```\n"
+        sc = Scenario(
+            handoffs=[handoff],
+            results=["```verdicts\ngate 1: status=completed tier=LOW panel=PASS\n```\n"],
+            changesets=[[Change(path="forbidden.py", content="x = 1\n")]],
+            reviews=[],
+        )
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+
+    def test_tier_gate_advisory_does_not_block(self):
+        # HIGH gate, panel FAIL, but in-scope: tier-gate is advisory in the build
+        # path, so it still BUILDs — the in-session Claude review owns the verdict
+        # and the HIGH human sign-off happens in-session, not here.
+        sc = _high_scenario()
+        sc.results[0] = "```verdicts\ngate 1: status=completed tier=HIGH panel=FAIL\n```\n"
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / bus.HANDOFF).write_text(sc.handoffs[0], encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,11 @@
 
 Single source of truth for a custom Claude Code **and** Codex harness.
 
+**Purpose: cut subscription cost.** Run Claude Pro + Codex instead of the pricier
+Claude Max, splitting roles by vendor — low-volume design/review on Claude (Architect),
+token-heavy implementation on Codex (Builder). The point is to land the token sink on
+the higher-quota plan.
+
 Hand-edit the canonical tree in this repo; **never hand-edit `~/.claude` or `~/.codex`
 directly** — they are generated outputs. Regenerate a target with the installer.
 
@@ -55,8 +60,10 @@ See `CODEX-RECON.md` for the codex feasibility analysis (build vs adopt) and
 ## Two-CLI collaboration (cross-vendor)
 
 Large work runs as two CLI sessions — **Architect** (design/review) and **Builder**
-(implementation). Both roles are vendor-neutral; either Codex or Claude can play either role
-(e.g. Codex=Architect / Claude=Builder, or the reverse). They communicate through project-root
+(implementation). Both roles are vendor-neutral; either Codex or Claude can play either role.
+**Default: Claude=Architect / Codex=Builder** (the reverse also works) — the Builder is the token
+sink, so it lands on the higher-quota plan (Codex) while the low-volume Architect runs on the
+quota-constrained one (Claude Pro). They communicate through project-root
 files `HANDOFF.md` (Architect→Builder), `RESULT.md` (Builder→Architect), and `INPUT.md`
 (optional) — a vendor-neutral bus needing no runtime IPC/MCP.
 
