@@ -51,7 +51,7 @@ _EVENT = "PreToolUse"
 _HARNESS_HOME = Path(os.environ.get("DINNER_HARNESS_HOME", str(_HOOKS_ROOT.parent))).resolve(strict=False)
 _RULES_PATH = _HOOKS_ROOT / "rules" / "scope_protect.json"
 _HANDOFF_PATH = _HARNESS_HOME / "HANDOFF.md"
-# "apply_patch" is Codex 0.141's file-edit tool (CODEX-PREFLIGHT.md §3); it
+# "apply_patch" is Codex 0.141's file-edit tool (CODEX-COVERAGE.md §6.2); it
 # carries the patch in tool_input.command, not a single file_path. Inert on
 # Claude (never emitted), active on Codex.
 _TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
