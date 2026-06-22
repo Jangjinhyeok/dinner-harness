@@ -27,6 +27,8 @@ copy = [
   ["content/ecc-reference",               "ecc-reference"],
   ["content/docs",                        "docs"],
   ["assets/claude/hooks",                 "hooks"],
+  ["orchestrate.py",                      "orchestrate.py"],
+  ["orchestrator",                        "orchestrator"],
   ["assets/claude/README.md",             "README.md"],
   ["assets/claude/MCP-UNREAL-SETUP.md",   "MCP-UNREAL-SETUP.md"],
   ["assets/claude/settings.json.template", "settings.json.template"],

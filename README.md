@@ -4,6 +4,8 @@
 
 커스텀 Claude Code **및** Codex 하네스의 single source of truth.
 
+**목적: 구독료 절감.** 고가의 Claude Max 대신 Claude Pro + Codex로 가되, 역할을 vendor에 맞춰 나눈다 — 저volume 설계·검토는 Claude(Architect), 토큰 무거운 구현은 Codex(Builder). token sink인 구현을 quota 여유가 큰 plan에 얹어 비용을 낮추는 게 핵심이다.
+
 이 repo의 canonical 트리를 손-편집한다. **`~/.claude`·`~/.codex`를 직접 편집하지 말 것** — 둘 다 생성된 출력이다. 타깃은 installer로 재생성한다.
 
 ## Layout
@@ -52,8 +54,9 @@ codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 nativ
 ## Two-CLI 협업 (cross-vendor)
 
 큰 작업은 두 CLI 세션을 나눠 운용한다 — **Architect**(설계·검토)와 **Builder**(구현). 두 역할은
-vendor-neutral하며 Codex·Claude 어느 쪽이든 어느 역할이든 맡는다(예: Codex=Architect / Claude=Builder,
-또는 역방향). 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·
+vendor-neutral하며 Codex·Claude 어느 쪽이든 어느 역할이든 맡는다. **기본은 Claude=Architect / Codex=Builder**
+(역방향도 가능) — token sink인 Builder를 quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는
+배치. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·
 `INPUT.md`(선택) 파일 — 런타임 IPC/MCP 불필요한 vendor-neutral 버스다.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/`(통신 파일 paths 매칭 시 자동 inject).

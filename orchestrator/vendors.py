@@ -16,8 +16,11 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -108,22 +111,49 @@ class MockBackend(Backend):
 # --------------------------------------------------------------------------- #
 # Real backends (scaffold — verify flags on your machine)                     #
 # --------------------------------------------------------------------------- #
-def _run(argv: list[str], cfg: Config) -> Turn:
+def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None) -> Turn:
     # shell=False with a list argv: the prompt (which carries the user goal and
     # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
     # injection via prompt content is the residual surface and is CLI-specific —
     # part of the "verify on your machine" scaffold contract (see README).
+    #
+    # last_message_file: when set, the agent's clean final message was written
+    # there (codex `-o`); read it as the turn text instead of the noisy event
+    # stdout, so RESULT.md / verdicts parse off the agent's actual output.
+    # Resolve argv[0] to a full path: on Windows the CLIs are .cmd/.exe shims
+    # and subprocess (shell=False) does not honour PATHEXT, so a bare "codex"
+    # raises FileNotFoundError. shutil.which respects PATHEXT on every platform.
+    exe = shutil.which(argv[0])
+    if exe is None:
+        return Turn(error=f"executable not found on PATH: {argv[0]!r}")
+    argv = [exe, *argv[1:]]
     try:
         proc = subprocess.run(
             argv,
             cwd=str(cfg.repo),
             capture_output=True,
             text=True,
+            # Headless: give the CLI an immediate stdin EOF. Without this codex
+            # exec waits to read "additional input from stdin" (it appends piped
+            # stdin to the prompt), which stalls or perturbs a subprocess turn.
+            stdin=subprocess.DEVNULL,
+            # Force UTF-8: the CLIs emit UTF-8 (Korean/emoji), but text=True would
+            # otherwise decode with the locale codepage (cp949 on Korean Windows)
+            # and crash the reader thread. errors=replace so a stray byte never
+            # aborts the turn.
+            encoding="utf-8",
+            errors="replace",
             timeout=cfg.timeout_s,
         )
         if proc.returncode != 0:
             return Turn(text=proc.stdout or "", error=f"exit {proc.returncode}: {(proc.stderr or '').strip()}")
-        return Turn(text=proc.stdout or "")
+        text = proc.stdout or ""
+        if last_message_file is not None:
+            try:
+                text = last_message_file.read_text(encoding="utf-8-sig") or text
+            except OSError:
+                pass  # fall back to stdout
+        return Turn(text=text)
     except Exception as exc:  # noqa: BLE001
         return Turn(error=f"{type(exc).__name__}: {exc}")
 
@@ -147,20 +177,38 @@ class ClaudeBackend(Backend):
 
 
 class CodexBackend(Backend):
-    """`codex exec` non-interactive mode."""
+    """`codex exec` non-interactive mode. Verified against codex-cli 0.141.
+
+    Sandbox model (0.140+): `-s/--sandbox {read-only|workspace-write|
+    danger-full-access}` replaced the old `--full-auto`. A Builder gets
+    `workspace-write` (may edit files under `--cd`, cannot escape the workspace);
+    an Architect gets `read-only`. `-o` captures the agent's clean final message
+    for RESULT/verdict parsing; `--skip-git-repo-check` lets a non-repo scratch
+    dir run.
+    """
 
     name = "codex"
 
     def invoke(self, role: str, prompt: str, cfg: Config) -> Turn:
-        argv = ["codex", "exec", prompt, "--cd", str(cfg.repo)]
+        sandbox = "workspace-write" if role == ROLE_BUILDER else "read-only"
+        last_msg = Path(tempfile.gettempdir()) / f"codex_last_{os.getpid()}_{id(prompt)}.txt"
+        argv = [
+            "codex", "exec", prompt,
+            "--cd", str(cfg.repo),
+            "--sandbox", sandbox,
+            "--skip-git-repo-check",
+            "-o", str(last_msg),
+        ]
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
-        # A Builder needs write access; an Architect is read-only. VERIFY the
-        # sandbox/approval flag names for your Codex version (0.111 vs 0.140+).
-        if role == ROLE_BUILDER:
-            argv += ["--full-auto"]
-        return _run(argv, cfg)
+        try:
+            return _run(argv, cfg, last_message_file=last_msg)
+        finally:
+            try:
+                last_msg.unlink()
+            except OSError:
+                pass
 
 
 def make_backend(vendor: str) -> Backend:

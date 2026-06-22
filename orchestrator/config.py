@@ -11,9 +11,18 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The harness hook handlers reused as the controller-side deterministic net.
-# Defaults to this repo's source tree so the dev tool is self-contained; an
-# installed harness could point this at ~/.claude/hooks instead.
-_DEFAULT_HOOKS_DIR = _REPO_ROOT / "assets" / "claude" / "hooks"
+# Two layouts resolve the same _REPO_ROOT differently: in the dev source tree the
+# hooks live at assets/claude/hooks; once installed to ~/.claude (orchestrator/
+# copied alongside hooks/) they live at <root>/hooks. Prefer the dev path, fall
+# back to the installed path so `py -3 ~/.claude/orchestrate.py build` still finds
+# the net.
+def _resolve_hooks_dir() -> Path:
+    dev = _REPO_ROOT / "assets" / "claude" / "hooks"
+    installed = _REPO_ROOT / "hooks"
+    return dev if dev.is_dir() else installed
+
+
+_DEFAULT_HOOKS_DIR = _resolve_hooks_dir()
 
 
 @dataclass
@@ -23,8 +32,16 @@ class Config:
     goal: str = ""
 
     # --- vendor <-> role mapping (bidirectional) ---------------------------
-    architect_vendor: str = "codex"   # codex | claude
-    builder_vendor: str = "claude"    # codex | claude
+    # Default: Claude architects, Codex builds. Builder is the token sink
+    # (many-file reads, diff generation, build/error iterate loops, large
+    # context), so it goes on the higher-quota plan (Codex); the lower-volume,
+    # higher-leverage Architect (reasoning, spec authoring, diff review) goes on
+    # the quota-constrained plan (Claude Pro). Rational placement once Claude is
+    # downgraded Max->Pro. Note: a Codex Builder does NOT fire the Claude
+    # scope_check / secret_scan hooks, so the controller-side net (safety.py) is
+    # load-bearing in this default, not just the reverse pairing.
+    architect_vendor: str = "claude"  # codex | claude
+    builder_vendor: str = "codex"     # codex | claude
     architect_model: str = ""         # "" = vendor default
     builder_model: str = ""
 
