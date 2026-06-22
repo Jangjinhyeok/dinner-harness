@@ -55,7 +55,7 @@ def get_env_override(name: str, default: Any = None) -> Any:
 
 # Codex 0.141 sends file edits as tool_name="apply_patch" with the patch body in
 # tool_input.command (a "*** Begin Patch ... *** End Patch" envelope) instead of
-# Claude's Edit/Write file_path+content shape (verified: CODEX-PREFLIGHT.md §3).
+# Claude's Edit/Write file_path+content shape (verified: CODEX-COVERAGE.md §6.2).
 # File paths live on the "*** Add/Update/Delete File:" and "*** Move to:" marker
 # lines; added content is the "+"-prefixed hunk lines.
 _APPLY_PATCH_PATH_RE = re.compile(r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$")

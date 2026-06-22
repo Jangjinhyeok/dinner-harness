@@ -40,7 +40,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 _HOOK_NAME = "secret_scan"
 _EVENT = "PreToolUse"
 _RULES_PATH = _HOOKS_ROOT / "rules" / "secret_patterns.json"
-# "apply_patch" is Codex 0.141's file-edit tool (CODEX-PREFLIGHT.md §3); Claude
+# "apply_patch" is Codex 0.141's file-edit tool (CODEX-COVERAGE.md §6.2); Claude
 # never emits it, so listing it here is inert on Claude and active on Codex.
 _TARGET_TOOLS = {"Edit", "Write", "Bash", "apply_patch"}
 
