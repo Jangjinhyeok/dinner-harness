@@ -53,11 +53,16 @@ codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 nativ
 
 ## Two-CLI 협업 (cross-vendor)
 
-큰 작업은 두 CLI 세션을 나눠 운용한다 — **Architect**(설계·검토)와 **Builder**(구현). 두 역할은
-vendor-neutral하며 Codex·Claude 어느 쪽이든 어느 역할이든 맡는다. **기본은 Claude=Architect / Codex=Builder**
-(역방향도 가능) — token sink인 Builder를 quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는
-배치. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·
-`INPUT.md`(선택) 파일 — 런타임 IPC/MCP 불필요한 vendor-neutral 버스다.
+큰 작업은 **Architect**(설계·검토)와 **Builder**(구현) 두 역할로 나눈다. "Two-CLI"는 인터랙티브 터미널 둘이
+아니라 **두 역할·두 CLI 엔진**(Claude·Codex)을 뜻한다. 두 역할은 vendor-neutral하며 Codex·Claude 어느 쪽이든
+어느 역할이든 맡는다. **기본은 Claude=Architect / Codex=Builder** (역방향도 가능) — token sink인 Builder를
+quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배치.
+
+운용 모드 셋(통신은 어느 쪽이든 프로젝트 루트의 `HANDOFF.md`·`RESULT.md`·`INPUT.md` — IPC/MCP 불필요한 버스):
+- **orchestrated single-pane (기본)** — 인터랙티브 Claude 한 세션이 HANDOFF 승인 후 `orchestrate.py build`로
+  Codex Builder를 headless 자동 dispatch(**별도 Codex 터미널 안 엶**), RESULT를 같은 세션이 리뷰.
+- **manual dual-session** — 사람이 양쪽 인터랙티브 세션을 열고 버스로 courier(역방향·동일 vendor·fallback).
+- **fully headless** — `orchestrate.py run`이 양쪽을 headless 구동.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/`(통신 파일 paths 매칭 시 자동 inject).
 - **Codex**: 동일 프로토콜을 `assets/codex/AGENTS.md` §7로 curate. Codex엔 paths 자동 inject가 없어 모드는

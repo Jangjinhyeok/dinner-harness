@@ -112,7 +112,7 @@ Phase 1에서 Explore에 넘길 **실사용 행동** 체크리스트. "설계가
 **차원별 측정** — 각 항목: 설계 의도 / 관측 행동(수치 + 예시 path·session) / 판정 / 괴리 원인 + 최소 개선안.
 
 - **A. 엔진 라우팅 actuation** — `unreal/unity-specialist`·`ue-*`·`unity-*` Agent 호출 수 / 실질 엔진 세션 중 인라인 처리 비율(위임 누락률) / `route_nudge.log` 발화 vs 후속 위임(순응률) / 슬래시 `/umg…` 사용. ⚠️ Two-CLI Builder 실행 중 위임 생략은 **정상**(`agent-routing.md` 예외) — 누락률에서 Builder 세션은 제외.
-- **B. Two-CLI 모드** — "architect/builder 모드" 선언 수, `HANDOFF/RESULT/INPUT` read·write 세션 수. 0이면 `roles/`·`rules/_mode/` 휴면 신호.
+- **B. Two-CLI 모드** — "architect/builder 모드" 선언 수, `HANDOFF/RESULT/INPUT` read·write 세션 수, **그리고 `orchestrate.py build`(orchestrated single-pane auto-dispatch) 호출 수**. ⚠️ 기본 모드는 single-pane이라 Codex Builder가 headless로 돌고 "builder 모드" 선언이 안 찍힌다 — 모드 선언 수만 보면 실사용을 휴면으로 오판한다. dispatch 호출·HANDOFF/RESULT write까지 합산해 판정. 셋 다 0이면 `roles/`·`rules/_mode/`·orchestrator 휴면 신호.
 - **C. self-review §6** — 4파일+ 변경 세션 중 `code-reviewer`/`cpp-reviewer` 후속 비율 + 인라인 "리뷰 완료, 이슈 N" 멘트 빈도.
 - **D. search-first §1.5** — 비단순 신규구현 턴의 선행 검색 비율. 전용 채널(`context7`·`gh search`) vs generic web(`WebSearch`/`WebFetch`) 분리 — 전용이 0이면 ROI 미실현.
 - **E. 메타원칙 preload** — `simplicity-first`·`surgical-changes` 등이 코드 agent에 preload됐나 + 그 agent가 실제 spawn되나(A와 연동: agent가 안 뜨면 preload는 dependency-dormant). Skill 명시 호출 0은 정상(preload 설계).

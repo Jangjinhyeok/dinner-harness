@@ -18,11 +18,20 @@ section (a future `docs/architecture/` ADR).
 
 The codex adapter marks Two-CLI roles **STILL-DEGRADED — 세션페어 없음**
 (`CODEX-RECON.md`): Codex has no session-pair concept. The orchestrator manages
-the session pairing **externally** — each "session" is one headless invocation
-(`codex exec` / `claude -p`) the controller makes — so it restores the
-cross-vendor Two-CLI the adapter couldn't. Because the harness mandates
-self-contained HANDOFF/RESULT, turns are **stateless** (each reads the bus + repo
-fresh), so no session-resume is needed.
+the pairing **externally** — each "session" is one headless invocation
+(`codex exec` / `claude -p`) the controller makes — so "Two-CLI" here is **two
+roles / two CLI engines, not two interactive terminals**. Because the harness
+mandates self-contained HANDOFF/RESULT, turns are **stateless** (each reads the
+bus + repo fresh), so no session-resume is needed.
+
+Two entry points:
+- **`run`** — fully headless: the controller drives *both* Architect and Builder
+  (`claude -p` / `codex exec`) through the whole loop.
+- **`build`** — single-shot Builder pass from an existing `HANDOFF.md` (no headless
+  Architect). This is what an **interactive Claude Architect auto-dispatches** after
+  an in-session HANDOFF approval (orchestrated single-pane — the default pairing's
+  flow); it runs the Codex Builder + the hard safety net, then the in-session Claude
+  reviews `RESULT.md`. See `roles/ROLE_ARCHITECT.md` "Builder 자동 dispatch".
 
 ## Quick start
 
@@ -33,6 +42,11 @@ py -3 orchestrate.py run --goal "add a feature flag reader" --backend mock --yes
 # Real cross-vendor run (default: Claude=Architect, Codex=Builder).
 py -3 orchestrate.py run --goal "..." --architect claude --builder codex \
     --backend real --repo /path/to/work-repo
+
+# Single-shot Builder from an existing HANDOFF.md (what the interactive Claude
+# Architect auto-dispatches — orchestrated single-pane). Codex builds headless;
+# the in-session Claude then reviews RESULT.md.
+py -3 orchestrate.py build --repo /path/to/work-repo --backend real
 ```
 
 Flags: `--architect/--builder {codex,claude}`, `--architect-model/--builder-model`,

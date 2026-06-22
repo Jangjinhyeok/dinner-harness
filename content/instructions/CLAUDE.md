@@ -55,7 +55,11 @@
 
 ## 2. 세션 역할 모드 (Two-CLI Workflow)
 
-큰 작업은 두 개의 CLI 세션을 동시에 운용한다. 한 세션은 설계와 검토(Architect), 다른 세션은 구현(Builder)을 담당한다.
+큰 작업은 **Architect**(설계·검토)와 **Builder**(구현) 두 역할로 나눈다. 여기서 "Two-CLI"는 사람이 **인터랙티브 터미널 둘을 돌본다는 뜻이 아니라 두 역할·두 CLI 엔진**(Claude·Codex)을 뜻한다 — 운용 topology는 셋이고, 어느 쪽이든 통신은 동일한 파일 버스(`HANDOFF.md`/`RESULT.md`/`INPUT.md`)로 한다:
+
+- **orchestrated single-pane (기본, Claude=Architect)**: 인터랙티브 Claude **한 세션**이 HANDOFF 승인 후 `orchestrate.py build`로 Codex Builder를 headless 자동 dispatch한다 — **별도 Codex 터미널을 열지 않는다**(아래 "Builder 자동 dispatch").
+- **manual dual-session**: 양쪽 인터랙티브 세션을 사람이 열고 파일 버스로 courier(역방향 페어링·동일 vendor 2세션·자동 dispatch fallback).
+- **fully headless**: `orchestrate.py run`이 Architect·Builder 양쪽을 headless 구동(사람은 경계에만).
 
 ### 모드 진입
 

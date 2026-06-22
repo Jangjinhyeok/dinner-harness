@@ -11,6 +11,8 @@
 ├── HANDOFF.md                 # Architect → Builder 통신 (현재 빈 템플릿)
 ├── RESULT.md                  # Builder → Architect 통신 (현재 빈 템플릿)
 ├── settings.json.template     # hook 등록 템플릿 (실 settings.json은 machine-specific, git 제외)
+├── orchestrate.py             # Cross-vendor 오케스트레이터 CLI (run / build) — Two-CLI를 headless로 구동
+├── orchestrator/              # 오케스트레이터 패키지 (controller·vendors·bus·safety·config; stdlib only)
 ├── agents/                    # User-level agents
 │   ├── _core/                 # ECC 출신 (planner, code-reviewer, cpp-reviewer 등)
 │   ├── _gamedev/              # Game Studios 출신 (gameplay, network, ui 등)
@@ -43,7 +45,7 @@
     └── common/                # coding-style, security, testing 등 10개
 ```
 
-루트의 `HANDOFF.md` / `RESULT.md`, `roles/`, `rules/_mode/`는 Two-CLI workflow(Architect 세션 ↔ Builder 세션 분리 운용)의 통신·역할 인프라다. 큰 작업은 Architect가 `HANDOFF.md`로 명세를 넘기고 Builder가 `RESULT.md`로 결과를 돌려준다. 통신 파일이 컨텍스트에 들어오면 `rules/_mode/`의 reminder가 paths 매칭으로 자동 inject된다 (`HANDOFF.md`/`INPUT.md` → builder, `RESULT.md` → architect). 상세 규약은 `CLAUDE.md` §2 참조.
+루트의 `HANDOFF.md` / `RESULT.md`, `roles/`, `rules/_mode/`, 그리고 `orchestrate.py`/`orchestrator/`는 Two-CLI workflow의 통신·역할·오케스트레이션 인프라다. 여기서 Two-CLI는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**(Claude·Codex)이다. **기본은 orchestrated single-pane** — 인터랙티브 Claude(Architect)가 `HANDOFF.md`를 쓰고 승인 후 `py -3 ~/.claude/orchestrate.py build`로 Codex Builder를 headless 자동 dispatch한 뒤 RESULT.md를 같은 세션이 리뷰한다(**별도 Codex 터미널 불필요**). 수동 dual-session·fully headless(`orchestrate.py run`)도 지원. 통신 파일이 컨텍스트에 들어오면 `rules/_mode/`의 reminder가 paths 매칭으로 자동 inject된다 (`HANDOFF.md`/`INPUT.md` → builder, `RESULT.md` → architect). 상세 규약은 `CLAUDE.md` §2 참조.
 
 `templates/`는 `~/.claude/` 동작과 무관한 **프로젝트 복사용 템플릿**이다. `_gamedev` agent들("Engine Version Safety" → `docs/engine-reference/<engine>/VERSION.md`)과 `architect`·`arch-review`(ADR → `docs/architecture/`)가 이미 참조하지만 비어 있던 프로젝트 컨벤션을 채운다. 새 프로젝트에서 해당 파일을 프로젝트 `docs/`로 복사해 쓴다. 상세는 `templates/README.md` 참조.
 

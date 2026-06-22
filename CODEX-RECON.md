@@ -10,6 +10,8 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
 **헤드라인: 메커니즘을 따라잡았고 시맨틱도 대부분 맞다 — 잔존 한계는 depth-2 다중hop·세션페어뿐.** 아래 Cycle-1 본문이 "Codex가 hooks/subagent를 못 한다"고 한 것은 **아키텍처 불가가 아니라 당시 버전(0.111.0) 기준의 미지원**이었다. 현행 Codex(`0.140.0`)는 hooks·subagents가 **stable**이고 orchestration이 hub→leaf를 커버한다.
 
+> **추후 갱신 — 세션페어(Two-CLI) 한계는 해소됨:** 아래 매트릭스가 "Two-CLI roles STILL-DEGRADED — 세션페어 없음"이라 한 것은 codex *adapter* 한계였다. 이후 추가된 **cross-vendor orchestrator**(`orchestrate.py` + `orchestrator/`)가 세션페어링을 외부에서 관리해 이를 복원했다 — 각 "세션"은 controller가 만드는 headless 호출(`codex exec`/`claude -p`)이다. 기본 운용은 인터랙티브 Claude(Architect)가 Codex Builder를 `orchestrate.py build`로 headless 자동 dispatch하는 **single-pane** 모드. 상세 = `orchestrator/README.md`.
+
 ### (a) Codex 현행 native capability (0.140.0 기준)
 - **hooks** — `~/.codex/hooks.json` / config.toml `[hooks]`. 이벤트: PreToolUse·PostToolUse·UserPromptSubmit·SessionStart·SubagentStart/Stop 등. stdin JSON, exit 0/2, `type:"command"` + `commandWindows`. UserPromptSubmit는 `hookSpecificOutput.additionalContext`(+ plain stdout)로 context 주입. → Claude hook contract와 거의 동형(`lib/common.py` 재사용 가능).
 - **custom agents + orchestration** — `~/.codex/agents/*.toml`(name·description·developer_instructions + model·sandbox_mode·mcp_servers). parent가 child를 **spawn→route→wait→synthesise consolidated response**(spawn_agent/wait/close_agent). **`max_depth=1`**(root→직접 children; grandchildren 차단), **`max_threads=6`**, **prompt-driven**(모델이 프롬프트 보고 spawn — 호스트 API 아님), parent↔child만(peer 없음). → **hub→leaf 위임은 depth-1로 fit**(Claude hub-leaf 1-hop과 동형). 잔존 한계 = **depth-2 다중hop**(gameplay-programmer→unreal-specialist→ue-gas류).
