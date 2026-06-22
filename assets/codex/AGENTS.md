@@ -113,7 +113,7 @@
 
 ## 7. Two-CLI 역할 모드 (cross-vendor)
 
-큰 작업은 두 CLI 세션을 나눠 운용한다 — 한쪽은 설계·검토(**Architect**), 다른 쪽은 구현(**Builder**). 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다 — 두 세션이 같은 디렉터리에서 같은 파일을 읽고 쓴다.
+큰 작업은 설계·검토(**Architect**)와 구현(**Builder**) 두 역할로 나눈다. "Two-CLI"는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**을 뜻한다. 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 그리고 기본 모드에서 **Codex Builder는 사람이 여는 세션이 아니라 인터랙티브 Claude(Architect)가 `orchestrate.py build`로 dispatch하는 headless `codex exec` 호출**(single-pane)이다 — 이때 아래 "헤드리스 orchestration 모드" 규약을 따른다. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다.
 
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 

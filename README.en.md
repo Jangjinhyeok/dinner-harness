@@ -59,13 +59,21 @@ See `CODEX-RECON.md` for the codex feasibility analysis (build vs adopt) and
 
 ## Two-CLI collaboration (cross-vendor)
 
-Large work runs as two CLI sessions — **Architect** (design/review) and **Builder**
-(implementation). Both roles are vendor-neutral; either Codex or Claude can play either role.
-**Default: Claude=Architect / Codex=Builder** (the reverse also works) — the Builder is the token
-sink, so it lands on the higher-quota plan (Codex) while the low-volume Architect runs on the
-quota-constrained one (Claude Pro). They communicate through project-root
-files `HANDOFF.md` (Architect→Builder), `RESULT.md` (Builder→Architect), and `INPUT.md`
-(optional) — a vendor-neutral bus needing no runtime IPC/MCP.
+Large work is split into two roles — **Architect** (design/review) and **Builder**
+(implementation). "Two-CLI" means **two roles / two CLI engines** (Claude·Codex), not two
+interactive terminals you tend. Both roles are vendor-neutral; either Codex or Claude can play
+either role. **Default: Claude=Architect / Codex=Builder** (the reverse also works) — the Builder
+is the token sink, so it lands on the higher-quota plan (Codex) while the low-volume Architect runs
+on the quota-constrained one (Claude Pro).
+
+Three operating modes (all communicate through project-root `HANDOFF.md` / `RESULT.md` /
+`INPUT.md` — a vendor-neutral bus needing no runtime IPC/MCP):
+- **orchestrated single-pane (default)** — one interactive Claude session auto-dispatches the Codex
+  Builder headless via `orchestrate.py build` after HANDOFF approval (**no separate Codex terminal**),
+  then reviews RESULT in the same session.
+- **manual dual-session** — a human opens both interactive sessions and couriers via the bus
+  (reverse pairing, same-vendor, or fallback).
+- **fully headless** — `orchestrate.py run` drives both sides headless.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/` (auto-injected when a
   communication file matches its paths glob).
@@ -74,6 +82,50 @@ files `HANDOFF.md` (Architect→Builder), `RESULT.md` (Builder→Architect), and
 
 Being file-based, it works on Codex 0.111+; only the Architect's optional subagent delegation
 uses 0.140+. Full protocol: `content/instructions/CLAUDE.md` §2.
+
+## Usage
+
+**Prerequisite**: `install.py` has generated `~/.claude` (+ `~/.codex`). To drive the Codex Builder
+on the real backend you need the `codex` CLI authenticated + **codex 0.140+** (if it's
+unauthenticated or fails, the dispatch below falls back to manual mode automatically).
+
+### 1) Default — orchestrated single-pane (no separate Codex terminal)
+
+In the project directory, start an interactive Claude session and:
+
+1. Declare **`architect mode`** → state your intent.
+2. Claude explores the codebase, proposes options, then writes **`HANDOFF.md`** (gates, scope, risk tier).
+3. **Approve the HANDOFF** (the start gate) → Claude auto-runs
+   `py -3 ~/.claude/orchestrate.py build --repo . --backend real`, **dispatching the Codex Builder headless**.
+4. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
+5. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
+6. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
+
+> Small tasks (a line or two, single file, a question) run without modes — Two-CLI is overhead there.
+
+### 2) Calling the orchestrator directly (optional)
+
+```
+# Builder-only, once, from an existing HANDOFF.md (the command single-pane uses internally)
+py -3 ~/.claude/orchestrate.py build --repo . --backend real
+
+# Both Architect and Builder fully headless (human only at the boundaries)
+py -3 ~/.claude/orchestrate.py run --goal "..." --backend real --repo .
+
+# Offline smoke, no CLIs needed
+py -3 ~/.claude/orchestrate.py build --repo . --backend mock
+```
+
+### 3) Manual dual-session (fallback / reverse pairing)
+
+In one session write `HANDOFF.md` in `architect mode`; in **another session (e.g. a Codex terminal)**
+run it in `builder mode` and return `RESULT.md`. Communication is via the project-root bus files.
+
+### 4) Modifying the harness itself
+
+Don't edit `~/.claude` / `~/.codex` directly — edit the repo's canonical tree (`content/`, `assets/`),
+run `py -3 check.py` to verify integrity, then regenerate with
+`py -3 install.py --target claude --allow-live` (and `--target codex` as needed).
 
 ## What's inside (capabilities)
 
