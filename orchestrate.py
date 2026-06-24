@@ -75,14 +75,17 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _build(args: argparse.Namespace) -> int:
-    """Single-shot Builder pass from an existing HANDOFF.md (no headless
+    """Single-shot Builder pass from an existing handoff file (no headless
     Architect design/review). Used by the interactive Claude Architect to
-    auto-dispatch the Codex Builder after an in-session HANDOFF approval."""
+    auto-dispatch the Codex Builder after an in-session HANDOFF approval.
+    Reads --handoff (default HANDOFF.md) so a repo that keeps HANDOFF.md as a
+    persistent doc can dispatch an alternate spec without clobbering it."""
     cfg = Config(
         repo=Path(args.repo).resolve(),
         builder_vendor=args.builder,
         builder_model=args.builder_model or "",
         backend=args.backend,
+        handoff_name=args.handoff,
         net_enforce=not args.net_dryrun,
     )
     problems = cfg.validate()
@@ -142,7 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         "build",
         help="single-shot Builder pass from an existing HANDOFF.md (no headless Architect)",
     )
-    b.add_argument("--repo", default=".", help="work repo holding HANDOFF.md (default: cwd)")
+    b.add_argument("--repo", default=".", help="work repo holding the handoff file (default: cwd)")
+    b.add_argument("--handoff", default="HANDOFF.md",
+                   help="handoff filename to build from, relative to --repo "
+                        "(default: HANDOFF.md; use e.g. HANDOFF_WEBVIEW.md when "
+                        "HANDOFF.md is occupied by a persistent doc)")
     b.add_argument("--builder", default="codex", choices=["codex", "claude"])
     b.add_argument("--builder-model", default="")
     b.add_argument("--backend", default="mock", choices=["mock", "real"])
