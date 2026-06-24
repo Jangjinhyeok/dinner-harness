@@ -237,6 +237,21 @@ class TestBuildFromHandoff(unittest.TestCase):
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
 
+    def test_custom_handoff_name(self):
+        # build reads cfg.handoff_name so a repo that keeps HANDOFF.md as a
+        # persistent doc can dispatch an alternate spec without clobbering it.
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            sc = default_low_scenario("demo")
+            # HANDOFF.md occupied by an unrelated persistent doc; spec lives elsewhere.
+            (repo / bus.HANDOFF).write_text("# P0 master doc — not a handoff\n", encoding="utf-8")
+            (repo / "HANDOFF_WEBVIEW.md").write_text(sc.handoffs[0], encoding="utf-8")
+            cfg = _cfg(repo, handoff_name="HANDOFF_WEBVIEW.md")
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertTrue((repo / bus.RESULT).is_file())
+
     def test_safety_net_blocks_out_of_scope(self):
         # The safety net (scope_check) is ALWAYS a hard block in the build path —
         # an out-of-scope change fails closed even though tier-gate is advisory.

@@ -30,6 +30,12 @@ class Config:
     # --- work target -------------------------------------------------------
     repo: Path = field(default_factory=Path.cwd)  # the project being worked on
     goal: str = ""
+    # Input handoff filename (relative to repo) the build path reads. Default
+    # HANDOFF.md; a project that repurposes HANDOFF.md as a persistent doc can
+    # point `build` at an alternate spec (e.g. HANDOFF_WEBVIEW.md) so auto-dispatch
+    # never has to clobber it. Only the run-from-handoff build path honours this;
+    # the full `run` loop always authors HANDOFF.md.
+    handoff_name: str = "HANDOFF.md"
 
     # --- vendor <-> role mapping (bidirectional) ---------------------------
     # Default: Claude architects, Codex builds. Builder is the token sink

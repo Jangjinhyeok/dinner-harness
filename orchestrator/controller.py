@@ -354,19 +354,21 @@ class Orchestrator:
         return bd, verdicts, has_high, None
 
     def run_from_handoff(self) -> Outcome:
-        """Single-shot Builder pass from an existing HANDOFF.md.
+        """Single-shot Builder pass from an existing handoff file
+        (``cfg.handoff_name``, default HANDOFF.md).
 
         The interactive Architect (Claude) already wrote and got human approval
-        for HANDOFF.md; this drives only the Builder (Codex) turn + controller
+        for the handoff; this drives only the Builder (Codex) turn + controller
         safety net + tier-gate, writes RESULT.md, and returns. ARCHITECT_REVIEW
         and the HIGH end sign-off are owned by the in-session Architect — not
         re-run headless here (that is what makes the in-session review the gate).
         """
         cfg = self.cfg
         bus = Bus(Path(cfg.repo))
-        handoff_text = bus.read(busmod.HANDOFF)
+        handoff_name = cfg.handoff_name or busmod.HANDOFF
+        handoff_text = bus.read(handoff_name)
         if not handoff_text.strip():
-            return self._outcome(BLOCKED, 0, "no HANDOFF.md to build from")
+            return self._outcome(BLOCKED, 0, f"no {handoff_name} to build from")
         tiers = parse_tiers(handoff_text)
         self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
         # Advisory tier gate: the safety net still hard-blocks, but verdict gating
