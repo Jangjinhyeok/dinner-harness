@@ -133,7 +133,7 @@ The skills, agents, and hooks this harness ships. _A frontmatter-derived snapsho
 when skills/agents change._ For which items are native/degraded/dropped on the codex target,
 see `CODEX-COVERAGE.md`.
 
-### Skills (26)
+### Skills (27)
 
 **Meta-principles (5)**
 - `simplicity-first` — minimum-viable code; prevents over-engineering and speculative flexibility
@@ -151,12 +151,13 @@ see `CODEX-COVERAGE.md`.
 - `perf-profile` — bottleneck analysis, budget comparison, optimization ranking
 - `tech-debt` — track, categorize, and schedule technical-debt repayment
 
-**Workflow (5)**
+**Workflow (6)**
 - `changelog` — auto-generate a changelog from git commits (internal + player-facing)
 - `hotfix` — emergency-fix workflow (severity, rollback plan, audit trail)
 - `codebase-onboarding` — analyze an unfamiliar codebase into an onboarding guide (engine-aware)
 - `arch-review` — architectural & quality code review (SOLID, testability, performance)
 - `learnings-review` — promote recurring `learning_log` failures into CLAUDE.md/memory
+- `walkthrough` — guided code tour of recent/specified changes (structure, flow, design intent + recall questions)
 
 **UE routing (6)**
 - `ue` — route multi-subsystem Unreal work to the `unreal-specialist` hub

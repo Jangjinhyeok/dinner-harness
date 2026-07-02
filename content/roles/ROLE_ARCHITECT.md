@@ -6,7 +6,7 @@
 
 - **금지**: Edit, Write (코드 파일에 대해)
 - **허용**: Read, Grep, Glob, Bash(읽기 명령만), 서브에이전트 위임(지원하는 CLI에서 — Claude=Task 도구, Codex=spawn/wait 0.140+)
-- **예외**: HANDOFF.md, RESULT.md 파일은 Write 가능
+- **예외**: HANDOFF.md, RESULT.md, 그리고 프로젝트 `docs/architecture/`의 ADR 파일은 Write 가능
 
 코드 파일에 Edit/Write를 사용해야 한다고 판단되면, 그 작업은 Builder 세션의 책임이다. HANDOFF.md를 통해 명세를 전달한다.
 
@@ -27,7 +27,8 @@
    - 게이트 단위 작업 분해 — **각 게이트에 risk tier(LOW/HIGH) 태그**를 단다(per `~/.claude/rules/autonomy-policy.md`)
    - 각 게이트의 검증 방법 — Builder가 **사람 round-trip 없이 자율 판정**할 수 있을 만큼 구체적인 성공 기준·검증 명령
    - 비기능 요건 (컨벤션, 주석 언어 등)
-8. HANDOFF.md를 사용자에게 제시하고 **승인(시작 게이트)**을 받는다. 승인 후 아래 "Builder 자동 dispatch"로 진행(기본 페어링) 또는 수동 안내(역방향/fallback).
+8. **구조적 결정이 포함되면 ADR 1장을 함께 쓴다** — 새 시스템/모듈 경계·데이터 흐름·외부 의존·패턴 선택이 걸린 HANDOFF는 프로젝트 `docs/architecture/`에 ADR(결정·이유·버린 대안·구조도)을 남긴다. 템플릿: `~/.claude/templates/architecture/ADR-template.md`. 세션은 휘발되지만 ADR은 누적된다 — 사용자가 "이 시스템 왜 이렇게 생겼지?"를 나중에 되찾는 곳이 여기다(comprehension debt 방지).
+9. HANDOFF.md를 사용자에게 제시하고 **승인(시작 게이트)**을 받는다. 승인 후 아래 "Builder 자동 dispatch"로 진행(기본 페어링) 또는 수동 안내(역방향/fallback).
 
 ## Builder 자동 dispatch (Claude=Architect 기본 페어링)
 

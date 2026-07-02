@@ -85,6 +85,7 @@
 - **계획 먼저, risk tier로 게이팅**: 비단순 작업은 변경 계획과 risk tier(LOW/HIGH)를 먼저 제시한다. 사람은 시작(intent)·종단(수용) 두 경계에 선다. **Codex 주의**: Claude 쪽의 자율화는 agent jury(`adversarial-review`)와 hook 안전망에 기댄다 — Codex엔 **둘 다 없으므로** 더 보수적으로 간다. **LOW**는 deterministic 검증(`verification-loop`) 후 결과를 사람이 종단 검토; **HIGH**는 매 게이트를 사람이 명시 리뷰한다(아래 §7). (Claude 쪽 LOW는 jury가 있어 종단 검토도 생략하고 결과 보고만 하지만, Codex LOW는 jury가 없어 사람이 종단에서 검토한다 — 의도된 보수화.)
 - **대안 제시**: 접근법이 여러 개일 때는 각각의 장단점을 비교한다. 특히 성능과 안정성 관점에서.
 - **단계별 안내**: 복잡한 작업은 한 번에 전체 코드를 주지 않고 단계별로 나눠 진행한다.
+- **구조 브리핑**: 코드 구현·수정의 완료 보고에는 결과(파일·검증)만이 아니라 **구조**를 담는다 — 새/변경 클래스·모듈과 책임 한 줄, 데이터/호출 흐름, 왜 이 구조인지(버린 대안 하나), 직접 열어볼 파일 2~3개. 코드는 AI가 짜도 구조는 사용자 머리에 남아야 한다(comprehension debt 방지).
 
 ---
 
@@ -127,6 +128,7 @@
 - `HANDOFF.md` 구성: 목표 / 제약 / 영향 파일(수정·수정금지) / **게이트 단위 분해**(독립 검증 가능, 1~3 파일, 명확한 검증 기준, **risk tier 태그 LOW/HIGH**) / 비기능 요건. HIGH 게이트(replication·save format·live config·migration·security·비가역)는 사람 종단 서명 지점·blast-radius를 명기. tier 모호하면 HIGH.
 - **게이트 크기**: 5파일 이상이면 더 작게 분해, 한 줄 수정이면 합친다. 각 게이트는 다음 게이트의 전제 조건을 명시한다.
 - **self-contained로 작성**: Builder가 다른 vendor일 수 있으니 상대에게 없는 skill·subagent·`/명령`을 전제하지 말고, 빌드·검증은 표준 CLI 명령으로 기술한다.
+- **구조적 결정 포함 시 ADR 1장** — 새 시스템/모듈 경계·데이터 흐름·패턴 선택이 걸리면 프로젝트 `docs/architecture/`에 ADR(결정·이유·버린 대안·구조도)을 남긴다(템플릿: `~/.codex/templates/architecture/ADR-template.md`). 세션은 휘발되지만 ADR은 누적된다.
 - 서브에이전트 위임은 지원 시에만(Codex 0.140+ spawn/wait); 없으면 직접 탐색.
 - `RESULT.md` 검토: 읽고 → 실제 변경 파일 직접 확인(read/diff) → 의도 대비 차이 분석 → 이슈 견해 → 후속 HANDOFF 또는 종료.
 
@@ -136,6 +138,7 @@
 - 진입 응답: HANDOFF.md 있으면 "[요약] Gate 1부터 진행할까요?", 없으면 위치를 묻거나(단순 구현 요청이면 그대로 진행).
 - 게이트마다: 목표·검증기준 재확인 → 관련 파일 read → "수정 금지" 영역 침범 안 함 확인 → 구현 → 빌드/검증 → self-review(빌드·스코프·컨벤션·사이드이펙트) → 보고. **Codex degraded 모델**: agent jury가 없으므로 **LOW 게이트**는 deterministic 검증 PASS 시 진행하되 결과를 사람이 종단 검토, **HIGH 게이트와 전체 종료**는 **매번 사람 승인까지 대기**(전환-전 보수 동작 유지 — 자율화의 안전 전제인 패널·hook이 Codex엔 없기 때문).
 - 보고 형식: `[Gate N] Status: completed/blocked/questions` + 변경 파일(라인) + 검증(빌드/스코프/컨벤션 ✅❌) + "다음 게이트 진행할까요?".
+- RESULT.md에는 게이트 상태·변경 파일 외에 **구조 브리핑을 필수 포함**: 새/변경 클래스·모듈과 책임 한 줄, 데이터/호출 흐름 다이어그램, 왜 이 구조인가(버린 대안 하나), 직접 열어볼 파일 3개.
 - **헤드리스 orchestration 모드**(`codex exec`로 `orchestrate.py build`가 dispatch한 경우 — 인터랙티브 Claude Architect의 auto-dispatch): "Gate 1부터/다음 게이트 진행할까요?"라고 **묻지 말고** 전 게이트를 한 턴에 자율 실행한다. 그리고 최종 메시지에 머신 파싱용 fence를 **반드시** 포함한다(없으면 orchestrator가 fail-closed로 BLOCK):
   ```verdicts
   gate 1: status=completed tier=LOW panel=PASS
