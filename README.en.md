@@ -34,19 +34,19 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requires
 `--allow-live`. Use `--dry-run` to preview the plan without writing.
 
-- **claude** — verbatim copy of the inclusion set (87 files); `settings.json` is generated
+- **claude** — verbatim copy of the full inclusion set; `settings.json` is generated
   from `settings.json.template` (substitute `<USERNAME>`, strip `_template`) and **merged**
   with the existing file so machine/runtime keys (e.g. `skipWorkflowUsageWarning`) survive.
   Live `HANDOFF.md` / `RESULT.md` are never clobbered (skip-if-exists).
 - **codex** — transforms the portable subset to Codex-native paths: curated `AGENTS.md`,
-  17 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`).
-  Claude-machinery (subagent routing, hooks, `_mode` conditional inject, 7 Claude-machinery
-  skills [5 routing + 2 harness]) is currently **dropped** by the codex adapter, but the
-  **Two-CLI roles are cross-vendor curated into AGENTS.md §7** (bidirectional — see "Two-CLI
-  collaboration" below). What's dropped is `_mode`'s file-glob auto-inject (no Codex equivalent →
-  modes are entered by explicit declaration) plus hooks / subagent orchestration; the latter is
-  supported by newer Codex but adapter porting is deferred (a design decision, not an architectural
-  impossibility). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
+  18 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`),
+  and since adapter v2 (Cycle 3, Codex 0.141) **13 agents converted to `agents/*.toml` plus
+  natively ported hooks** (`hooks/` copy + auto-generated `hooks.json` — advisory on Codex:
+  hard blocking lives in the sandbox/approval layer). Still dropped: `_mode`'s file-glob
+  auto-inject (no Codex equivalent → modes are entered by explicit declaration) and 8
+  Claude-machinery skills (5 routing aliases + 2 harness-only + 1 multi-judge). The **Two-CLI
+  roles are cross-vendor curated into AGENTS.md §7** (bidirectional — see "Two-CLI
+  collaboration" below). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
 
 ## Targets
 
@@ -204,4 +204,4 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `scope_check` (PreToolUse) — block out-of-scope edits + protect hook infra (dryrun, always-block hard-blocks)
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
 - `learning_log` (PostToolUse) — capture Bash failure signals → promote via `learnings-review` (advisory)
-- `route_nudge` (UserPromptSubmit) — detect UE-domain signals in the prompt → inject a delegation nudge (advisory)
+- `route_nudge` (UserPromptSubmit) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory)

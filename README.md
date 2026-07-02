@@ -30,17 +30,17 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 `--dest` 생략 시 `~/.<target>`이 기본값이며, 라이브 디렉터리에 쓰려면 `--allow-live`가 필요하다.
 `--dry-run`으로 쓰기 없이 plan을 미리 본다.
 
-- **claude** — inclusion set(87 files)의 verbatim copy. `settings.json`은
+- **claude** — inclusion set 전체의 verbatim copy. `settings.json`은
   `settings.json.template`에서 생성(`<USERNAME>` 치환, `_template` strip)되어 기존 파일과
   **merge**되므로 머신/runtime 키(예: `skipWorkflowUsageWarning`)가 보존된다.
   라이브 `HANDOFF.md` / `RESULT.md`는 절대 덮어쓰지 않는다(skip-if-exists).
 - **codex** — portable subset을 Codex-native 경로로 transform: curated `AGENTS.md`,
-  `skills/` 아래 17 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`).
-  Claude-machinery(subagent routing, hooks, `_mode` 조건부 inject, 7 Claude-machinery skills
-  [routing 5 + harness 2])는 현재 codex adapter가 **드롭**하나, **Two-CLI 역할(roles)은 AGENTS.md §7로
-  cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 드롭된 건 `_mode`의 file-glob 자동 inject
-  (Codex 대응 기제 없음 → 모드 명시 선언으로 진입)와 hooks·subagent orchestration이며, 후자는 Codex
-  신버전이 지원하나 adapter 포팅 보류다(아키텍처 불가가 아닌 설계 결정). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
+  `skills/` 아래 18 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`),
+  그리고 adapter v2(Cycle 3, Codex 0.141)부터 **agents 13개 → `agents/*.toml` 변환 + hooks native 포팅**
+  (`hooks/` 복사 + `hooks.json` 자동 생성 — 단 Codex에선 advisory: hard block은 sandbox/approval 레이어).
+  여전히 드롭: `_mode`의 file-glob 자동 inject(Codex 대응 기제 없음 → 모드 명시 선언으로 진입)와
+  Claude-machinery skills 8종(routing 별칭 5 + harness 전용 2 + 다중 judge 1). **Two-CLI 역할(roles)은
+  AGENTS.md §7로 cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
 
 ## Targets
 
@@ -188,4 +188,4 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 - `scope_check` (PreToolUse) — cycle 스코프 밖 수정 + hook 인프라 보호 (dryrun, always-block 즉시 차단)
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
 - `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
-- `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 위임 nudge 주입 (advisory)
+- `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory)

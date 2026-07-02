@@ -41,6 +41,8 @@
 │   ├── mcp.json               # project-root .mcp.json 템플릿 — UE/Unity 엔진 MCP 등록 (project scope)
 │   ├── engine-reference/      # unreal/·unity/ VERSION.md — "Engine Version Safety" ground truth
 │   └── architecture/          # ADR 템플릿 (Architect 세션 산출물)
+├── docs/                      # 참조 문서 — auto-load 밖, agent·세션이 필요 시 Read
+│   └── specialists/           # 구 엔진 leaf specialist 8종 (2026-07-02 agent→문서 강등, 허브가 소비)
 └── ecc-reference/             # ECC 룰셋 카탈로그 — auto-load 영역 밖, 필요 시 Read만
     └── common/                # coding-style, security, testing 등 10개
 ```
