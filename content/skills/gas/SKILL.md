@@ -1,16 +1,18 @@
 ---
 name: gas
-description: "Route a Gameplay Ability System task directly to the ue-gas-specialist (agent-routing hub bypassed). Abilities, gameplay effects, attribute sets, gameplay tags, ability tasks, GAS prediction in UE5."
+description: "Route a Gameplay Ability System task to the unreal-specialist with the GAS reference doc preloaded as focus. Abilities, gameplay effects, attribute sets, gameplay tags, ability tasks, GAS prediction in UE5."
 argument-hint: "[GAS task]"
 user-invocable: true
-agent: ue-gas-specialist
+agent: unreal-specialist
 context: fork
 ---
 
-# /gas — Direct route to the GAS specialist
+# /gas — GAS-focused route to the Unreal specialist
 
-You are running as the **ue-gas-specialist**. The agent-routing hub is bypassed by
-design — this is a known single-domain GAS task.
+You are running as the **unreal-specialist**, focused on a known single-domain GAS
+task. **First Read `~/.claude/docs/specialists/ue-gas.md`** (the former
+ue-gas-specialist, demoted to a reference doc 2026-07-02) and apply its protocol and
+anti-pattern catalog as your domain persona.
 
 Handle the user's request (the invocation argument) end to end:
 
@@ -20,5 +22,5 @@ Handle the user's request (the invocation argument) end to end:
 - Follow the approval gate — propose the design first, and ask "May I write this to
   [filepath]?" before any Write/Edit.
 - If the task actually spans other subsystems (UMG cooldown UI, replication of
-  ability state), say so and suggest the `unreal-specialist` hub (`/ue`) or the
-  relevant specialist instead of guessing.
+  ability state), say so and switch to the `unreal-specialist` hub scope (`/ue`),
+  Reading the other subsystem docs you need instead of guessing.

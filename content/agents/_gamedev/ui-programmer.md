@@ -101,4 +101,4 @@ Before writing any code:
 - Modify game state directly (use commands/events through the game layer)
 
 ### Reports to: the user (in Two-CLI mode, the **Architect** session)
-### Implements specs from: the user (UI layout / visual style / UX decisions are the user's to make); re-delegate engine-specific UI detail to `ue-umg-specialist` / `unity-ui-specialist`
+### Implements specs from: the user (UI layout / visual style / UX decisions are the user's to make); route engine-specific UI detail to the engine hub (`unreal-specialist` / `unity-specialist`), which consults `docs/specialists/ue-umg.md` / `unity-ui.md`

@@ -29,7 +29,7 @@ origin: self
 | `code-reviewer` | 품질 + security | 버그·취약점·에러 처리·자원 누수·입력 검증 |
 | `architect` | 설계 + **blast-radius** | 경계·결합도·되돌릴 수 있나·라이브 영향 범위 |
 | `tdd-guide` | testability + 검증 | 테스트 seam·관측 가능성·회귀 위험·커버리지 |
-| 도메인 juror | 해당 도메인 | HIGH + 파일이 매치할 때만 추가 (netcode → `ue-replication-specialist`/`network-programmer`, GAS → `ue-gas-specialist` 등) |
+| 도메인 juror | 해당 도메인 | HIGH + 파일이 매치할 때만 추가 (netcode → `network-programmer`, 엔진 도메인 → `unreal-specialist`/`unity-specialist` 허브 등) |
 
 ## 절차
 

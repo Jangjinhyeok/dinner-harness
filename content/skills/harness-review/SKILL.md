@@ -77,7 +77,7 @@ Phase 1에서 Explore에 넘길 **정적 배선** 체크리스트. 각 항목에
 3. **`agent:` 바인딩 정합** — `skills/**/*.md`의 `agent:` 값이 실존 agent거나 빌트인(`Explore`/`Plan`/`general-purpose`)인가. 미설치 agent를 가리키면 dangling.
    - 탐지: skill `agent:` 추출 → `agents/**/<name>.md` 또는 빌트인 화이트리스트와 대조.
 
-4. **skill↔agent 중복/미연결** — 주제가 특정 agent와 겹치는 skill이 그 agent에 preload돼 있지 않으면, 내용이 따로 자라며 어긋난다 (예: `ue-umg-review` ↔ `ue-umg-specialist`).
+4. **skill↔agent 중복/미연결** — 주제가 특정 agent와 겹치는 skill이 그 agent에 preload돼 있지 않으면, 내용이 따로 자라며 어긋난다 (예: `ue-umg-review` ↔ `unreal-specialist`/`docs/specialists/ue-umg.md`).
    - 탐지: skill 주제 ↔ agent 책임 범위 휴리스틱 매칭 → preload 누락 + 고유 항목 유출 표시.
 
 5. **Dangling 참조** — skill·agent·rule 본문이 **미설치** 명령(`/eval` 등)·agent(director/lead tier 등)·skill·MCP tool을 가리키는가.

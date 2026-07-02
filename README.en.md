@@ -160,10 +160,10 @@ see `CODEX-COVERAGE.md`.
 
 **UE routing (6)**
 - `ue` — route multi-subsystem Unreal work to the `unreal-specialist` hub
-- `bp` — route Blueprint architecture directly to `ue-blueprint-specialist`
-- `gas` — route GAS directly to `ue-gas-specialist`
-- `umg` — route UMG/CommonUI directly to `ue-umg-specialist`
-- `repl` — route replication/netcode directly to `ue-replication-specialist`
+- `bp` — route Blueprint work to the hub focused on `docs/specialists/ue-blueprint.md`
+- `gas` — route GAS work to the hub focused on `docs/specialists/ue-gas.md`
+- `umg` — route UMG/CommonUI work to the hub focused on `docs/specialists/ue-umg.md`
+- `repl` — route replication/netcode work to the hub focused on `docs/specialists/ue-replication.md`
 - `ue-umg-review` — review/design UMG widgets (UE5)
 
 **Autonomous loop (2)**
@@ -173,7 +173,7 @@ see `CODEX-COVERAGE.md`.
 **Harness (1)**
 - `harness-review` — review the dinner-harness repo itself through wiring + conformance lenses
 
-### Agents (21)
+### Agents (13)
 
 **_core (6)**
 - `architect` — system design, scalability, technical decisions
@@ -190,19 +190,11 @@ see `CODEX-COVERAGE.md`.
 - `tools-programmer` — editor extensions, content tools, pipeline automation
 - `ui-programmer` — menus, HUDs, inventory, UI widgets
 
-**_ue (5)**
-- `unreal-specialist` — UE5 hub (fans out to GAS/BP/UMG/replication sub-specialists)
-- `ue-blueprint-specialist` — Blueprint architecture, BP/C++ boundary, optimization
-- `ue-gas-specialist` — GAS: abilities, effects, attribute sets, tags, prediction
-- `ue-replication-specialist` — property replication, RPCs, client prediction, relevancy
-- `ue-umg-specialist` — UMG/CommonUI: widget hierarchy, data binding, input
+**_ue (1)**
+- `unreal-specialist` — single UE5 engine agent (deep GAS/BP/UMG/replication guidance lives in `docs/specialists/ue-*.md` reference docs it Reads on demand — leaf agents demoted 2026-07-02)
 
-**_unity (5)**
-- `unity-specialist` — Unity hub (fans out to DOTS/shader/addressables/UI sub-specialists)
-- `unity-dots-specialist` — DOTS/ECS, Jobs, Burst
-- `unity-shader-specialist` — Shader Graph, VFX Graph, render pipeline (URP/HDRP)
-- `unity-addressables-specialist` — asset loading, bundles, memory, content catalogs
-- `unity-ui-specialist` — UI Toolkit, UGUI, data binding, runtime UI performance
+**_unity (1)**
+- `unity-specialist` — single Unity engine agent (deep DOTS/shader/Addressables/UI guidance lives in `docs/specialists/unity-*.md` reference docs it Reads on demand — leaf agents demoted 2026-07-02)
 
 ### Hooks (5)
 

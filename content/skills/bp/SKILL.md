@@ -1,16 +1,18 @@
 ---
 name: bp
-description: "Route a Blueprint architecture task directly to the ue-blueprint-specialist (agent-routing hub bypassed). Blueprint/C++ boundary, graph standards, BP optimization, preventing Blueprint spaghetti in UE5."
+description: "Route a Blueprint architecture task to the unreal-specialist with the Blueprint reference doc preloaded as focus. Blueprint/C++ boundary, graph standards, BP optimization, preventing Blueprint spaghetti in UE5."
 argument-hint: "[Blueprint task]"
 user-invocable: true
-agent: ue-blueprint-specialist
+agent: unreal-specialist
 context: fork
 ---
 
-# /bp — Direct route to the Blueprint specialist
+# /bp — Blueprint-focused route to the Unreal specialist
 
-You are running as the **ue-blueprint-specialist**. The agent-routing hub is
-bypassed by design — this is a known single-domain Blueprint task.
+You are running as the **unreal-specialist**, focused on a known single-domain
+Blueprint task. **First Read `~/.claude/docs/specialists/ue-blueprint.md`** (the
+former ue-blueprint-specialist, demoted to a reference doc 2026-07-02) and apply its
+protocol as your domain persona.
 
 Handle the user's request (the invocation argument) end to end:
 
@@ -19,5 +21,5 @@ Handle the user's request (the invocation argument) end to end:
   for content variation. Flag Blueprint spaghetti (functions over ~20 nodes).
 - Follow the approval gate — propose the structure first, and ask "May I write this
   to [filepath]?" before any Write/Edit.
-- If the task actually spans other subsystems, say so and suggest the
-  `unreal-specialist` hub (`/ue`) or the relevant specialist instead of guessing.
+- If the task actually spans other subsystems, say so and switch to the
+  `unreal-specialist` hub scope (`/ue`), Reading the other subsystem docs you need.

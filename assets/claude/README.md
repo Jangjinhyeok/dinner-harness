@@ -79,7 +79,7 @@
 | `scope_check` | Pre · Edit·Write | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post · Bash·PowerShell | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
-| `route_nudge` | UserPromptSubmit | 프롬프트의 UE 도메인 신호를 regex 검출 → 위임 nudge 주입(단일 도메인→leaf, 멀티/일반→`unreal-specialist` 허브). 차단 없음, 항상 exit 0 (advisory) | 2026-06-16, commit 09aa4f9 |
+| `route_nudge` | UserPromptSubmit | 프롬프트의 UE 도메인 신호를 regex 검출 → 위임 nudge 주입. 차단 없음, 항상 exit 0 (advisory). ⚠️ 2026-07-02 leaf 축소 후 handler 문구 재조준 대기(수동) — 현재 nudge가 구 leaf 이름을 언급하며, 데이터상 유효한 목표는 "architect 모드 + dispatch 제안" 방향 | 2026-06-16, commit 09aa4f9 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
 
@@ -170,7 +170,7 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 |---|---|---|---|
 | 메타 원칙 skills | `simplicity-first`, `surgical-changes`, `think-before-coding`, `goal-driven-execution`, `search-first` | 모델이 과설계·범위이탈·추측·research 생략을 기본값으로 함 | base 모델이 prompting 없이도 최소·외과적·research-first를 기본으로 행동 → preload(`skills:` frontmatter) 먼저 해제, 그 다음 skill 본문 축소 |
 | 컨텍스트·검증 skills | `verification-loop`, `eval-harness`, `strategic-compact`, `iterative-retrieval`, `scope-check`, `perf-profile`, `tech-debt` | 유한 context window + 내장 검증/압축 부재 | context가 사실상 무한 + 하네스가 검증·압축을 자동 수행 → 해당 skill 우선 일몰 |
-| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소 |
+| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: 허브 자체도 미사용 지속 시 허브 축소 검토 |
 | Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소 |
 | Two-CLI workflow infra (cross-vendor) | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` (+ Codex `AGENTS.md` §7) | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함; 협업은 vendor를 가로질러 양방향(Codex/Claude × Architect/Builder) | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
@@ -179,6 +179,8 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 ### 주요 변경 이력
 
 세부 변경은 git log에 있다. 아래는 milestone 수준 요약이다.
+
+**2026-07-02 — 양 머신 conformance 감사 → leaf specialist 축소.** 홈(88세션)+사무실(50세션, 실사용 머신) transcript를 결정적 스크립트로 교차 감사한 결과: ① 엔진 leaf specialist 위임이 6주간 **양 머신 합산 1세션**(사무실 0/37 엔진 세션 — LLM 마이닝의 "14세션" 집계는 오류로 판명, 스크립트 재검증 필수 교훈), ② Two-CLI manual dual-session은 사무실 엔진 세션의 57%가 역할 선언하는 **주 인터랙션 패턴**으로 actuated, ③ 괴리의 실체는 "specialist 미사용"이 아니라 "무거운 구현의 architect-lane 인라인 누수"(31파일 세션 무리뷰 사례). 조치: leaf 8개(`ue-*` 4 + `unity-*` 4)를 agent → `docs/specialists/` 참조 문서로 강등(허브 2개 유지, 허브가 Read로 소비; 도메인 지식 보존·위임 제거), 라우터 skill(`/umg` 등 4개)은 허브+포커스 문서로 재바인딩, `CLAUDE.md §6`에 Two-CLI 이행 인정 조항(Builder 산출물=Architect RESULT 검토, 단 비-Two-CLI 4파일+ 인라인 세션은 리뷰 필수) 추가. agents 21→13. advisory hook 순응(포착→승격 0, nudge→위임 0)은 별도 트랙 — learnings-review 첫 가동으로 승격 루프 복구, route_nudge 재조준·secret_scan enforce 승격은 수동 대기. (출처: `/harness-review` conformance ×2 — cross-machine 원칙 첫 실전 적용.)
 
 **2026-06-17 (후속) — harness-review 정합 수정.** cross-vendor 커밋(c5bb5b0) 직후 남은 문서/배선 drift를 `harness-review`(wiring 렌즈)로 점검·교정했다. ① 루트 README(KO/EN)의 "Two-CLI roles 드롭" stale claim 정정 — roles는 `AGENTS.md §7`로 cross-vendor curate되고 `_mode`만 drop(드롭 7 skill = routing 5 + harness 2로 정밀화). ② `harness.toml` `exclude_dir_names`에 `tests` 추가 — `hooks/tests/`가 `~/.claude` 런타임에 설치되던 것 차단(`lib/`는 런타임 import라 유지). ③ `codebase-onboarding`의 `~/.claude/templates/` 하드코딩을 tool-neutral화(Codex 경로 정합). ④ `perf-profile`을 `performance-analyst`의 `skills:` preload에 추가 — 직접 Task 호출 시에도 구조화 프로파일링 워크플로가 적재되도록(skill↔agent drift 표면 제거; 메타원칙 preload 정책은 line 199 그대로 — read-only agent 제외 유지). ⑤ `curation.toml` re-bless(CLAUDE.md 변경이 §2 cross-vendor 서브섹션뿐임을 git 확인 후). adapter/install.py 무변경. (출처: `/harness-review` — Explore 3-fan-out 진단 + 직접 교차검증.)
 
