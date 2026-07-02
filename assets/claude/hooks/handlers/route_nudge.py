@@ -35,15 +35,15 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 
 _HOOK_NAME = "route_nudge"
 
-# (key, specialist agent, keyword pattern). key doubles as the slash alias (/umg …).
+# (key, reference doc under docs/specialists/, keyword pattern). key doubles as the slash alias (/umg …).
 _UE_DOMAINS = [
-    ("umg", "ue-umg-specialist",
+    ("umg", "ue-umg.md",
      re.compile(r"\bUMG\b|\bUserWidget\b|\bCommonUI\b|\bSlate\b|\bwidget\b|위젯", re.IGNORECASE)),
-    ("gas", "ue-gas-specialist",
+    ("gas", "ue-gas.md",
      re.compile(r"\bGAS\b|GameplayAbility|GameplayEffect|AttributeSet|GameplayTag|\bability\b|어빌리티", re.IGNORECASE)),
-    ("repl", "ue-replication-specialist",
+    ("repl", "ue-replication.md",
      re.compile(r"replicat|\bRPC\b|DOREPLIFETIME|multiplayer|netcode|relevancy|복제", re.IGNORECASE)),
-    ("bp", "ue-blueprint-specialist",
+    ("bp", "ue-blueprint.md",
      re.compile(r"\bBlueprint\b|블루프린트|BlueprintNativeEvent|BlueprintCallable", re.IGNORECASE)),
 ]
 # Generic UE signal with no specific leaf → route to the hub.
@@ -98,18 +98,19 @@ def main() -> None:
         key, agent = matched[0]
         domains = [key]
         msg = (
-            f"[route-nudge] This looks like UE {key.upper()} work. Per rules/agent-routing.md, "
-            f"consider delegating to `{agent}` via the Task tool (or `/{key}`) rather than handling "
-            f"inline - skip if it's a trivial one-line change."
+            f"[route-nudge] This looks like UE {key.upper()} work. Use `/{key}` "
+            f"(unreal-specialist + docs/specialists/{agent}) for a focused pass - or if this "
+            f"is heavy multi-file work, suggest `architect 모드` + Codex Builder dispatch "
+            f"per CLAUDE.md 2. Skip if it's a trivial one-line change."
         )
     elif len(matched) >= 2:
         domains = [k for k, _ in matched]
-        agents = ", ".join(f"`{a}`" for _, a in matched)
         aliases = ", ".join(f"/{k}" for k, _ in matched)
         msg = (
-            f"[route-nudge] This prompt spans multiple UE subsystems ({agents}). Consider the "
-            f"`unreal-specialist` hub (or `/ue`) to triage and fan out, or name the specific "
-            f"specialist(s) [{aliases}]. Skip if trivial."
+            f"[route-nudge] This prompt spans multiple UE subsystems [{aliases}]. This is a "
+            f"heavy-work signal - suggest `architect 모드` + Codex Builder dispatch per "
+            f"CLAUDE.md 2, or `/ue` (hub reads docs/specialists/) if staying inline. "
+            f"Skip if trivial."
         )
     elif _UE_GENERIC.search(prompt):
         domains = ["hub_generic"]
