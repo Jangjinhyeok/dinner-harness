@@ -94,6 +94,8 @@
 
 > **degraded 주의**: Claude 하네스는 비-trivial/HIGH 변경의 중간 판단을 `adversarial-review`(직교 축 다중 judge) 패널로 내린다. 이 패널은 **Claude subagent 전용 기제라 이 codex 설치엔 없다**. 따라서 Codex에선 self-review가 단일 검토로 남으며, HIGH-tier 변경은 그 약점을 **사람의 명시 게이트 검토**로 메운다(§7).
 
+**Two-CLI 이행 인정**: Builder 세션(§7)의 산출물은 별도 Architect 세션의 **RESULT.md + `git diff` 검토**가 self-review 이행으로 인정된다 — Builder가 같은 세션에서 이중 리뷰할 필요 없다. 단 Two-CLI 밖의 대형 인라인 세션(대략 4파일+ 변경)은 이 조항으로 리뷰를 건너뛸 수 없다 — 세션 종료 전 위 체크리스트를 반드시 거친다.
+
 체크리스트:
 1. 빌드 — 컴파일 통과하는가?
 2. 스코프 — 요청 범위 밖의 파일이 수정되지 않았는가?

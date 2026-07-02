@@ -144,10 +144,10 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 
 **UE 라우팅 (6)**
 - `ue` — 멀티 서브시스템 Unreal 작업을 `unreal-specialist` 허브로 라우팅
-- `bp` — Blueprint 아키텍처를 `ue-blueprint-specialist`로 직접 라우팅
-- `gas` — GAS를 `ue-gas-specialist`로 직접 라우팅
-- `umg` — UMG/CommonUI를 `ue-umg-specialist`로 직접 라우팅
-- `repl` — replication/netcode를 `ue-replication-specialist`로 직접 라우팅
+- `bp` — Blueprint 작업을 허브 + `docs/specialists/ue-blueprint.md` 포커스로 라우팅
+- `gas` — GAS 작업을 허브 + `docs/specialists/ue-gas.md` 포커스로 라우팅
+- `umg` — UMG/CommonUI 작업을 허브 + `docs/specialists/ue-umg.md` 포커스로 라우팅
+- `repl` — replication/netcode 작업을 허브 + `docs/specialists/ue-replication.md` 포커스로 라우팅
 - `ue-umg-review` — UMG 위젯 리뷰·설계 (UE5)
 
 **자율 루프 (2)**
@@ -157,7 +157,7 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 **harness (1)**
 - `harness-review` — dinner-harness repo 자체를 wiring·conformance 두 렌즈로 리뷰
 
-### Agents (21)
+### Agents (13)
 
 **_core (6)**
 - `architect` — 시스템 설계·확장성·기술 결정
@@ -174,19 +174,11 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 - `tools-programmer` — 에디터 확장·콘텐츠 도구·파이프라인 자동화
 - `ui-programmer` — 메뉴·HUD·인벤토리·UI 위젯 구현
 
-**_ue (5)**
-- `unreal-specialist` — UE5 작업 허브 (GAS·BP·UMG·replication sub로 fan-out)
-- `ue-blueprint-specialist` — Blueprint 아키텍처·BP/C++ 경계·최적화
-- `ue-gas-specialist` — GAS: ability·effect·attribute·tag·prediction
-- `ue-replication-specialist` — property replication·RPC·client prediction·relevancy
-- `ue-umg-specialist` — UMG/CommonUI: widget hierarchy·data binding·input
+**_ue (1)**
+- `unreal-specialist` — UE5 단일 엔진 agent (GAS·BP·UMG·replication 심화는 `docs/specialists/ue-*.md` 참조 문서를 Read해 소비 — 2026-07-02 leaf agent 축소)
 
-**_unity (5)**
-- `unity-specialist` — Unity 작업 허브 (DOTS·shader·addressables·UI sub로 fan-out)
-- `unity-dots-specialist` — DOTS/ECS·Jobs·Burst
-- `unity-shader-specialist` — Shader Graph·VFX Graph·render pipeline (URP/HDRP)
-- `unity-addressables-specialist` — asset 로딩·번들·메모리·content catalog
-- `unity-ui-specialist` — UI Toolkit·UGUI·data binding·런타임 UI 성능
+**_unity (1)**
+- `unity-specialist` — Unity 단일 엔진 agent (DOTS·shader·addressables·UI 심화는 `docs/specialists/unity-*.md` 참조 문서를 Read해 소비 — 2026-07-02 leaf agent 축소)
 
 ### Hooks (5)
 

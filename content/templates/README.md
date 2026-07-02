@@ -48,7 +48,7 @@ ADR도 마찬가지다. `arch-review`·`architect`·`gameplay-programmer`가 `do
 
 ### ⚠️ 주의 — hook이 못 막는 경로
 
-엔진 MCP tool은 **에디터에서 임의 작업을 실행**한다(Blueprint 편집, C# 실행, 씬/액터 조작, 에셋 변경). 이는 `scope_check`·`secret_scan` hook이 가로채는 Claude의 Edit/Write/Bash가 **아니라** MCP 호출이므로 **hook 안전망 밖**이다(CLAUDE.md §5 라이브 서비스 원칙 직격). 메인 프로젝트엔 변경을 감독하며 적용하고, **테스트 프로젝트나 별도 브랜치에서 먼저** 검증한다. engine specialist agent(`ue-*`/`unity-*`)는 코드·설계 산출물 담당이고 MCP는 라이브 에디터 조작 — 역할을 분리해 쓴다.
+엔진 MCP tool은 **에디터에서 임의 작업을 실행**한다(Blueprint 편집, C# 실행, 씬/액터 조작, 에셋 변경). 이는 `scope_check`·`secret_scan` hook이 가로채는 Claude의 Edit/Write/Bash가 **아니라** MCP 호출이므로 **hook 안전망 밖**이다(CLAUDE.md §5 라이브 서비스 원칙 직격). 메인 프로젝트엔 변경을 감독하며 적용하고, **테스트 프로젝트나 별도 브랜치에서 먼저** 검증한다. engine specialist agent(`unreal-specialist`/`unity-specialist` 허브)는 코드·설계 산출물 담당이고 MCP는 라이브 에디터 조작 — 역할을 분리해 쓴다.
 
 ## 사용법
 

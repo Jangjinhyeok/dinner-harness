@@ -177,6 +177,7 @@ cross-vendor 시 주의:
 
 - **trivial한 LOW (1~3개 작은 변경, 비위험)**: 메인 컨텍스트에서 아래 체크리스트로 직접 리뷰.
 - **비-trivial 변경 또는 모든 HIGH tier**: 단일 리뷰어 대신 **`adversarial-review` skill**(직교 축 다중 judge, 기본 판정 REJECT)로 중간 판단을 내린다 — HIGH는 trivial이어도 jury 필수·우회 불가.
+- **Two-CLI 이행 인정**: Builder 세션의 산출물은 별도 Architect 세션의 **RESULT.md + `git diff` 검토**가 self-review 이행으로 인정된다 — Builder가 같은 세션에서 이중 리뷰할 필요 없다. 단 이 인정은 Architect 검토가 실제로 일어날 때만 유효하며, Two-CLI 밖의 대형 인라인 세션(대략 4파일+ 변경)은 이 조항으로 리뷰를 건너뛸 수 없다 — 세션 종료 전 아래 체크리스트 또는 adversarial-review를 반드시 거친다.
 - 리뷰 결과는 "리뷰 완료, 이슈 N개: ..." 형식으로 명시 보고하고, 이슈가 없으면 "리뷰 완료, 이슈 없음"이라고 명시한다.
 
 직접 리뷰 체크리스트:
