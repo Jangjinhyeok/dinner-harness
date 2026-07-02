@@ -2,7 +2,7 @@
 
 codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
-> **⚠️ 이 문서는 2개 시점이 섞여 있다.** 아래 "Method & evidence"~"Open Questions"는 **Cycle 1 (2026-06-16) build-time recon** — rulesync 산출물 + Codex **0.111.0** 실측 기준의 historical 기록이다. 그 본문의 "Codex has no hook system / no native subagent execution" 류 판정은 **그 시점·그 버전 기준**이며, 바로 아래 **"2026-06 재-recon 갱신"** 섹션이 현행 Codex 기준으로 이를 **정정·supersede**한다. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`.
+> **⚠️ 이 문서는 2개 시점이 섞여 있다.** 아래 "Method & evidence"~"Open Questions"는 **Cycle 1 (2026-06-16) build-time recon** — rulesync 산출물 + Codex **0.111.0** 실측 기준의 historical 기록이다. 그 본문의 "Codex has no hook system / no native subagent execution" 류 판정은 **그 시점·그 버전 기준**이며, 바로 아래 **"2026-06 재-recon 갱신"** 섹션이 현행 Codex 기준으로 이를 **정정·supersede**한다. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`. **후기(2026-07-02)**: 엔진 leaf specialist 8종이 agent에서 `docs/specialists/` 참조 문서로 강등되어(양 머신 conformance 감사 — 실사용 6주 1세션), 본문·Porting Plan의 hub→leaf orchestration 분석은 이제 **역사 기록**이다 — 현행 허브는 leaf를 spawn하지 않고 문서를 Read해 소비한다.
 
 ## 2026-06 재-recon 갱신 (현행 Codex — supersedes 'Codex-can't' framing below)
 
