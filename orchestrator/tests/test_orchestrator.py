@@ -230,6 +230,53 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertTrue((repo / bus.RESULT).is_file())
 
+    def test_retries_once_on_builder_bail(self):
+        # A headless Builder that bails (status=blocked, no changeset) after a
+        # false read-only self-judgement is re-dispatched once; the clean second
+        # attempt BUILDs. Verified against real Codex 2026-07-14.
+        handoff = "# H\n```tiers\ngate 1: LOW\n```\n```scope\nfeat.py\n```\n"
+        sc = Scenario(
+            handoffs=[handoff],
+            results=[
+                "bailed\n```verdicts\ngate 1: status=blocked tier=LOW panel=BLOCK\n```\n",
+                "```verdicts\ngate 1: status=completed tier=LOW panel=PASS\n```\n",
+            ],
+            changesets=[[], [Change(path="feat.py", content="x = 1\n")]],
+            reviews=[],
+        )
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertEqual(out.cycles, 2)  # retried exactly once
+
+    def test_no_retry_on_completed_panel_fail(self):
+        # A completed gate whose review panel FAILs is a legitimate advisory
+        # outcome, not a bail: it must NOT be retried (which would clobber the
+        # informative verdict the in-session review reads). One attempt only.
+        handoff = "# H\n```tiers\ngate 1: LOW\n```\n```scope\nfeat.py\n```\n"
+        sc = Scenario(
+            handoffs=[handoff],
+            results=[
+                "```verdicts\ngate 1: status=completed tier=LOW panel=FAIL\n```\n",
+                "SECOND ATTEMPT SHOULD NOT RUN\n",
+            ],
+            changesets=[[Change(path="feat.py", content="x = 1\n")], []],
+            reviews=[],
+        )
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertEqual(out.cycles, 1)  # no retry
+            self.assertNotIn("SECOND ATTEMPT", (repo / bus.RESULT).read_text(encoding="utf-8"))
+
     def test_missing_handoff_blocks(self):
         with tempfile.TemporaryDirectory() as d:
             cfg = _cfg(Path(d))

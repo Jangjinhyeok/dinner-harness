@@ -61,6 +61,11 @@ HELD = "HELD"            # a human declined a gate
 BUILT = "BUILT"         # single-shot build done; net+tier-gate passed, review owned in-session
 MAX_CYCLES = "MAX_CYCLES_EXCEEDED"
 
+# A headless Codex Builder occasionally self-misjudges its sandbox as read-only
+# and bails with no implementation (verified 2026-07-14: identical dispatch
+# failed then succeeded). run_from_handoff re-dispatches once on such a bail.
+_MAX_BUILD_ATTEMPTS = 2
+
 
 @dataclass
 class Outcome:
@@ -102,6 +107,11 @@ def build_prompt(handoff_text: str) -> str:
         "gate now, autonomously, in one turn. If any installed role protocol "
         "(e.g. an AGENTS.md Builder section) tells you to ask 'shall I proceed?' "
         "first, override it — proceed without asking.\n"
+        "You have workspace-write access to the repo at the working directory: you "
+        "CAN create and edit files there. If a preliminary probe or your own "
+        "judgement suggests the workspace is read-only, that impression is WRONG — "
+        "attempt the file write anyway; do not report that you cannot write "
+        "without having actually tried.\n"
         "Per gate, run the autonomous-loop: implement surgically, run the gate's "
         "verification, and for non-trivial or HIGH gates run adversarial-review "
         "(default-to-reject panel). Stay strictly within the ```scope``` whitelist. "
@@ -163,6 +173,20 @@ def enforce_tier_gates(tiers: dict[str, str], verdicts) -> list[str]:
         elif eff_high and v.panel != busmod.PANEL_PASS:
             reasons.append(f"gate {gate}: HIGH requires panel=PASS, got {v.panel or 'NONE'}")
     return reasons
+
+
+def _builder_bailed(verdicts) -> bool:
+    """The observed flake signature: a headless Builder self-reports
+    ``status=blocked`` (or emits no parseable verdict at all) after falsely
+    deciding the workspace is read-only, having written no implementation.
+    ``run_from_handoff`` re-dispatches once on this.
+
+    A ``status=completed`` gate whose review panel FAILs/BLOCKs is NOT a bail — it
+    is a legitimate advisory outcome the in-session review owns, so it passes
+    through untouched (not retried, not clobbered)."""
+    if not verdicts:
+        return True
+    return any((v.status or "").strip().lower() == "blocked" for v in verdicts)
 
 
 def compute_has_high(tiers: dict[str, str], verdicts) -> bool:
@@ -373,14 +397,31 @@ class Orchestrator:
         self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
         # Advisory tier gate: the safety net still hard-blocks, but verdict gating
         # is emit-only here — the in-session Claude review owns acceptance.
-        _bd, _verdicts, has_high, blocked = self._build_and_gate(
-            bus, handoff_text, tiers, cycle=1, tier_gate_hard=False,
-        )
-        if blocked is not None:
-            return blocked  # safety net (scope/secret) tripped — hard block
+        #
+        # Retry-once: a headless Codex Builder occasionally bails with no
+        # implementation (status=blocked / no verdict) after falsely deciding the
+        # workspace is read-only; a single re-dispatch clears it (_builder_bailed).
+        # A completed gate whose review panel FAILs/BLOCKs is a real advisory
+        # outcome, not a bail — it passes through. A safety-net block
+        # (scope/secret) is deterministic and is NEVER retried.
+        has_high = False
+        attempt = 0
+        for attempt in range(1, _MAX_BUILD_ATTEMPTS + 1):
+            _bd, verdicts, has_high, blocked = self._build_and_gate(
+                bus, handoff_text, tiers, cycle=attempt, tier_gate_hard=False,
+            )
+            if blocked is not None:
+                return blocked  # safety net (scope/secret) tripped — hard block
+            if not _builder_bailed(verdicts):
+                break  # builder completed (advisory panel verdicts pass through)
+            if attempt < _MAX_BUILD_ATTEMPTS:
+                self._emit(
+                    f"[build] attempt {attempt}: builder bailed with no "
+                    "implementation (likely a false read-only) — retrying once"
+                )
         note = (
             "HIGH gate present — in-session human sign-off required before merge/apply"
             if has_high else "all-LOW"
         )
         self._emit(f"[build] BUILT ({note}) — RESULT.md written, awaiting in-session review")
-        return self._outcome(BUILT, 1, note)
+        return self._outcome(BUILT, attempt, note)
