@@ -90,6 +90,13 @@
 
 가벼운 작업(질문·1~2줄·단일 파일·탐색/디버깅)은 제안 없이 그대로 기본 세션에서 진행한다(아래 "모드를 사용하지 않아도 되는 경우"). 무게가 애매하면 한 줄로 제안만 하고 사용자 선택에 맡긴다 — 강권하지 않는다.
 
+### 중간 무게 → `/delegate` 경량 lane (full ceremony 없이 Codex dispatch)
+
+무겁지도(다파일·다게이트·구조적) 가볍지도(1~2줄·탐색) 않은 **LOW·단일목적 구현**은 architect 모드의 full ceremony(모드 진입 → 탐색 → 게이트 HANDOFF+ADR → 승인)가 과하다. 이럴 땐 `/delegate` 스킬로 **한 턴에** 처리한다 — Claude가 triage → 최소 HANDOFF(`HANDOFF_DELEGATE.md`) 작성 → `orchestrate.py build`로 Codex headless dispatch → RESULT+diff 인라인 리뷰. token 무거운 구현은 Codex로 가고 Claude는 triage+리뷰만 소비한다. 이게 "손으로 Codex를 오가던" 마찰을 없애는 경로다.
+
+- **LOW 전용**: HIGH 신호(replication·save format·live config·migration·security·비가역 등)나 다파일·다게이트·설계토론 필요 시 `/delegate`는 거부하고 architect 모드로 에스컬레이션한다(보수적 OR — 모호하면 HIGH). 상세는 `~/.claude/skills/delegate/SKILL.md`.
+- 세 갈래 요약: **가벼움**(1~2줄·탐색) → 기본 세션 인라인 · **중간**(LOW 단일목적) → `/delegate` · **무거움/HIGH** → architect 모드.
+
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
 ### 통신 메커니즘

@@ -74,7 +74,7 @@ copy = [
 # degraded copy: its loop is portable, only the panel step goes inert (see CODEX-COVERAGE.md).
 skills_src = "content/skills"
 skills_dest = "skills"
-skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review", "adversarial-review"]
+skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review", "adversarial-review", "delegate"]
 
 # Codex 0.140+ native hooks. Copy only the portable Python implementation;
 # Claude launchers are intentionally excluded because they point at ~/.claude.

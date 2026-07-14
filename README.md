@@ -117,7 +117,7 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 
 이 하네스가 보유한 skills·agents·hooks. _frontmatter 파생 snapshot — skill/agent 변경 시 갱신 필요._ codex 타깃에서 어느 항목이 native/degraded/dropped인지는 `CODEX-COVERAGE.md` 참조.
 
-### Skills (27)
+### Skills (28)
 
 **메타원칙 (5)**
 - `simplicity-first` — 최소 코드만, 과설계·추측 기반 유연성 방지
@@ -135,7 +135,8 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 - `perf-profile` — 병목 분석·예산 대비 측정·최적화 우선순위
 - `tech-debt` — 기술 부채 추적·분류·상환 스케줄
 
-**워크플로 (6)**
+**워크플로 (7)**
+- `delegate` — LOW·단일목적 작업을 Codex Builder에 headless dispatch + 인라인 리뷰 (full ceremony 없이)
 - `changelog` — git 커밋에서 changelog 자동 생성 (내부 + 플레이어용)
 - `hotfix` — 긴급 수정 워크플로 (심각도·롤백 플랜·감사 추적)
 - `codebase-onboarding` — 낯선 코드베이스 분석·온보딩 가이드 (엔진 인식)
