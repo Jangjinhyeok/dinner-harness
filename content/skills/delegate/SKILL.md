@@ -1,6 +1,6 @@
 ---
 name: delegate
-description: Lightweight delegation lane — hand a small, single-purpose LOW-risk coding task to the Codex Builder headless (orchestrate.py build) and review the result inline, skipping the full Architect ceremony (mode entry, gated HANDOFF, ADR). Use when the user wants a self-contained change built by Codex without the heavy ritual — "위임", "이거 codex/코덱스로 시켜", "delegate this", "quick build". HIGH-risk or multi-file/multi-gate/design work escalates to architect mode instead.
+description: Lightweight delegation lane — hand a small, single-purpose LOW-risk task (code OR file-based document) to the Codex Builder headless (orchestrate.py build) and review the result inline, skipping the full Architect ceremony (mode entry, gated HANDOFF, ADR). Use when the user wants a self-contained change built by Codex without the heavy ritual — "위임", "이거 codex/코덱스로 시켜", "delegate this", "quick build" — including document work such as 이력서/경력기술서 변형, JD 대조 갭 분석, 여러 버전 톤 통일, 문서 재구조화. HIGH-risk or multi-file/multi-gate/design work escalates to architect mode instead.
 ---
 
 # /delegate — Lightweight Codex Delegation
@@ -15,6 +15,32 @@ This wraps the existing `orchestrate.py build` dispatch (retry-hardened against 
 Builder's false read-only bail). It introduces no new engine or pairing — default
 pairing only (Claude=Architect, Codex=Builder).
 
+## Two lanes: code and document
+
+The dispatch path carries **no domain assumption**. The scope fence is a plain
+file whitelist; the controller-side net collects changes with
+`git status --porcelain` and runs `secret_scan`/`scope_check` per file (file-level,
+not language-level); `build_prompt` says "implement the HANDOFF", never "write
+code". So the same lane carries **file-based document work** — 이력서/경력기술서
+변형, JD 대조 갭 분석, 여러 버전 톤 통일, 문서 재구조화. These are token-heavy to
+generate but cheap to specify and review: exactly the shape this lane exists for.
+
+Only two things differ by lane:
+
+| | code lane | document lane |
+|---|---|---|
+| HIGH signals | replication/RPC, save format, live config, migration, security, public API/ABI, build pipeline | 외부로 제출·발송·공개되는 최종본 확정 (비가역 outward-facing) |
+| Verify | test / build / lint command | structural check — 섹션 존재, 분량 상한, 금지 표현, 날짜 형식 |
+
+Everything else is identical: LOW-only, mandatory scope fence, `git diff` review,
+staged-not-committed.
+
+**Prerequisite (both lanes): the work directory must be a git repo.** The safety
+net collects the changeset via `git status --porcelain` and **fails closed** when
+git is unavailable, so a non-repo directory cannot be dispatched at all. Run the
+CLI from the directory where the files already live, and commit a clean baseline
+first — the inline review reads `git diff` against it.
+
 ## When to use vs escalate
 
 Use `/delegate` when the task is **all** of:
@@ -27,7 +53,8 @@ sign-off) when **any** of:
 - a HIGH signal is present — replication/RPC/net-serialization, save/serialization
   format, live config/feature flag, data migration/schema, security
   (auth/crypto/trust/anti-cheat), public API/ABI, build/packaging pipeline, or
-  anything broad/irreversible;
+  anything broad/irreversible; in the document lane, finalizing anything that goes
+  outward (제출본·발송본·공개 게시물) — drafting it is LOW, 확정·제출은 사람 몫;
 - the change spans many files or multiple gates;
 - the approach needs options/discussion first.
 
@@ -48,6 +75,9 @@ LOW-only by construction.
      or wrong scope makes the build fail closed.
    - **Tier** — a ` ```tiers ` fence: `gate 1: LOW`.
    - **Verify** — the exact command(s) Codex must run to self-confirm the gate.
+     A gate with no runnable check is not dispatchable. In the document lane
+     substitute a structural check (sections present, length budget, banned
+     phrasing, date format) — see the document example below.
 3. **Dispatch (same turn)** — LOW is autonomous (autonomy-policy: the human sets
    intent at the start, which is the user's request itself), so dispatch right
    after showing the compact spec:
@@ -72,11 +102,15 @@ LOW-only by construction.
   enforces (a Codex Builder fires no Claude hooks, so this net is the only
   automatic defense).
 - **Never clobber `HANDOFF.md`** — always dispatch from `HANDOFF_DELEGATE.md`.
+- **Document lane: keep the source OUT of the scope fence.** Whitelist only the
+  derived file(s), never the original. `scope_check` then hard-blocks any edit to
+  the source — 원본 보호가 기존 안전망에서 공짜로 따라온다. Never delegate an
+  in-place rewrite of a document that has no committed baseline.
 - **Default pairing only** — Claude=Architect dispatches Codex=Builder. If codex is
   unavailable/unauthenticated, fall back to manual.
 - **No commit/merge** — LOW is report-only; the user commits.
 
-## Example
+## Example — code lane
 
 User: "위임 — src/util/date.py에 KST 기준 오늘 날짜를 'YYYY-MM-DD'로 주는 today_kst() 추가해줘."
 
@@ -89,3 +123,24 @@ User: "위임 — src/util/date.py에 KST 기준 오늘 날짜를 'YYYY-MM-DD'�
 3. Dispatch `orchestrate.py build --handoff HANDOFF_DELEGATE.md`.
 4. BUILT → read diff, run verify (PASS), accept.
 5. Report: `src/util/date.py` +1 function, verify PASS, staged (not committed).
+
+## Example — document lane
+
+User: "위임 — resume.md를 A사 JD(jd-a.md)에 맞춰 resume-a.md로 변형해줘."
+
+1. Triage: local files, derived copy only, no outward finalization → LOW, proceed.
+2. Write `HANDOFF_DELEGATE.md`:
+   - Goal: `resume.md`를 `jd-a.md`의 요구 역량 순서로 재배열한 `resume-a.md` 생성.
+     JD와 겹치는 경력을 상단에, 무관한 항목은 축약. 사실 추가·과장 금지 —
+     원본에 없는 경력/수치를 만들어내지 말 것.
+   - ` ```scope `: `resume-a.md`, `RESULT.md` — **`resume.md`·`jd-a.md`는 넣지
+     않는다**(읽기만; scope 밖이라 수정 시도는 hard-block된다).
+   - ` ```tiers `: `gate 1: LOW`
+   - Verify:
+     ```
+     python -c "import pathlib; t=pathlib.Path('resume-a.md').read_text(encoding='utf-8'); assert all(h in t for h in ['## 경력','## 기술 스택','## 프로젝트']), 'missing section'; assert len(t)<6000, f'too long: {len(t)}'; assert not any(w in t for w in ['최고의','독보적','완벽한']), 'overclaim'; print('OK')"
+     ```
+3. Dispatch `orchestrate.py build --handoff HANDOFF_DELEGATE.md`.
+4. BUILT → `git diff` 리뷰: 새 파일만 생겼는지, 원본이 그대로인지, **원본에 없는
+   사실이 들어가지 않았는지**(문서 lane의 핵심 리뷰 축) 확인 + verify 실행.
+5. Report: `resume-a.md` 신규, `resume.md` 무변경, verify PASS, staged.
