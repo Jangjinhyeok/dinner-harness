@@ -147,9 +147,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     b.add_argument("--repo", default=".", help="work repo holding the handoff file (default: cwd)")
     b.add_argument("--handoff", default="HANDOFF.md",
-                   help="handoff filename to build from, relative to --repo "
-                        "(default: HANDOFF.md; use e.g. HANDOFF_WEBVIEW.md when "
-                        "HANDOFF.md is occupied by a persistent doc)")
+                   help="handoff FILENAME to build from — a bare name in the "
+                        "--repo root, no directory part (default: HANDOFF.md; "
+                        "use e.g. HANDOFF_WEBVIEW.md when HANDOFF.md is "
+                        "occupied by a persistent doc)")
     b.add_argument("--builder", default="codex", choices=["codex", "claude"])
     b.add_argument("--builder-model", default="")
     b.add_argument("--backend", default="mock", choices=["mock", "real"])

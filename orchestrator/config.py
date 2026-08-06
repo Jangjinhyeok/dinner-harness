@@ -84,6 +84,17 @@ class Config:
             problems.append(f"builder_vendor invalid: {self.builder_vendor!r}")
         if self.backend not in ("mock", "real"):
             problems.append(f"backend invalid: {self.backend!r}")
+        # The scope_check handler resolves the fence as DINNER_HARNESS_HOME /
+        # <basename>, so a handoff in a subdirectory would leave the controller
+        # reading repo/specs/H.md while the handler looks for repo/H.md, finds
+        # nothing, and fails OPEN — the scope layer silently disarmed by a CLI
+        # flag. Refuse the input rather than let the two sides disagree.
+        if self.handoff_name and (
+            "/" in self.handoff_name or "\\" in self.handoff_name or self.handoff_name in (".", "..")
+        ):
+            problems.append(
+                f"handoff_name must be a bare filename in the repo root: {self.handoff_name!r}"
+            )
         if self.max_cycles < 1:
             problems.append("max_cycles must be >= 1")
         if self.backend == "real" and not Path(self.repo).is_dir():

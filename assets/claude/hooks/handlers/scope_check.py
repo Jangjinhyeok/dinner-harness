@@ -8,7 +8,8 @@ policy layers:
      blocked unconditionally inside ``~/.claude/`` (dryrun-exempt,
      immediate enforce). Mode ``off`` is the only escape.
   2. scope codeblock: paths must match an entry in the first
-     ``` ```scope ``` codeblock of ``~/.claude/HANDOFF.md``. An absent
+     ``` ```scope ``` codeblock of the handoff named by
+     ``CLAUDE_SCOPE_HANDOFF_NAME`` (default ``HANDOFF.md``). An absent
      or empty block is fail-open (compat with cycles that pre-date
      ADR-0005).
 
@@ -17,12 +18,11 @@ Mode is taken from ``CLAUDE_SCOPE_WHITELIST_MODE``. Default is
 """
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple, Optional
 
 # Make ``lib.common`` importable when launched directly as
@@ -50,7 +50,27 @@ _HOOK_NAME = "scope_check"
 _EVENT = "PreToolUse"
 _HARNESS_HOME = Path(os.environ.get("DINNER_HARNESS_HOME", str(_HOOKS_ROOT.parent))).resolve(strict=False)
 _RULES_PATH = _HOOKS_ROOT / "rules" / "scope_protect.json"
-_HANDOFF_PATH = _HARNESS_HOME / "HANDOFF.md"
+# Handoff filename is overridable: the controller-side net drives builds from
+# cfg.handoff_name, which is NOT always HANDOFF.md (/delegate always dispatches
+# from HANDOFF_DELEGATE.md). Hardcoding the name made the handler miss the file
+# and fail open, so that lane ran with no fence at all. Unset -> HANDOFF.md,
+# which is what an interactive Claude session always uses.
+# Basename only: the fence must stay inside DINNER_HARNESS_HOME. An absolute
+# path or ``../`` here would redirect the whitelist at an arbitrary file, i.e.
+# silently disarm the scope layer.
+_HANDOFF_NAME_EXPLICIT = bool(os.environ.get("CLAUDE_SCOPE_HANDOFF_NAME"))
+_HANDOFF_NAME = PurePosixPath(
+    (os.environ.get("CLAUDE_SCOPE_HANDOFF_NAME") or "HANDOFF.md").replace("\\", "/")
+).name
+if _HANDOFF_NAME in ("", ".", ".."):  # PurePosixPath('..').name is '..', not ''
+    _HANDOFF_NAME = "HANDOFF.md"
+_HANDOFF_PATH = _HARNESS_HOME / _HANDOFF_NAME
+# The fence itself, when the caller pins it instead of leaving it on disk (see
+# _load_handoff_scope). Empty string is meaningful — "a fence was pinned and it
+# bounds nothing" — so this is distinguished from unset, which means "read the
+# file", the interactive path.
+_FENCE_ENV = os.environ.get("CLAUDE_SCOPE_FENCE")
+_FENCE_PINNED = _FENCE_ENV is not None
 # "apply_patch" is Codex 0.141's file-edit tool (CODEX-COVERAGE.md §6.2); it
 # carries the patch in tool_input.command, not a single file_path. Inert on
 # Claude (never emitted), active on Codex.
@@ -81,15 +101,68 @@ def _drive_lower(posix_path: str) -> str:
     return posix_path
 
 
-_HARNESS_HOME_POSIX = _drive_lower(_HARNESS_HOME.as_posix()).rstrip("/")
+# Root of the always-block layer: the LIVE harness install, `~/.claude`. That
+# is what the layer is for and what its docstring has always said — the rules
+# name `settings.json` and `hooks/`, i.e. the harness that is in force.
+#
+# The two anchors that look plausible are both wrong. `_HARNESS_HOME` answers
+# "where does the handoff live", and the net repoints it at the WORK REPO, so a
+# target repo holding a root `settings.json` or a `hooks/` tree became
+# undispatchable. `_HOOKS_ROOT.parent` — the tree this file happens to sit in —
+# follows `cfg.hooks_dir`, which resolves to `<repo>/assets/claude/hooks`
+# whenever orchestrate.py runs from a checkout: that anchors an unconditional,
+# dryrun-exempt, fence-proof block list onto the harness repo's own sources, so
+# a dispatched Builder could not edit the very files it is meant to maintain.
+# Both leave the operator no escape but turning the hook off.
+#
+# Unchanged for an interactive session, where `~/.claude` IS the harness home.
+def _install_home_posix() -> str:
+    # Guarded: Path.home() raises RuntimeError on Windows when USERPROFILE,
+    # HOME and HOMEDRIVE+HOMEPATH are all absent, and an unhandled raise here
+    # exits the handler with code 1 — which the net reads as neither allow nor
+    # block. The try/except is what prevents that; the call is still made at
+    # import, which is fine because it can no longer fail.
+    #
+    # The fallback reconstructs `~/.claude` exactly in an INSTALLED layout
+    # (handlers live at ~/.claude/hooks/handlers). From a repo checkout it
+    # yields <repo>/assets/.claude, which exists nowhere, so the always-block
+    # layer goes inert rather than protecting the wrong tree — the safe
+    # direction for a case that needs three environment variables to be missing.
+    try:
+        home = Path.home()
+    except Exception:  # noqa: BLE001 - no home is a configuration, not a crash
+        home = _HOOKS_ROOT.parent.parent
+    return _drive_lower((home / ".claude").resolve(strict=False).as_posix()).rstrip("/")
+
+
+_INSTALL_HOME_POSIX = _install_home_posix()
 
 
 def _classify_pattern(spec: str) -> str:
+    # Wildcards win over the trailing separator. Checking the slash first made
+    # `**/__pycache__/` a PREFIX entry, i.e. a literal directory named `**` — it
+    # matched nothing, silently, and the operator's next move is to widen the
+    # fence until something works. A directory entry that also globs is the
+    # natural way to say "the build artifacts, wherever they land".
+    #
+    # `[` deliberately does NOT get that promotion. A bracket is legal in a
+    # directory name (`docs/[archive]/` is ordinary in downloaded content, and
+    # `*`/`?` are not even legal on NTFS), so promoting it turned a literal
+    # prefix into a character class: `docs/[draft]/` began admitting `docs/d/**`
+    # and rejecting the very path it names. Wrong in both directions at once.
+    if any(ch in spec for ch in ("*", "?")):
+        return "glob"
     if spec.endswith("/"):
         return "prefix"
-    if any(ch in spec for ch in ("*", "?", "[")):
+    if "[" in spec:
         return "glob"
     return "exact"
+
+
+def _expand_dir_glob(spec: str) -> str:
+    """`some/**/dir/` -> `some/**/dir/**`: a trailing slash means "everything
+    under", which a glob has to spell out."""
+    return spec + "**" if spec.endswith("/") else spec
 
 
 def _normalize_path(path_str: str, cwd: Path) -> str:
@@ -105,14 +178,76 @@ def _normalize_path(path_str: str, cwd: Path) -> str:
     return _drive_lower(resolved.as_posix())
 
 
+def _glob_to_regex(pattern: str) -> str:
+    """Translate a fence glob so ``*`` does NOT cross a path separator.
+
+    ``fnmatch``'s ``*`` matches ``/`` happily, so a fence entry of ``src/*.py``
+    also admitted ``src/deep/nested/evil.py`` — far wider than anyone writing
+    that line intends, and the whole point of the entry is to bound where the
+    Builder may write. ``**`` keeps the recursive meaning for callers that want
+    it, and ``**/`` also matches zero directories so ``a/**/b`` still covers
+    ``a/b``.
+    """
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if pattern.startswith("**/", i):
+                out.append("(?:.*/)?")
+                i += 3
+            elif pattern.startswith("**", i):
+                out.append(".*")
+                i += 2
+            else:
+                out.append("[^/]*")
+                i += 1
+            continue
+        if c == "?":
+            out.append("[^/]")
+            i += 1
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] in ("!", "^"):
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j >= n:  # unterminated class -> literal '['
+                out.append(re.escape("["))
+                i += 1
+                continue
+            body = pattern[i + 1:j]
+            if body[:1] in ("!", "^"):
+                body = "^" + body[1:]
+            out.append("[" + body.replace("\\", r"\\") + "]")
+            i = j + 1
+            continue
+        out.append(re.escape(c))
+        i += 1
+    return "".join(out) + r"\Z"
+
+
 def _matches(abs_path: str, pattern: Pattern) -> bool:
     target = pattern.normalized
     if pattern.match_type == "exact":
         return abs_path == target
     if pattern.match_type == "prefix":
-        return abs_path.startswith(target)
+        # Match on a path BOUNDARY, not on a string prefix. `Path.resolve()`
+        # drops the trailing separator, so a bare `startswith` let the fence
+        # entry `src/` admit `src-evil.py`, `srcret.env` and `src.py` — sibling
+        # paths that merely share the spelling. Directory entries are the
+        # common case for a code-lane fence, so this was wide open.
+        #
+        # rstrip because the two sources disagree on the trailing separator:
+        # fence entries come through _normalize_path (resolve() drops it) while
+        # always_block entries are string-joined from the ruleset (it stays).
+        target = target.rstrip("/")
+        return abs_path == target or abs_path.startswith(target + "/")
     if pattern.match_type == "glob":
-        return fnmatch.fnmatchcase(abs_path, target)
+        return re.match(_glob_to_regex(target), abs_path) is not None
     return False
 
 
@@ -146,9 +281,9 @@ def _load_always_block() -> list[Pattern]:
                 reason=f"unknown match type {match_type!r} for path {rel!r}",
             )
             continue
-        # Join ~/.claude/ prefix with the relative path. Both sides are
+        # Join the install prefix with the relative path. Both sides are
         # already canonical POSIX, so no resolve() is required.
-        normalized = _HARNESS_HOME_POSIX + "/" + rel.lstrip("/")
+        normalized = _INSTALL_HOME_POSIX + "/" + rel.lstrip("/")
         out.append(Pattern(raw=rel, normalized=normalized, match_type=match_type))
     return out
 
@@ -158,11 +293,13 @@ def _match_always_block(
 ) -> Optional[Pattern]:
     """Return the first matching always-block Pattern, else None.
 
-    Always-block applies only inside ``~/.claude/`` (Section 2 / 6.4).
+    Always-block applies only inside the harness install (Section 2 / 6.4) —
+    the same root the entries are anchored to, so the gate and the patterns
+    cannot disagree about which tree is being protected.
     """
     if not (
-        abs_path == _HARNESS_HOME_POSIX
-        or abs_path.startswith(_HARNESS_HOME_POSIX + "/")
+        abs_path == _INSTALL_HOME_POSIX
+        or abs_path.startswith(_INSTALL_HOME_POSIX + "/")
     ):
         return None
     for entry in entries:
@@ -171,18 +308,48 @@ def _match_always_block(
     return None
 
 
+def _to_patterns(lines, cwd: Path) -> Optional[list[Pattern]]:
+    """Fence entry lines -> Patterns. ``None`` when nothing usable is left."""
+    patterns: list[Pattern] = []
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match_type = _classify_pattern(line)
+        spec = _expand_dir_glob(line) if match_type == "glob" else line
+        patterns.append(
+            Pattern(
+                raw=line,
+                normalized=_normalize_path(spec, cwd),
+                match_type=match_type,
+            )
+        )
+    return patterns if patterns else None
+
+
 def _load_handoff_scope(cwd: Path) -> Optional[list[Pattern]]:
     """Parse the first ``` ```scope ``` block in HANDOFF.md and return
     its entries as normalised Pattern objects. Returns None when the
     file is missing, the block is absent, or the parsed block has no
     entries (fail-open semantics in the caller).
     """
+    # A fence handed to us by the caller wins over the one on disk. This is
+    # what closes the TOCTOU: the controller compares the handoff against what
+    # it dispatched ONCE, but the scan that follows is two subprocesses per
+    # changed file — seconds to minutes — and each of those re-read the fence
+    # from disk at that moment. A Builder that rewrote the handoff inside that
+    # window was rewriting the very rule it was about to be judged by, and the
+    # controller never looked again. Carried in the environment the CONTROLLER
+    # builds, so the Builder cannot reach it.
+    if _FENCE_ENV is not None:
+        return _to_patterns(_FENCE_ENV.splitlines(), cwd)
+
     if not _HANDOFF_PATH.is_file():
         log_event(
             _HOOK_NAME,
             event=_EVENT,
             decision="error_internal",
-            reason="HANDOFF.md not found",
+            reason=f"{_HANDOFF_NAME} not found",
         )
         return None
     try:
@@ -193,28 +360,14 @@ def _load_handoff_scope(cwd: Path) -> Optional[list[Pattern]]:
             _HOOK_NAME,
             event=_EVENT,
             decision="error_internal",
-            reason=f"HANDOFF.md read failed: {type(exc).__name__}: {exc}",
+            reason=f"{_HANDOFF_NAME} read failed: {type(exc).__name__}: {exc}",
         )
         return None
 
     m = _SCOPE_BLOCK_RE.search(text)
     if m is None:
         return None
-    body = m.group(1)
-
-    patterns: list[Pattern] = []
-    for raw_line in body.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        patterns.append(
-            Pattern(
-                raw=line,
-                normalized=_normalize_path(line, cwd),
-                match_type=_classify_pattern(line),
-            )
-        )
-    return patterns if patterns else None
+    return _to_patterns(m.group(1).splitlines(), cwd)
 
 
 def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
@@ -282,7 +435,20 @@ def main() -> None:
 
     scope_patterns = _load_handoff_scope(cwd)
     if not scope_patterns:
-        # fail-open: codeblock absent / empty means this cycle opts out.
+        # Fail-open is for the UNCONFIGURED case: no handoff named, none found,
+        # i.e. an ordinary session that predates ADR-0005. It must not cover the
+        # configured one. When a caller explicitly names the handoff via
+        # CLAUDE_SCOPE_HANDOFF_NAME, a fence it cannot find is a broken policy
+        # source, and silently allowing everything is the worst answer — block
+        # in enforce, warn in dryrun.
+        if (_HANDOFF_NAME_EXPLICIT or _FENCE_PINNED) and mode == "enforce":
+            source = ("the fence pinned by the caller" if _FENCE_PINNED
+                      else f"{_HANDOFF_NAME} (named via CLAUDE_SCOPE_HANDOFF_NAME)")
+            log_event(_HOOK_NAME, event=_EVENT, decision="block",
+                      reason=f"{source} carries no usable scope fence")
+            exit_block(
+                f"[scope_check:block] {source} has no usable ```scope``` fence"
+            )
         exit_allow()
 
     # Scope codeblock: every targeted path must match an entry; the first
@@ -303,7 +469,7 @@ def main() -> None:
                 reason="out_of_scope",
                 **fields,
             )
-            exit_block(f"[scope_check:block] {abs_path} not in HANDOFF.md scope")
+            exit_block(f"[scope_check:block] {abs_path} not in {_HANDOFF_NAME} scope")
         else:
             # dryrun (default) and any unknown mode value collapsed to dryrun.
             log_event(
@@ -312,7 +478,7 @@ def main() -> None:
                 reason="out_of_scope (dryrun)",
                 **fields,
             )
-            exit_warn(f"[scope_check:warn:dryrun] {abs_path} not in HANDOFF.md scope")
+            exit_warn(f"[scope_check:warn:dryrun] {abs_path} not in {_HANDOFF_NAME} scope")
 
     exit_allow()
 

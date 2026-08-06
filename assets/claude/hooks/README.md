@@ -141,7 +141,18 @@ scope_check은 ad-hoc 편집 마찰이 커서 **dryrun을 영구 유지**한다 
 
 ADR-0005 이후 모든 cycle의 HANDOFF.md는 첫 ` ```scope ` 펜스에 그 cycle에서 Builder가 수정할 파일 화이트리스트를 둔다. 이 블록에는 **반드시 `RESULT.md`를 포함**한다 — `RESULT.md`는 always-block이 아니므로(ADR-0005-followup), 이 scope codeblock 매치가 Builder의 RESULT.md 작성 통로다. 누락하면 dryrun에선 warn에 그치지만 enforce에선 RESULT.md 작성 자체가 block된다.
 
-형식은 **한 줄에 패턴 하나**. `#` 주석 줄과 빈 줄은 skip. 패턴은 자동 분류된다 — `/`로 끝나면 prefix, `*` `?` `[` 가 있으면 glob, 그 외 exact. 절대경로면 그대로, 상대경로면 cwd(`~/.claude/`) 기준 해석.
+형식은 **한 줄에 패턴 하나**. `#` 주석 줄과 빈 줄은 skip. 패턴은 자동 분류된다 — **`*`나 `?`가 있으면 glob**(이 둘은 trailing `/`보다 우선), 없이 `/`로 끝나면 prefix, `[`만 있으면 glob, 그 외 exact. 절대경로면 그대로, 상대경로면 cwd(`~/.claude/`) 기준 해석. (`[`가 `*`/`?`와 달리 trailing `/`에 밀리는 이유: `docs/[archive]/` 같은 대괄호 디렉터리명은 NTFS에서 합법이라 흔하지만 `*`/`?`는 애초에 파일명에 못 쓴다. `[`를 승격시키면 `docs/[draft]/`가 문자클래스가 되어 `docs/d/**`를 허용하면서 정작 자기 경로를 막는다.)
+
+> **주의 — 대괄호와 wildcard를 한 줄에 섞지 마라.** 위 보호는 그 항목에 `*`/`?`가 **없을 때만** 적용된다. `docs/[archive]/*.md`처럼 wildcard가 하나라도 붙으면 `[archive]`는 다시 문자클래스가 되어 `docs/a/**`를 허용하고 정작 `docs/[archive]/note.md`는 막는다(양방향으로 틀림). 대괄호가 든 디렉터리는 wildcard 없이 `docs/[archive]/`로만 적고, 그 아래를 더 좁히고 싶으면 파일을 개별 나열한다.
+
+매칭 규칙 (ADR-0007에서 좁혀짐):
+
+- **prefix**는 경로 **경계**에서 매치한다. `src/`는 `src/a.py`를 허용하지만 `src-evil.py`·`srcret.env`·`src.py`는 허용하지 않는다 (예전엔 문자열 prefix라 전부 통과했다).
+- **glob의 `*`는 `/`를 넘지 않는다.** `src/*.py`는 `src/a.py`만이고 `src/deep/nested/b.py`는 아니다. 재귀가 필요하면 `**`를 쓴다 — `src/**/*.py`. `**/`는 디렉터리 0개도 매치하므로 `a/**/b`가 `a/b`를 포함한다.
+- glob은 **끝까지 앵커**된다. `src/*.py`는 `src/secrets.py.bak`을 허용하지 않는다.
+- glob이 `/`로 끝나면 "그 아래 전부"로 확장된다 — `**/__pycache__/`는 `**/__pycache__/**`와 같다. 빌드 산출물 화이트리스트에 쓰는 형태다.
+
+**controller-side net(orchestrate.py)에서 달라지는 점**: 헤드리스 Codex Builder는 Claude hook을 안 쏘므로 controller가 이 핸들러를 직접 subprocess로 돌린다. 그때 fence는 파일이 아니라 **환경변수 `CLAUDE_SCOPE_FENCE`로 고정**되어 전달된다(TOCTOU 차단 — Builder가 스캔 도중 handoff를 고쳐도 판정 기준은 안 바뀐다). 관련 변수는 `CLAUDE_SCOPE_HANDOFF_NAME`(fence를 담은 handoff 파일명, 미설정 시 `HANDOFF.md`), `CLAUDE_HOOK_TIMEOUT_MS`·`CLAUDE_HOOK_FAILS_CLOSED`(핸들러가 판정에 이르지 못한 경우 — 타임아웃·크래시 — 를 allow가 아니라 block으로 뒤집는다). **인터랙티브 세션은 이 넷 중 어느 것도 설정하지 않으므로 동작이 종전과 동일**하다.
 
 > **저자(Architect) 주의**: 핸들러는 HANDOFF.md의 **첫 번째** ` ```scope ` 펜스를 operative 블록으로 잡는다. 본문에서 scope 형식을 *설명*하려고 ` ```scope ` 펜스를 다시 쓰면 그 설명용 예시가 operative로 오인된다. 설명용 예시는 4-space indent code block으로 쓰고, 진짜 operative 블록은 문서 끝(관례상 Section A)에 펜스 하나만 둔다.
 
@@ -154,7 +165,7 @@ ADR-0005 이후 모든 cycle의 HANDOFF.md는 첫 ` ```scope ` 펜스에 그 cyc
 | 변경 | 반영 시점 |
 |---|---|
 | (a) `settings.json`의 hook 엔트리 추가/제거 | **즉시 hot-reload** (ADR-0005 Gate 3에서 등록 직후 같은 세션 발화 실측) |
-| (b) rule 파일(`rules/*.json`) · HANDOFF.md scope codeblock | 핸들러가 **호출마다 재독** → 다음 도구 호출부터 반영 |
+| (b) rule 파일(`rules/*.json`) · HANDOFF.md scope codeblock | 핸들러가 **호출마다 재독** → 다음 도구 호출부터 반영. 단 controller-side net에선 fence가 `CLAUDE_SCOPE_FENCE`로 고정되므로 **그 cycle 동안 재독하지 않는다** |
 | (c) 모드 env var (`CLAUDE_*_MODE`) | 프로세스 환경 상속이라 **새 세션 필요** |
 
 ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b)는 즉시 반영이다.
