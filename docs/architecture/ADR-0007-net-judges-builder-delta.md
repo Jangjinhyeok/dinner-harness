@@ -1,8 +1,11 @@
 # ADR-0007: The controller net judges the Builder's delta, not the dirty tree
 
-- **Status:** Proposed
-- **Date:** 2026-08-05
-- **Deciders:** Architect session (dinner-harness)
+- **Status:** Accepted (2026-08-06) — merged to `main` in PR #12 the same day.
+  Accepted by the user's decision, **not** by a round-10 panel: the round-9 fixes
+  below were never juried, and that gap is recorded rather than closed. The
+  install gate stands separately — see Follow-ups.
+- **Date:** 2026-08-05 (accepted 2026-08-06)
+- **Deciders:** Architect session (dinner-harness); accepted by the user
 
 ## Context
 
@@ -16,8 +19,10 @@ found on 2026-08-05 while exercising the `/delegate` document lane:
    handler found no file and, by design, **failed open**. Measured: identical
    out-of-scope changeset, `blocked=True` under `HANDOFF.md`, `blocked=False`
    under `HANDOFF_DELEGATE.md`. Every run of that lane had no scope enforcement.
-   `secret_scan` was unaffected. `check.py` cannot see this — it is repo-only and
-   does not compare the repo against the installed `~/.claude`.
+   `secret_scan` was unaffected. `check.py` could not see this — it was repo-only
+   and did not compare the repo against the installed `~/.claude`. (Closed on
+   2026-08-06 by its install-drift axis; that hole is what let the fix sit
+   uninstalled and unnoticed twice.)
 
 2. **A successful build could be reported `BLOCKED`.** A codex CLI finished the
    work, wrote correct files, and never exited; `timeout_s=1800` fired and the
@@ -348,17 +353,21 @@ made the gap read as a lie rather than a limit.
     layer — plus three test gaps on claims the code already honoured
     (`core.excludesFile` content, the stash ref, `_run_handler`'s own `-1`) and
     a handful of doc/comment overclaims. All addressed here.
-    **Still HIGH tier ⇒ unanimous `adversarial-review` + human end sign-off
-    before install. The round-9 fixes above have NOT themselves been juried** —
-    they are the jurors' own prescriptions, verified by test and by mutation,
-    but a tenth panel has not seen them.
-  - Until installed, `~/.claude` still runs the old handler: **the `/delegate`
-    scope fence is live-inert.** Original protection in that lane depends on the
-    Builder complying, not on enforcement.
-  - `install.py --target claude --allow-live` is required after merge —
-    `orchestrate.py`, `orchestrator/`, and the hook handlers are all installed
-    artifacts, and `check.py` will not warn that the live copy is stale. A third
-    "install freshness" axis for `check.py` is proposed separately.
+    **The round-9 fixes above were never juried** — they are the jurors' own
+    prescriptions, verified by test and by mutation, but a tenth panel has not
+    seen them. The user accepted this ADR and merged it on 2026-08-06 with that
+    gap open; it is a known, accepted debt, not a closed item. Re-running
+    `adversarial-review` against the merged state remains the way to close it.
+  - **The install gate is separate and still stands.** Merging changed nothing at
+    runtime: until `install.py` runs, `~/.claude` keeps running the old handler
+    and **the `/delegate` scope fence is live-inert** — that lane's protection
+    depends on the Builder complying, not on enforcement. HIGH tier ⇒ human end
+    sign-off before `py -3 install.py --target claude --allow-live` (and
+    `--target codex`); `orchestrate.py`, `orchestrator/` and the hook handlers
+    are all installed artifacts.
+  - The "install freshness" axis proposed here **landed on 2026-08-06**:
+    `py -3 check.py` now compares the repo against the live install and reports
+    the staleness described above. It reports; it does not install.
   - Builder-timeout salvage (defect 2 above) deliberately dropped from this
     change after it produced three new holes in one round. Prefer exposing
     `timeout_s` as a CLI flag and streaming the child's output — the 30-minute

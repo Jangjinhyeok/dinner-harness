@@ -9,16 +9,18 @@ Last updated: 2026-08-06.
 
 ## 0. Where things stand
 
-Branch: `harness/net-judges-builder-delta` (off `main` @ `b15ec00`).
+Branch: `harness/net-judges-builder-delta` — **merged to `main` in PR #12 on
+2026-08-06** (merge commit `9b74805`; the branch tree and `main` are identical
+apart from later commits on the branch).
 
 The controller-side safety net has been reworked to judge the **delta of the
 Builder's turn** rather than the whole dirty tree. Design record, including the
 threat model and every accepted limitation:
-[`docs/architecture/ADR-0007-net-judges-builder-delta.md`](architecture/ADR-0007-net-judges-builder-delta.md).
-**Read that first** — it also records what four earlier attempts broke, which is
-the fastest way to avoid repeating them.
+[`docs/architecture/ADR-0007-net-judges-builder-delta.md`](architecture/ADR-0007-net-judges-builder-delta.md)
+(**Accepted** 2026-08-06). **Read that first** — it also records what four
+earlier attempts broke, which is the fastest way to avoid repeating them.
 
-Verification as of this commit:
+Verification as of the merge:
 
 - `py -3 -m unittest orchestrator.tests.test_orchestrator` → **89 tests, OK**
   (pytest is not installed; use unittest)
@@ -29,26 +31,28 @@ Verification as of this commit:
   glob `*` no longer crosses `/`), both warn-only in interactive sessions
   because `scope_check` runs permanently in `dryrun` there
 
-### Blocking gate before this ships
+### Merged, not installed — the remaining gate
 
-ADR-0007 is **Proposed**, and the change is **HIGH tier** per
-`~/.claude/rules/autonomy-policy.md`: it is the only automatic defense against a
-headless Codex Builder, which fires no Claude hooks.
+The change is **HIGH tier** per `~/.claude/rules/autonomy-policy.md`: it is the
+only automatic defense against a headless Codex Builder, which fires no Claude
+hooks. Where the two gates actually stand:
 
-1. **Not yet installed.** `~/.claude` still runs the previous handler, so the
-   `/delegate` scope fence is **live-inert** — that lane's protection currently
-   depends on the Builder complying, not on enforcement.
-2. **The last round of fixes has not been juried.** `adversarial-review` ran
-   four times (rounds 6–9). Round 9 produced the first APPROVE (architect)
-   against three REJECTs that converged on a single code defect plus three test
-   gaps; all were fixed, but a tenth panel has not seen those fixes. They are
-   the jurors' own prescriptions, verified by test and by mutation.
-3. HIGH tier ⇒ **unanimous `adversarial-review` + human end sign-off** before
-   install. After sign-off:
+1. **Design gate: closed by decision, with one item open.** ADR-0007 is
+   **Accepted** and merged. `adversarial-review` ran four times (rounds 6–9);
+   round 9 produced the first APPROVE (architect) against three REJECTs that
+   converged on a single code defect plus three test gaps. All were fixed — but
+   **a tenth panel never saw those fixes**, so the unanimity HIGH tier asks for
+   was not reached. The user accepted and merged on 2026-08-06 with that gap
+   open. It is accepted debt, not a closed item; re-running `adversarial-review`
+   against the merged state is how to close it.
+2. **Install gate: still standing.** Merging changed nothing at runtime.
+   `~/.claude` still runs the previous handler, so the `/delegate` scope fence is
+   **live-inert** — that lane's protection depends on the Builder complying, not
+   on enforcement. Human end sign-off, then
    `py -3 install.py --target claude --allow-live` (and `--target codex`).
-   `py -3 check.py` now reports the staleness (item A below, landed) — it lists
-   the eleven claude-target files this branch and `7d1f874` changed. It is a
-   report, not a gate: it does not install anything.
+3. `py -3 check.py` now reports the staleness (item A below, landed) — eleven
+   claude-target and three codex-target files, from this work plus `7d1f874`.
+   It is a report, not a gate: it does not install anything.
 
 To back out an install: re-install from the previous commit — `install.py`
 overwrites in place and keeps no backup. See the note in

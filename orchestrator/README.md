@@ -190,8 +190,9 @@ verbatim" above describes the *mechanism*, not two live layers.
 > `py -3 install.py --target claude --allow-live` (and `--target codex`). All
 > three are installed, and the live dispatch
 > (`py -3 ~/.claude/orchestrate.py build`) runs the **installed** copy — so a fix
-> that stays in the repo is a fix that is not in force. `check.py` is repo-only
-> and will not warn you.
+> that stays in the repo is a fix that is not in force. `py -3 check.py` will
+> tell you: its install-drift axis lists every file whose live copy differs from
+> the repo. It reports, it does not install.
 >
 > **To back out**, re-install from the previous commit — `install.py` overwrites
 > in place and keeps no backup, so there is no other undo:
