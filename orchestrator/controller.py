@@ -146,6 +146,24 @@ def build_prompt(handoff_text: str) -> str:
     )
 
 
+def verdict_recovery_prompt(handoff_text: str) -> str:
+    """Ask for the machine-readable artifact a completed turn omitted."""
+    return (
+        "VERDICT-ONLY RECOVERY. The implementation turn has already completed, "
+        "and the controller has preserved its report in RESULT.md. Do NOT edit, "
+        "create, delete, stage, commit, or otherwise change any file. Do NOT "
+        "repeat the report. Return ONLY the fenced ```verdicts``` block, with one "
+        "line for every gate declared in this HANDOFF. If you cannot honestly "
+        "report a completed gate, use status=blocked and panel=BLOCK.\n\n"
+        f"--- HANDOFF.md ---\n{handoff_text}\n--- end ---\n\n"
+        "Required shape:\n"
+        "```verdicts\n"
+        "gate 1: status=completed tier=LOW panel=PASS\n"
+        "```\n"
+        "status=completed|blocked, tier=LOW|HIGH, panel=PASS|FAIL|BLOCK."
+    )
+
+
 def review_prompt(handoff_text: str, result_text: str) -> str:
     return (
         "REVIEW. You are the ARCHITECT. Compare the HANDOFF intent against the "
@@ -617,7 +635,7 @@ class Orchestrator:
             # bus.write_handoff above wrote busmod.HANDOFF, so that is the name
             # the tamper stop must compare — not cfg.handoff_name, which this
             # loop never honours.
-            bd, verdicts, has_high, blocked = self._build_and_gate(
+            bd, verdicts, has_high, blocked, _implementation_observed = self._build_and_gate(
                 bus, ad.text, tiers, cycle, handoff_name=busmod.HANDOFF)
             if blocked is not None:
                 return blocked
@@ -956,14 +974,16 @@ class Orchestrator:
     def _build_and_gate(
         self, bus: Bus, handoff_text: str, tiers: dict[str, str], cycle: int,
         *, handoff_name: str, tier_gate_hard: bool = True,
+        prompt: Optional[str] = None, result_prefix: str = "",
     ):
         """BUILDER_EXECUTE -> RESULT.md -> safety net (3.5) -> tier-gate.
 
         Shared by run() and run_from_handoff(). Returns
-        ``(builder_turn, verdicts, has_high, blocked)`` where ``blocked`` is a
-        terminal Outcome on any failure (the caller returns it) or ``None`` on
-        success. ``verdicts`` / ``has_high`` are meaningful only when ``blocked``
-        is ``None``.
+        ``(builder_turn, verdicts, has_high, blocked, implementation_observed)``
+        where ``blocked`` is a terminal Outcome on any failure (the caller
+        returns it) or ``None`` on success. ``implementation_observed`` means
+        the net-scanned delta contained a non-bus file, so a missing verdict may
+        be repaired without repeating the implementation.
 
         ``handoff_name`` is the file the CALLER actually wrote or read, not
         ``cfg.handoff_name``: ``run()`` authors ``bus.HANDOFF`` unconditionally
@@ -986,19 +1006,24 @@ class Orchestrator:
 
         ev, stop = self._pre_turn_checks(cycle, handoff_text, handoff_name)
         if stop:
-            return None, [], False, self._outcome(BLOCKED, cycle, stop)
+            return None, [], False, self._outcome(BLOCKED, cycle, stop), False
 
         self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
-        bd = self.builder.invoke(ROLE_BUILDER, build_prompt(handoff_text), cfg)
+        bd = self.builder.invoke(ROLE_BUILDER, prompt or build_prompt(handoff_text), cfg)
         if bd.error:
-            return bd, [], False, self._outcome(BLOCKED, cycle, f"builder error: {bd.error}")
+            return bd, [], False, self._outcome(BLOCKED, cycle, f"builder error: {bd.error}"), False
+        if result_prefix:
+            bd = Turn(
+                text=f"{result_prefix.rstrip()}\n\n{bd.text.lstrip()}",
+                changeset=bd.changeset,
+            )
         bus.write_result(bd.text)
         verdicts = parse_verdicts(bd.text)
 
         changes, stop = self._builder_changes(
             cycle, bus, bd, ev, handoff_name, handoff_text)
         if stop:
-            return bd, verdicts, False, self._outcome(BLOCKED, cycle, stop)
+            return bd, verdicts, False, self._outcome(BLOCKED, cycle, stop), False
 
         # RESULT.md is ours: the controller wrote it from the Builder's report
         # after the snapshot, so it shows up in the delta but is never the
@@ -1021,7 +1046,7 @@ class Orchestrator:
         for r in net.reasons:
             self._emit(f"[cycle {cycle}] net: {r}")
         if net.blocked:
-            return bd, verdicts, False, self._outcome(BLOCKED, cycle, "safety net blocked the changeset")
+            return bd, verdicts, False, self._outcome(BLOCKED, cycle, "safety net blocked the changeset"), False
 
         # tier-gate enforcement
         gate_reasons = enforce_tier_gates(tiers, verdicts)
@@ -1030,10 +1055,13 @@ class Orchestrator:
             for r in gate_reasons:
                 self._emit(f"[cycle {cycle}] {label}: {r}")
             if tier_gate_hard:
-                return bd, verdicts, False, self._outcome(BLOCKED, cycle, "tier-gate enforcement failed")
+                return bd, verdicts, False, self._outcome(BLOCKED, cycle, "tier-gate enforcement failed"), False
 
         has_high = compute_has_high(tiers, verdicts)
-        return bd, verdicts, has_high, None
+        implementation_observed = any(
+            change.path not in {busmod.RESULT, handoff_name} for change in changes
+        )
+        return bd, verdicts, has_high, None, implementation_observed
 
     def run_from_handoff(self) -> Outcome:
         """Run the single-shot build and append its attempt/terminal receipt."""
@@ -1106,7 +1134,7 @@ class Orchestrator:
         has_high = False
         attempt = 0
         for attempt in range(1, _MAX_BUILD_ATTEMPTS + 1):
-            _bd, verdicts, has_high, blocked = self._build_and_gate(
+            bd, verdicts, has_high, blocked, implementation_observed = self._build_and_gate(
                 bus, handoff_text, tiers, cycle=attempt,
                 handoff_name=handoff_name, tier_gate_hard=False,
             )
@@ -1114,6 +1142,33 @@ class Orchestrator:
                 return blocked  # safety net (scope/secret) tripped — hard block
             if not _builder_bailed(verdicts):
                 break  # builder completed (advisory panel verdicts pass through)
+            if not verdicts and implementation_observed:
+                self._emit(
+                    f"[build] attempt {attempt}: implementation passed the net but "
+                    "the verdict fence is missing -- recovering verdict only"
+                )
+                recovery_attempt = attempt + 1
+                _recovery, verdicts, has_high, blocked, recovery_implementation_observed = self._build_and_gate(
+                    bus, handoff_text, tiers, cycle=recovery_attempt,
+                    handoff_name=handoff_name, tier_gate_hard=False,
+                    prompt=verdict_recovery_prompt(handoff_text), result_prefix=bd.text,
+                )
+                if blocked is not None:
+                    return blocked
+                if recovery_implementation_observed:
+                    return self._outcome(
+                        BLOCKED,
+                        recovery_attempt,
+                        "builder verdict recovery changed implementation",
+                    )
+                if _builder_bailed(verdicts):
+                    return self._outcome(
+                        BLOCKED,
+                        recovery_attempt,
+                        f"builder verdict recovery failed after {recovery_attempt} attempt(s)",
+                    )
+                attempt = recovery_attempt
+                break
             if attempt < _MAX_BUILD_ATTEMPTS:
                 self._emit(
                     f"[build] attempt {attempt}: builder bailed with no "

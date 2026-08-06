@@ -1416,6 +1416,135 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertEqual(out.cycles, 2)  # retried exactly once
 
+    def test_missing_verdict_after_real_in_scope_delta_recovers_without_reimplementation(self):
+        # This is the ProjectTetra failure shape: the real Builder changed an
+        # allowed file and wrote a human report, but omitted the fence the
+        # controller parses. The first delta must pass the same git-backed net
+        # production uses before a second, verdict-only turn is allowed.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            handoff = (
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n"
+            )
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            report = "[Gate 1] Status: completed (LOW)\nVerification: OK\n"
+
+            class _MissingVerdictThenRecovers(Backend):
+                name = "missing-verdict-then-recovers"
+
+                def __init__(self):
+                    self.prompts: list[str] = []
+
+                def invoke(self, role, prompt, cfg):
+                    self.prompts.append(prompt)
+                    if len(self.prompts) == 1:
+                        (repo / "allowed.py").write_text("VALUE = 1\n", encoding="utf-8")
+                        return Turn(text=report)
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _MissingVerdictThenRecovers()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertEqual(out.cycles, 2)
+            self.assertEqual(len(backend.prompts), 2)
+            self.assertIn("VERDICT-ONLY RECOVERY", backend.prompts[1])
+            self.assertNotIn("Implement the HANDOFF", backend.prompts[1])
+            result = (repo / bus.RESULT).read_text(encoding="utf-8")
+            self.assertIn(report.strip(), result)
+            self.assertIn(_CLEAN_VERDICT.strip(), result)
+            records = [json.loads(line) for line in (audit_dir / "build-audit.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(records[-1]["status"], "built")
+            self.assertEqual(records[-1]["attempts"], 2)
+
+    def test_missing_verdict_out_of_scope_delta_blocks_without_recovery(self):
+        # A missing fence is never proof of completion by itself. If the first
+        # real git delta is out of scope, the net must block it before the
+        # recovery path is reachable.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+
+            class _MissingVerdictOutOfScope(Backend):
+                name = "missing-verdict-out-of-scope"
+
+                def __init__(self):
+                    self.calls = 0
+
+                def invoke(self, role, prompt, cfg):
+                    self.calls += 1
+                    (repo / "forbidden.py").write_text("VALUE = 1\n", encoding="utf-8")
+                    return Turn(text="[Gate 1] Status: completed\n")
+
+            backend = _MissingVerdictOutOfScope()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "safety net blocked the changeset")
+            self.assertEqual(backend.calls, 1)
+
+    def test_verdict_recovery_cannot_make_an_in_scope_implementation_change(self):
+        # Scope compliance is necessary but not sufficient here: the recovery
+        # prompt promises a format-only turn. Letting it edit another allowed
+        # file would turn a format repair into an unreviewed second build.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nfirst.py\nsecond.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+
+            class _RecoveryEditsSource(Backend):
+                name = "recovery-edits-source"
+
+                def __init__(self):
+                    self.calls = 0
+
+                def invoke(self, role, prompt, cfg):
+                    self.calls += 1
+                    if self.calls == 1:
+                        (repo / "first.py").write_text("FIRST = 1\n", encoding="utf-8")
+                        return Turn(text="[Gate 1] completed\n")
+                    (repo / "second.py").write_text("SECOND = 1\n", encoding="utf-8")
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _RecoveryEditsSource()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "builder verdict recovery changed implementation")
+            self.assertEqual(backend.calls, 2)
+
     def test_no_retry_on_completed_panel_fail(self):
         # A completed gate whose review panel FAILs is a legitimate advisory
         # outcome, not a bail: it must NOT be retried (which would clobber the

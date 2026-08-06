@@ -46,6 +46,14 @@ target repository so audit artifacts cannot change the delta being judged.
 Two consecutive false read-only bails are terminal `BLOCKED`/`builder_bailed`.
 They must not be reported as `BUILT`; the previous retry loop had that gap.
 
+If an in-scope implementation delta has already passed the controller net but
+the Builder omits its machine-readable `verdicts` fence, the controller makes
+one verdict-only recovery call. The recovery cannot replace the initial net
+decision: the first delta was scanned before recovery is eligible, the recovery
+turn is scanned too and must not contain an implementation delta, and its fence
+is appended to rather than replacing the human-readable RESULT report. A missing
+implementation delta or malformed recovery remains `BLOCKED`.
+
 ## Consequences
 
 - Claude's direct structured code-edit path is visibly refused in Builder-first

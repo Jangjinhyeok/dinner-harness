@@ -119,6 +119,14 @@ blocks it parses deterministically:
 **Fail-closed everywhere**: a missing/garbled tier → HIGH; a missing `control`
 fence → BLOCKED; a HIGH gate with no `PASS` verdict → blocked.
 
+For the single-shot `build` path only, a Builder that made an in-scope,
+net-scanned implementation change but omitted ` ```verdicts ` receives one
+**verdict-only recovery turn**. It may not change files; its fence is appended
+to the already-written human-readable `RESULT.md` and is itself safety-scanned.
+Any recovery implementation delta, no initial implementation delta, a safety-net
+hit, or a second malformed recovery still
+returns `BLOCKED`.
+
 ## Safety model (the non-negotiable part)
 
 Automating the relay removes the human's incidental glance, so the tier gates are
