@@ -34,7 +34,9 @@ class Config:
     # HANDOFF.md; a project that repurposes HANDOFF.md as a persistent doc can
     # point `build` at an alternate spec (e.g. HANDOFF_WEBVIEW.md) so auto-dispatch
     # never has to clobber it. Only the run-from-handoff build path honours this;
-    # the full `run` loop always authors HANDOFF.md.
+    # the full `run` loop always authors HANDOFF.md — and says so explicitly by
+    # passing that name down, rather than letting the gate re-read this field and
+    # tamper-check a file the loop never wrote.
     handoff_name: str = "HANDOFF.md"
 
     # --- vendor <-> role mapping (bidirectional) ---------------------------
@@ -53,7 +55,7 @@ class Config:
 
     # --- backend -----------------------------------------------------------
     backend: str = "mock"             # mock | real
-    timeout_s: int = 1800             # per headless vendor turn
+    timeout_s: float = 1800           # per headless vendor turn
 
     # --- loop control ------------------------------------------------------
     max_cycles: int = 5
@@ -97,6 +99,8 @@ class Config:
             )
         if self.max_cycles < 1:
             problems.append("max_cycles must be >= 1")
+        if self.timeout_s <= 0:
+            problems.append("timeout_s must be > 0")
         if self.backend == "real" and not Path(self.repo).is_dir():
             problems.append(f"repo not a directory: {self.repo}")
         if self.auto_approve and self.backend == "real" and not self.allow_auto_approve_real:

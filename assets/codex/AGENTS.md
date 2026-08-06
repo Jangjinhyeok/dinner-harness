@@ -118,6 +118,8 @@
 
 큰 작업은 설계·검토(**Architect**)와 구현(**Builder**) 두 역할로 나눈다. "Two-CLI"는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**을 뜻한다. 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 그리고 기본 모드에서 **Codex Builder는 사람이 여는 세션이 아니라 인터랙티브 Claude(Architect)가 `orchestrate.py build`로 dispatch하는 headless `codex exec` 호출**(single-pane)이다 — 이때 아래 "헤드리스 orchestration 모드" 규약을 따른다. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다.
 
+기본 auto-dispatch는 Builder를 별도 linked git worktree로 격리한다. Architect는 승인된 HANDOFF를 그 worktree에 명시적으로 복사한 뒤 `orchestrate.py build --repo <builder-worktree>`를 실행하고, RESULT·diff도 그 worktree에서 검토한다. 따라서 Architect의 primary-tree 변경은 Builder 변화량과 섞이지 않는다. 단 linked worktree는 Git common directory를 공유하므로 Builder 실행 중 `git stash`, `core.excludesFile`, `.git/info/exclude` 변경은 witness fingerprint를 움직여 fail-closed 된다.
+
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 
 **무거운 작업 선제 감지(기본 세션, vendor-neutral)**: 인터랙티브 Architect로 동작하는 세션은(기본 페어링에선 Claude) 기본 모드에서 요청을 받을 때 토큰 무게를 먼저 가늠해, 다파일(≈3+)·빌드 iterate·다단계 구현·큰 diff 신호가 보이면 구현 전에 **architect 모드 전환 + Builder dispatch를 선제 제안**한다(자동 진입 아님 — 사용자 OK가 시작 게이트). 근거·상세 = CLAUDE.md §2 "무거운 작업 선제 감지".

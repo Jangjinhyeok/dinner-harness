@@ -6,13 +6,17 @@ hook handlers as the safety net). Run from the repo root:
 from __future__ import annotations
 
 import json
+import io
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import orchestrate
 from orchestrator import bus
 from orchestrator.config import Config
 from orchestrator.controller import (
@@ -27,6 +31,7 @@ from orchestrator.controller import (
     HELD,
 )
 from orchestrator import safety
+from orchestrator import vendors
 from orchestrator.vendors import (
     ROLE_BUILDER,
     Backend,
@@ -64,6 +69,47 @@ def tearDownModule():
             os.environ.pop(k, None)
         else:
             os.environ[k] = old
+
+
+class TestVendorRunner(unittest.TestCase):
+    def test_child_output_is_streamed_and_captured(self):
+        # The old subprocess.run(capture_output=True) held every progress line
+        # until the CLI exited. Keep stdout for Claude RESULT parsing while also
+        # showing both streams to the operator during a long Builder turn.
+        script = (
+            "import sys; "
+            "print('builder progress', flush=True); "
+            "print('builder warning', file=sys.stderr, flush=True)"
+        )
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            turn = vendors._run([sys.executable, "-c", script], Config())
+        self.assertEqual(turn.error, "")
+        self.assertEqual(turn.text, "builder progress\n")
+        self.assertIn("builder progress", stdout.getvalue())
+        self.assertIn("builder warning", stderr.getvalue())
+
+    def test_timeout_kills_the_child_and_names_the_configured_budget(self):
+        # A timeout must terminate the child (rather than leave Codex behind)
+        # and the operator needs the actual CLI-configured budget to distinguish
+        # it from a policy block. The current salvage is the surviving worktree,
+        # not treating a still-running process as a successful Builder turn.
+        cfg = Config(timeout_s=0.05)
+        turn = vendors._run([sys.executable, "-c", "import time; time.sleep(5)"], cfg)
+        self.assertIn("timed out after 0.05s", turn.error)
+
+    def test_cli_passes_timeout_to_config_and_rejects_zero(self):
+        # `--timeout-s` is the supported escape hatch for a productive CLI
+        # process that has not exited. Without wiring it into Config, argparse
+        # accepts the flag but the runner silently keeps the 1800-second budget.
+        with mock.patch("sys.stdout", new_callable=io.StringIO), \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = orchestrate.main([
+                "run", "--goal", "demo", "--backend", "mock", "--yes",
+                "--timeout-s", "0",
+            ])
+        self.assertEqual(status, 2)
+        self.assertIn("timeout_s must be > 0", stderr.getvalue())
 
 
 def _git_available() -> bool:
@@ -270,6 +316,118 @@ class TestSafetyNet(unittest.TestCase):
             res = safety.scan([Change(path="src/x.py", content=f"KEY = '{key}'\n")], cfg)
             self.assertTrue(res.blocked, res.reasons)
 
+    def _hooks_copy(self, dest: Path) -> Path:
+        """A private copy of the real hooks tree, safe to corrupt."""
+        shutil.copytree(Config().hooks_dir, dest,
+                        ignore=shutil.ignore_patterns("logs", "__pycache__"))
+        return dest
+
+    def _scan_with_broken_ruleset(self, repo: Path, hooks: Path, *, delete: bool):
+        """Scan a real AWS key through a hooks tree whose secret ruleset is unusable."""
+        rules = hooks / "rules" / "secret_patterns.json"
+        if delete:
+            rules.unlink()
+        else:
+            rules.write_text("{ not valid json", encoding="utf-8")
+        (repo / bus.HANDOFF).write_text("# H\n```scope\nsrc/x.py\n```\n", encoding="utf-8")
+        cfg = _cfg(repo, net_enforce=True, hooks_dir=hooks)
+        key = "AKIA" + "IOSFODNN7EXAMPLE"
+        return safety.scan([Change(path="src/x.py", content=f"KEY = '{key}'\n")], cfg)
+
+    def test_unloadable_secret_ruleset_fails_closed(self):
+        # Round 10 (BLOCK): secret_scan caught its own ruleset-load failure,
+        # logged it, and called exit_allow() -> exit 0, which the net records as
+        # a clean pass with an EMPTY reason list. CLAUDE_HOOK_FAILS_CLOSED did
+        # not reach it: run_handler consults that flag only when the handler
+        # CRASHES, and this handler ran to completion and chose to allow. An AWS
+        # key shipped as BUILT with nothing on screen.
+        #
+        # Asserting `blocked` alone is not enough — scope_check could block this
+        # path for its own reasons — so the reason has to name the cause.
+        for delete in (False, True):
+            with self.subTest(deleted=delete), tempfile.TemporaryDirectory() as d:
+                repo = Path(d) / "repo"
+                repo.mkdir()
+                res = self._scan_with_broken_ruleset(
+                    repo, self._hooks_copy(Path(d) / "hooks"), delete=delete)
+                self.assertTrue(res.blocked, res.reasons)
+                self.assertTrue(
+                    any("secret ruleset" in r for r in res.reasons),
+                    f"blocked, but not for the ruleset: {res.reasons}")
+
+    def test_intact_ruleset_still_scans_normally(self):
+        # The other half: the fail-closed path must not be reached when the
+        # ruleset loads. Without this, "block on a corrupt ruleset" would also
+        # pass if the handler blocked unconditionally.
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d) / "repo"
+            repo.mkdir()
+            hooks = self._hooks_copy(Path(d) / "hooks")
+            (repo / bus.HANDOFF).write_text("# H\n```scope\nsrc/x.py\n```\n", encoding="utf-8")
+            cfg = _cfg(repo, net_enforce=True, hooks_dir=hooks)
+            clean = safety.scan([Change(path="src/x.py", content="x = 1\n")], cfg)
+            self.assertFalse(clean.blocked, clean.reasons)
+            key = "AKIA" + "IOSFODNN7EXAMPLE"
+            leaked = safety.scan([Change(path="src/x.py", content=f"K = '{key}'\n")], cfg)
+            self.assertTrue(leaked.blocked, leaked.reasons)
+            self.assertFalse(any("secret ruleset" in r for r in leaked.reasons),
+                             f"blocked for the wrong reason: {leaked.reasons}")
+
+    def test_interactive_session_still_safe_passes_a_broken_ruleset(self):
+        # exit_no_verdict must invert ONLY under the net. An interactive Claude
+        # session has a human in the loop and the opposite bargain: a handler
+        # that cannot load its ruleset must not stop the user editing their own
+        # files. CLAUDE_HOOK_FAILS_CLOSED is read at import, so this drives the
+        # handler directly rather than through safety.scan (which always sets it).
+        with tempfile.TemporaryDirectory() as d:
+            hooks = self._hooks_copy(Path(d) / "hooks")
+            (hooks / "rules" / "secret_patterns.json").write_text("{ nope", encoding="utf-8")
+            key = "AKIA" + "IOSFODNN7EXAMPLE"
+            payload = {"tool_name": "Write",
+                       "tool_input": {"file_path": str(Path(d) / "x.py"),
+                                      "content": f"K = '{key}'\n"},
+                       "cwd": d}
+            env = {k: v for k, v in os.environ.items()
+                   if k != "CLAUDE_HOOK_FAILS_CLOSED"}
+            env["CLAUDE_SECRET_SCAN_MODE"] = "enforce"
+            proc = subprocess.run(
+                [sys.executable, str(hooks / "handlers" / "secret_scan.py")],
+                input=json.dumps(payload), capture_output=True,
+                encoding="utf-8", errors="replace", env=env, timeout=30)
+            self.assertEqual(proc.returncode, 0,
+                             f"interactive session was blocked: {proc.stderr}")
+
+    def test_scope_check_survives_a_home_less_environment(self):
+        # Round 10 (tdd-guide): _install_home_posix()'s try/except around
+        # Path.home() was unprotected — no test cleared the home variables, so
+        # removing the guard left the suite green. It matters because the call
+        # is made at IMPORT: an unguarded RuntimeError there exits the handler
+        # with code 1, outside run_handler's try, where CLAUDE_HOOK_FAILS_CLOSED
+        # cannot reach it — and the net reads any code other than 0 or 2 as "no
+        # verdict", i.e. a blocked cycle for a reason that is not a policy hit.
+        with tempfile.TemporaryDirectory() as d:
+            hooks = self._hooks_copy(Path(d) / "hooks")
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH")}
+            env["CLAUDE_SCOPE_WHITELIST_MODE"] = "enforce"
+            env["CLAUDE_SCOPE_FENCE"] = "allowed.py"
+            env["CLAUDE_SCOPE_HANDOFF_NAME"] = bus.HANDOFF
+            payload = {"tool_name": "Write",
+                       "tool_input": {"file_path": str(Path(d) / "allowed.py"),
+                                      "content": "ok = True\n"},
+                       "cwd": d}
+            proc = subprocess.run(
+                [sys.executable, str(hooks / "handlers" / "scope_check.py")],
+                input=json.dumps(payload), capture_output=True,
+                encoding="utf-8", errors="replace", env=env, timeout=30)
+            # 0 (allowed) or 2 (a policy block) are verdicts. 1 is the import
+            # blowing up before any verdict exists.
+            self.assertIn(proc.returncode, (0, 2),
+                          f"handler died before reaching a verdict: {proc.stderr}")
+            self.assertNotIn("Traceback", proc.stderr)
+            # This path IS in the pinned fence, so the verdict must be allow.
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_missing_handler_fails_closed_in_enforce(self):
         with tempfile.TemporaryDirectory() as d:
             repo = Path(d)
@@ -337,6 +495,25 @@ class TestSafetyNet(unittest.TestCase):
                                             encoding="utf-8")
             cfg = _cfg(repo, net_enforce=True, **kw)
             return safety.scan([Change(path=path, content=content)], cfg).blocked
+
+    def test_bracketed_file_entry_is_literal_not_a_character_class(self):
+        # Round 10: the "brackets stay literal" rule was applied only to
+        # DIRECTORY entries, because the bracket test sat after the trailing-
+        # separator test. A FILE entry kept the glob promotion, so `[2026]x.md`
+        # compiled to a character class — matching `2x.md` and NOT the literal
+        # name the operator whitelisted. Both directions wrong at once, and the
+        # block message named the very path that was in the fence, so the only
+        # move it suggests is widening.
+        self.assertFalse(self._scan_one(["[2026]resume.md"], "[2026]resume.md"))
+        self.assertTrue(self._scan_one(["[2026]resume.md"], "2resume.md"))
+        # The document lane's routine case.
+        self.assertFalse(self._scan_one(["[2026]이력서.md"], "[2026]이력서.md"))
+        # Directory entries were already correct — they must stay correct.
+        self.assertFalse(self._scan_one(["docs/[draft]/"], "docs/[draft]/x.md"))
+        self.assertTrue(self._scan_one(["docs/[draft]/"], "docs/d/x.md"))
+        # And an entry that opts INTO globbing still globs.
+        self.assertFalse(self._scan_one(["src/*.py"], "src/a.py"))
+        self.assertTrue(self._scan_one(["src/*.py"], "src/deep/a.py"))
 
     def test_directory_fence_entry_matches_on_a_path_boundary(self):
         # `Path.resolve()` drops the trailing separator, so a bare `startswith`
@@ -725,6 +902,118 @@ class TestEndToEndMock(unittest.TestCase):
             mock = MockBackend(sc)
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run()
             self.assertEqual(out.status, BLOCKED, out.reason)
+
+
+class _WritingArchitect(Backend):
+    """An Architect that authors a file on a chosen turn, as its own role tells it to.
+
+    ROLE_ARCHITECT step 8 mandates an ADR before dispatching at step 9, so this
+    is the ordinary shape of an Architect turn, not an adversarial one.
+    """
+
+    name = "writing-architect"
+
+    def __init__(self, repo: Path, scenario: Scenario, on_turn: int,
+                 path: str, content: str):
+        self._repo = repo
+        self._sc = scenario
+        self._on_turn = on_turn  # 1 = design, 2 = review
+        self._path = path
+        self._content = content
+        self.turns = 0
+
+    def invoke(self, role: str, prompt: str, cfg: Config) -> Turn:
+        self.turns += 1
+        if self.turns == self._on_turn:
+            p = self._repo / self._path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(self._content, encoding="utf-8")
+        if "REVIEW" in prompt.upper():
+            return Turn(text=self._sc.reviews[0])
+        return Turn(text=self._sc.handoffs[0])
+
+
+class TestArchitectTurnIsScanned(unittest.TestCase):
+    """Round 10: the Architect's own output reached neither net layer.
+
+    `_build_and_gate` takes its baseline AFTER architect.invoke, so everything
+    the Architect wrote was pre-existing dirt by construction and dropped out of
+    every delta; ARCHITECT_REVIEW runs after the net entirely. `--architect
+    codex` is documented, and a headless Codex Architect fires no Claude hooks —
+    the same asymmetry the net exists for. Before the delta rework the whole-tree
+    sweep covered this.
+    """
+
+    _KEY = "AKIA" + "IOSFODNN7EXAMPLE"
+
+    def _run_with(self, repo: Path, on_turn: int, content: str, builder):
+        sc = default_low_scenario("demo")
+        arch = _WritingArchitect(repo, sc, on_turn, "docs/architecture/ADR-9.md", content)
+        cfg = _cfg(repo, net_enforce=True, max_cycles=1, confirm_handoff=False)
+        out = Orchestrator(cfg, arch, builder, AutoApprove(),
+                           log=lambda m: None).run()
+        return out, arch
+
+    def _repo(self, d):
+        repo = Path(d)
+        _git_init(repo)
+        (repo / "seed.md").write_text("seed\n", encoding="utf-8")
+        _git_commit_all(repo)
+        return repo
+
+    def test_key_in_the_design_turns_adr_blocks_before_the_builder_runs(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            builder = MockBackend(default_low_scenario("demo"))
+            out, _ = self._run_with(repo, 1, f"# ADR\nkey = '{self._KEY}'\n", builder)
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("architect design", out.reason)
+            # Knowable before dispatch — it must not cost a builder turn.
+            self.assertEqual(builder._cycle[ROLE_BUILDER], 0)
+
+    def test_key_in_the_review_turn_blocks(self):
+        # The review turn runs AFTER the net, so its writes previously reached
+        # neither layer this cycle and became baseline dirt in the next.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            builder = MockBackend(default_low_scenario("demo"))
+            out, arch = self._run_with(repo, 2, f"# ADR\nkey = '{self._KEY}'\n", builder)
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("architect review", out.reason)
+            self.assertEqual(arch.turns, 2)  # it really did reach the review turn
+
+    def test_pre_existing_dirt_is_not_charged_to_the_architect(self):
+        # The delta's whole premise, applied to this turn too: a key that was
+        # ALREADY sitting in the tree when the cycle started is not something
+        # this Architect turn wrote. Charging it would resurrect the failure the
+        # delta rework exists to fix — a dispatch blocked on somebody else's
+        # file, whose only workaround is to stop using the tool.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            (repo / "old_scratch.py").write_text(f"k = '{self._KEY}'\n", encoding="utf-8")
+            builder = MockBackend(default_low_scenario("demo"))
+            out, _ = self._run_with(repo, 1, "# ADR-9\nA design record.\n", builder)
+            self.assertEqual(out.status, DONE, out.reason)
+
+    def test_an_ordinary_adr_is_not_blocked_by_the_builders_fence(self):
+        # The other half, and the reason this is secret-only: the ADR is out of
+        # every ```scope``` fence by design (the fence bounds the BUILDER). If
+        # the Architect's delta were judged against it, step 8 of its own
+        # protocol would fail every cycle.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = self._repo(d)
+            builder = MockBackend(default_low_scenario("demo"))
+            out, _ = self._run_with(repo, 1, "# ADR-9\nA design record.\n", builder)
+            self.assertEqual(out.status, DONE, out.reason)
+            self.assertTrue((repo / "docs" / "architecture" / "ADR-9.md").is_file())
 
 
 class _RejectGate:
@@ -1523,6 +1812,299 @@ class TestBuildFromHandoff(unittest.TestCase):
                                AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
             self.assertIn("safety net", out.reason)
+
+    def test_dryrun_warns_on_handoff_tamper_instead_of_blocking(self):
+        # Round 10: the tamper stop returned BLOCKED unconditionally while every
+        # other check in _build_and_gate degrades, so --net-dryrun ("run the
+        # safety net in dryrun (warn) instead of blocks", per orchestrate.py)
+        # still hard-stopped here. Continuing is safe because the fence the
+        # handlers enforce is pinned from the DISPATCHED text, not re-read from
+        # the file the Builder just rewrote.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8")
+            _git_commit_all(repo)
+            logs: list[str] = []
+            backend = _TamperingBackend(
+                repo, bus.HANDOFF,
+                new_text="# rewritten\n```scope\n**\n```\n", also_write="allowed.py")
+            out = Orchestrator(_cfg(repo, net_enforce=False), backend, backend,
+                               AutoApprove(), log=logs.append).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertTrue(any("altered or removed" in m for m in logs),
+                            f"dryrun did not warn about the tamper: {logs}")
+
+    def test_run_loop_tamper_check_follows_the_file_it_wrote(self):
+        # Round 10: _build_and_gate read cfg.handoff_name while run() writes
+        # bus.HANDOFF unconditionally. They coincided only because no CLI
+        # exposes --handoff on `run`; with one set, every cycle died on
+        # "builder altered or removed HANDOFF_X.md" — a Builder integrity
+        # accusation caused entirely by the controller reading the wrong field.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / "seed.md").write_text("seed\n", encoding="utf-8")
+            _git_commit_all(repo)
+            # cfg names a handoff the run loop will never write.
+            cfg = _cfg(repo, net_enforce=True, handoff_name="HANDOFF_OTHER.md",
+                       max_cycles=1, confirm_handoff=False)
+            mock = MockBackend(default_low_scenario("demo"))
+            out = Orchestrator(cfg, mock, mock, AutoApprove(),
+                               log=lambda m: None).run()
+            self.assertNotIn("altered or removed", out.reason)
+            self.assertEqual(out.status, DONE, out.reason)
+
+    def test_a_directory_symlink_does_not_refuse_the_dispatch(self):
+        # Round 10: _opaque_dirs used Path.is_dir(), which FOLLOWS the link,
+        # while git does not — it stores a symlink as a blob and lists it as one
+        # ordinary entry. So an untracked `latest -> builds/` convenience link
+        # was read as a nested repository and refused every dispatch, whole-tree
+        # and pre-turn, regardless of the fence. The operator was told to look
+        # for a submodule that does not exist, and no fence edit clears it.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8")
+            (repo / "builds").mkdir()
+            (repo / "builds" / "out.txt").write_text("artifact\n", encoding="utf-8")
+            try:
+                (repo / "latest").symlink_to(repo / "builds", target_is_directory=True)
+            except (OSError, NotImplementedError):
+                # Windows needs Developer Mode or admin for this.
+                self.skipTest("symlink creation not permitted on this machine")
+            self.assertTrue((repo / "latest").is_symlink())
+
+            class _WritesInFence(Backend):
+                name = "in-fence"
+
+                def invoke(self, role, prompt, cfg):
+                    (repo / "allowed.py").write_text("ok = True\n", encoding="utf-8")
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _WritesInFence()
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_a_real_nested_repo_is_still_refused(self):
+        # The other half of the symlink fix: skipping links must not skip the
+        # thing the check exists for. Without this, "links are fine" would also
+        # pass if _opaque_dirs had been deleted outright.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\nsub/\n```\n",
+                encoding="utf-8")
+            sub = repo / "sub"
+            sub.mkdir()
+            _git_init(sub)
+            (sub / "inside.txt").write_text("unvettable\n", encoding="utf-8")
+
+            mock = MockBackend(default_low_scenario("demo"))
+            out = Orchestrator(_cfg(repo, net_enforce=True), mock, mock,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("cannot look inside", out.reason)
+
+    @staticmethod
+    def _break_the_witness(repo: Path) -> None:
+        """Make .git/info/exclude unreadable, so _witness_fingerprint returns None.
+
+        A directory in the file's place raises IsADirectoryError on POSIX and
+        PermissionError on Windows — either way the read fails for a reason that
+        is not FileNotFoundError, which is the shape a huge-repo `ls-files`
+        timeout or a permission problem takes in production.
+        """
+        info = repo / ".git" / "info"
+        info.mkdir(parents=True, exist_ok=True)
+        target = info / "exclude"
+        if target.is_file():
+            target.unlink()
+        target.mkdir(exist_ok=True)
+
+    def test_unreadable_witness_fails_closed_before_the_turn(self):
+        # Round 10: vis_before was stored without being inspected, and the
+        # post-turn comparison is `_witness_fingerprint(...) != vis_before`.
+        # `None != None` is False, so when the fingerprint failed at BOTH ends —
+        # which is what a persistent cause does — the entire witness layer went
+        # silent in enforce: no block, no warning, no reason. Every other "we
+        # could not see" case here fails closed.
+        #
+        # PATCHED, deliberately, and this is the one place in these tests that
+        # is: the failure has to hit the fingerprint while `git status` still
+        # answers, and the constructible causes do not separate. Making
+        # .git/info/exclude unreadable takes git's own status call down with it
+        # (verified — collect_changeset returns None too), so the pre-turn
+        # changeset check fires first and this branch is never reached. The
+        # production shape that DOES separate is a 30s `ls-files -v --full-name
+        # :/` timeout on a large index, which `git status` survives via its
+        # cache — not constructible in a unit test. The defect is in the
+        # caller's handling of None, so None is what the test supplies.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        from orchestrator import controller as ctrl
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8")
+            (repo / "seed.md").write_text("seed\n", encoding="utf-8")
+            _git_commit_all(repo)
+            # Precondition: git itself is healthy, so nothing else can block.
+            self.assertIsNotNone(collect_changeset(repo))
+
+            mock = MockBackend(default_low_scenario("demo"))
+            real = ctrl._witness_fingerprint
+            ctrl._witness_fingerprint = lambda repo: None
+            try:
+                out = Orchestrator(_cfg(repo, net_enforce=True), mock, mock,
+                                   AutoApprove(), log=lambda m: None).run_from_handoff()
+            finally:
+                ctrl._witness_fingerprint = real
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("cannot read what git reports", out.reason)
+            # Knowable before dispatch, so it must not cost a 1800s builder turn.
+            self.assertEqual(mock._cycle[ROLE_BUILDER], 0)
+
+    def test_witness_broken_during_the_turn_fails_closed(self):
+        # The other end of the same hole: the baseline read fine, the Builder
+        # then made it unreadable. "Could not look again" is not "was unchanged",
+        # and it gets its own message rather than the tamper one — an operator
+        # told "builder changed what git reports" would go hunting for a commit
+        # that is not there.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8")
+            (repo / "seed.md").write_text("seed\n", encoding="utf-8")
+            _git_commit_all(repo)
+
+            breaker = self._break_the_witness
+
+            class _BreaksWitness(Backend):
+                name = "breaks-witness"
+
+                def invoke(self, role, prompt, cfg):
+                    (repo / "allowed.py").write_text("ok = True\n", encoding="utf-8")
+                    breaker(repo)
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _BreaksWitness()
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("cannot re-read what git reports", out.reason)
+
+    def test_repointing_excludes_file_is_watched_even_with_identical_content(self):
+        # Round 10 (tdd-guide): dropping the excludesFile SETTING from the
+        # fingerprint left the suite green. Every existing scenario changed the
+        # setting and the content in lockstep, so the content term alone covered
+        # them and the setting term was dead weight as far as the tests could
+        # see. The ADR claims both halves matter — "repointing it and editing it
+        # are the same attack with different spellings" — so here the two files
+        # are byte-identical and only the pointer moves.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8")
+            (repo / "seed.md").write_text("seed\n", encoding="utf-8")
+            _git_commit_all(repo)
+            same = "# nothing ignored\n"
+            a, b = Path(d) / "ex_a", Path(d) / "ex_b"
+            a.write_text(same, encoding="utf-8")
+            b.write_text(same, encoding="utf-8")
+            self.assertEqual(a.read_text(encoding="utf-8"), b.read_text(encoding="utf-8"))
+            subprocess.run(["git", "-C", str(repo), "config", "core.excludesFile", str(a)],
+                           check=True, capture_output=True, text=True)
+
+            class _Repoints(Backend):
+                name = "repoints"
+
+                def invoke(self, role, prompt, cfg):
+                    (repo / "allowed.py").write_text("ok = True\n", encoding="utf-8")
+                    subprocess.run(
+                        ["git", "-C", str(repo), "config", "core.excludesFile", str(b)],
+                        check=True, capture_output=True, text=True)
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _Repoints()
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("builder changed what git reports", out.reason)
+
+    def test_post_turn_opaque_check_reads_the_snapshot_not_the_delta(self):
+        # Round 10 (tdd-guide): the round-9 fix — the post-turn opaque check
+        # judges the SNAPSHOT, so a nested repo already dirty at dispatch (equal
+        # in both snapshots, therefore absent from the delta) is still refused —
+        # was masked. The pre-turn check at the top of _build_and_gate fires
+        # first for every scenario the suite can build, so reverting the
+        # post-turn line to the delta left 89/89 green.
+        #
+        # White-box on purpose: the pre-turn check is neutralised for ONE call so
+        # the post-turn one is the thing under test. There is no black-box way
+        # to separate them — that is exactly why the fix was unprotected.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        from orchestrator import controller as ctrl
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\nsub/\n```\n",
+                encoding="utf-8")
+            sub = repo / "sub"
+            sub.mkdir()
+            _git_init(sub)
+            (sub / "dirty.txt").write_text("already dirty at dispatch\n", encoding="utf-8")
+
+            real = ctrl._opaque_dirs
+            calls = {"n": 0}
+
+            def once_blind(changes, repo_path):
+                calls["n"] += 1
+                return [] if calls["n"] == 1 else real(changes, repo_path)
+
+            class _WritesInside(Backend):
+                name = "writes-inside"
+
+                def invoke(self, role, prompt, cfg):
+                    (sub / "leak.py").write_text("k = 1\n", encoding="utf-8")
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _WritesInside()
+            ctrl._opaque_dirs = once_blind
+            try:
+                out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                                   AutoApprove(), log=lambda m: None).run_from_handoff()
+            finally:
+                ctrl._opaque_dirs = real
+            self.assertGreaterEqual(calls["n"], 2, "the post-turn check never ran")
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("cannot look inside", out.reason)
 
     def test_builder_committing_its_turn_blocks(self):
         # The sharpest witness edit, and NOT an exotic one: build_prompt tells

@@ -51,7 +51,43 @@ py -3 orchestrate.py build --repo /path/to/work-repo --backend real
 
 Flags: `--architect/--builder {codex,claude}`, `--architect-model/--builder-model`,
 `--max-cycles N`, `--no-confirm-handoff`, `--yes` (auto-approve all human gates),
-`--net-dryrun` (safety net warns instead of blocks).
+`--net-dryrun` (safety net warns instead of blocks), and `--timeout-s N` (per
+headless vendor turn; default 1800). Vendor stdout/stderr is streamed while the
+turn runs and captured for parsing. A timeout kills the child and remains
+`BLOCKED`; inspect the Builder worktree for surviving output before retrying or
+starting a manual fallback.
+
+## Isolate the Builder in a linked worktree
+
+For a real Builder dispatch, prefer a dedicated linked worktree. It is a
+process-level boundary: Architect edits in the primary worktree cannot be
+included in the Builder's `git status` snapshots or its controller-side net.
+
+```powershell
+# Run from the Architect's primary worktree after HANDOFF.md is approved.
+$builderWorktree = "../repo-build"
+git worktree add -b builder/my-task $builderWorktree HEAD
+Copy-Item -LiteralPath .\HANDOFF.md -Destination "$builderWorktree\HANDOFF.md"
+
+py -3 ~/.claude/orchestrate.py build --repo $builderWorktree --backend real
+
+# Review the Builder's bus and diff in the Builder worktree, not the primary one.
+Get-Content -Raw "$builderWorktree\RESULT.md"
+git -C $builderWorktree diff
+```
+
+`HANDOFF.md` and `RESULT.md` are local bus artifacts, so a linked worktree does
+not receive the Architect's uncommitted handoff automatically. Copy the approved
+handoff before dispatch; do not copy a Builder-modified handoff back. Builder
+output remains in the Builder worktree for review and subsequent acceptance by
+the repository's normal change-integration workflow.
+
+Linked worktrees share the Git common directory. While the Builder is running,
+do not `git stash`, change `core.excludesFile`, or edit `.git/info/exclude` in
+the primary worktree: those shared witness inputs can correctly make the Builder
+net fail closed. The net deliberately reads `rev-parse --git-common-dir`, rather
+than `--git-dir`, because a linked worktree's per-worktree git dir has no
+`info/exclude`.
 
 ## The machine-readable bus
 
@@ -177,9 +213,14 @@ the target repo's ignore rules as part of the safety boundary. And a block is a
 
 **One of the two layers, not both.** The handlers carry an `always_block` layer
 protecting the harness install itself (`settings.json`, `hooks/`). It is
-anchored on the **live install** (`~/.claude`), while the net only ever submits
-paths inside the work repo — so in a controller dispatch that layer never fires
-and the fence is the whole of the scope enforcement. That is deliberate: the
+anchored on the **live install** (`~/.claude`), while the net normally submits
+only paths inside the work repo — so in a typical controller dispatch that layer
+never fires and the fence is the whole of the scope enforcement. **Not
+universal:** `git status` reports the whole git repo, so when the git root sits
+ABOVE the work repo, paths outside it are submitted in absolute form (that is
+`_repo_relative`'s deliberate behaviour) and the always-block layer can match
+after all. The direction is safe — it only ever adds a block — but "exactly one
+layer is live here" is a rule of thumb, not an invariant. That is deliberate: the
 alternatives anchor it on the work repo (making any target repo with a root
 `settings.json` undispatchable) or on the handler's own directory (making the
 harness repo unable to edit its own hooks). It does mean "reruns the handlers
@@ -190,8 +231,9 @@ verbatim" above describes the *mechanism*, not two live layers.
 > `py -3 install.py --target claude --allow-live` (and `--target codex`). All
 > three are installed, and the live dispatch
 > (`py -3 ~/.claude/orchestrate.py build`) runs the **installed** copy — so a fix
-> that stays in the repo is a fix that is not in force. `check.py` is repo-only
-> and will not warn you.
+> that stays in the repo is a fix that is not in force. `py -3 check.py` will
+> tell you: its install-drift axis lists every file whose live copy differs from
+> the repo. It reports, it does not install.
 >
 > **To back out**, re-install from the previous commit — `install.py` overwrites
 > in place and keeps no backup, so there is no other undo:

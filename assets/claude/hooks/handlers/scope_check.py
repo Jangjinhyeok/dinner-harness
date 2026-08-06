@@ -146,16 +146,29 @@ def _classify_pattern(spec: str) -> str:
     # natural way to say "the build artifacts, wherever they land".
     #
     # `[` deliberately does NOT get that promotion. A bracket is legal in a
-    # directory name (`docs/[archive]/` is ordinary in downloaded content, and
-    # `*`/`?` are not even legal on NTFS), so promoting it turned a literal
-    # prefix into a character class: `docs/[draft]/` began admitting `docs/d/**`
-    # and rejecting the very path it names. Wrong in both directions at once.
+    # name (`docs/[archive]/` is ordinary in downloaded content, and `*`/`?` are
+    # not even legal on NTFS), so promoting it turns a literal entry into a
+    # character class: `docs/[draft]/` began admitting `docs/d/**` and rejecting
+    # the very path it names. Wrong in both directions at once.
+    #
+    # That rule used to be applied only to DIRECTORY entries, because the
+    # bracket test sat after the trailing-separator test. A FILE entry kept the
+    # promotion, so a fence naming `[2026]resume.md` compiled to a class that
+    # matches `2resume.md` and NOT the literal name the operator whitelisted:
+    # blocked in enforce, while the message named the path that IS in the fence.
+    # Bracketed names are ordinary in the document lane (`[2026]이력서.md`), and
+    # the only move that message suggests is widening the fence — the anti-pattern
+    # this net exists to avoid. Brackets are now literal everywhere unless the
+    # entry ALSO carries a wildcard, i.e. unless the author opted into globbing.
+    #
+    # Residual, stated rather than hidden: inside an entry that does glob
+    # (`[2026]docs/*.md`), `[...]` is still read as a class — the fence has no
+    # escape syntax. That direction only ever fails closed (the entry matches
+    # nothing), never widens.
     if any(ch in spec for ch in ("*", "?")):
         return "glob"
     if spec.endswith("/"):
         return "prefix"
-    if "[" in spec:
-        return "glob"
     return "exact"
 
 

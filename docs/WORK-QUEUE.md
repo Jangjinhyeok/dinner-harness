@@ -9,16 +9,18 @@ Last updated: 2026-08-06.
 
 ## 0. Where things stand
 
-Branch: `harness/net-judges-builder-delta` (off `main` @ `b15ec00`).
+Branch: `harness/net-judges-builder-delta` — **merged to `main` in PR #12 on
+2026-08-06** (merge commit `9b74805`; the branch tree and `main` are identical
+apart from later commits on the branch).
 
 The controller-side safety net has been reworked to judge the **delta of the
 Builder's turn** rather than the whole dirty tree. Design record, including the
 threat model and every accepted limitation:
-[`docs/architecture/ADR-0007-net-judges-builder-delta.md`](architecture/ADR-0007-net-judges-builder-delta.md).
-**Read that first** — it also records what four earlier attempts broke, which is
-the fastest way to avoid repeating them.
+[`docs/architecture/ADR-0007-net-judges-builder-delta.md`](architecture/ADR-0007-net-judges-builder-delta.md)
+(**Accepted** 2026-08-06). **Read that first** — it also records what four
+earlier attempts broke, which is the fastest way to avoid repeating them.
 
-Verification as of this commit:
+Verification as of the merge:
 
 - `py -3 -m unittest orchestrator.tests.test_orchestrator` → **89 tests, OK**
   (pytest is not installed; use unittest)
@@ -29,24 +31,45 @@ Verification as of this commit:
   glob `*` no longer crosses `/`), both warn-only in interactive sessions
   because `scope_check` runs permanently in `dryrun` there
 
-### Blocking gate before this ships
+### Merged, not installed — the remaining gate
 
-ADR-0007 is **Proposed**, and the change is **HIGH tier** per
-`~/.claude/rules/autonomy-policy.md`: it is the only automatic defense against a
-headless Codex Builder, which fires no Claude hooks.
+The change is **HIGH tier** per `~/.claude/rules/autonomy-policy.md`: it is the
+only automatic defense against a headless Codex Builder, which fires no Claude
+hooks. Where the two gates actually stand:
 
-1. **Not yet installed.** `~/.claude` still runs the previous handler, so the
-   `/delegate` scope fence is **live-inert** — that lane's protection currently
-   depends on the Builder complying, not on enforcement.
-2. **The last round of fixes has not been juried.** `adversarial-review` ran
-   four times (rounds 6–9). Round 9 produced the first APPROVE (architect)
-   against three REJECTs that converged on a single code defect plus three test
-   gaps; all were fixed, but a tenth panel has not seen those fixes. They are
-   the jurors' own prescriptions, verified by test and by mutation.
-3. HIGH tier ⇒ **unanimous `adversarial-review` + human end sign-off** before
-   install. After sign-off:
+1. **Design gate: round 10 ran, FAILed, and its findings are closed.** ADR-0007
+   is **Accepted** and merged; the user accepted on 2026-08-06 before a panel
+   passed. `adversarial-review` round 10 then ran against the merged state and
+   returned **FAIL** — `code-reviewer` **BLOCK**, `architect` REJECT,
+   `tdd-guide` REJECT, `tools-programmer` APPROVE (HIGH needs unanimity, and a
+   BLOCK fails at any tier).
+
+   The BLOCK was real and nine rounds had missed it: `secret_scan` answered its
+   own ruleset-load failure with `exit_allow()`, which the net records as a
+   clean pass with no reason — a corrupt `secret_patterns.json` disarmed secret
+   scanning silently and a key shipped as `BUILT`. Two HIGHs alongside it: the
+   **Architect's own output** reached neither layer (the baseline is taken after
+   its turn), and the **witness fingerprint failed open** when it could not be
+   computed, because `None != None` is False.
+
+   All thirteen findings are closed on this branch — `469384c` (behaviour) and
+   `03a4946` (the `_build_and_gate` split, kept separate so a re-jury can tell
+   moved code from fixed code). Tests 89 → 106; 18 mutants, 17 killed (the
+   survivor's test skips for want of the Windows symlink privilege). Full detail
+   in ADR-0007's Follow-ups.
+
+   **Still open, and it is the same debt one round later: round 11 has not seen
+   the round-10 fixes.** They are again the jurors' own prescriptions, verified
+   by test and mutation, and again unjuried. This closes when a panel passes or
+   the user accepts it explicitly — not by being documented.
+2. **Install gate: still standing.** Merging changed nothing at runtime.
+   `~/.claude` still runs the previous handler, so the `/delegate` scope fence is
+   **live-inert** — that lane's protection depends on the Builder complying, not
+   on enforcement. Human end sign-off, then
    `py -3 install.py --target claude --allow-live` (and `--target codex`).
-   `check.py` is repo-only and will **not** warn that the live copy is stale.
+3. `py -3 check.py` now reports the staleness (item A below, landed) — eleven
+   claude-target and three codex-target files, from this work plus `7d1f874`.
+   It is a report, not a gate: it does not install anything.
 
 To back out an install: re-install from the previous commit — `install.py`
 overwrites in place and keeps no backup. See the note in
@@ -57,38 +80,66 @@ overwrites in place and keeps no backup. See the note in
 
 ## 1. Queued harness improvements (A/B/C/F) — NOT STARTED
 
-Four items picked from the Claude Code 70-tips document on 2026-08-05. None has
-been started. Suggested order is A first: it is the hole that actually bit twice
-in one session, and it is what will tell you whether the rest of this work is
-in force.
+Four items picked from the Claude Code 70-tips document on 2026-08-05. **A is
+done** (2026-08-06); B/C/F are not started.
 
-### A — add an install-drift axis to `check.py`
+### A — add an install-drift axis to `check.py` — DONE
 
-`check.py` is repo-only by its own docstring, so it never compares the repo
+`check.py` was repo-only by its own docstring, so it never compared the repo
 against the installed `~/.claude`. This bit twice on 2026-08-05: the `/delegate`
 document-lane commit (`7d1f874`) sat uninstalled and unnoticed, and the scope
 fence work has the same trap (see §0 above).
 
-Sketch: install to a scratch dir with `install.py --dest`, diff against the live
-tree, report **content** drift only (excluding path substitutions and runtime
-files). Alternative: a `SessionStart` hook — note the harness currently uses only
-`PreToolUse` / `PostToolUse` / `UserPromptSubmit`, so `SessionStart`, `Stop`,
-`SubagentStop` and `PreCompact` are all unused.
+Implemented as the sketch described: render the manifest into a temp dir through
+`install.py`'s own adapters, compare content against the live `~/.claude` /
+`~/.codex`. `--no-install` skips the axis; an absent install root is reported,
+not counted as drift. On its first run it reproduced **both** incidents above.
 
-### B — isolate the Builder in a git worktree (tip §5.2)
+Four false-positive sources are suppressed, and each is load-bearing rather than
+cosmetic — the axis is worthless if a stale tree hides in noise:
+
+- `<CLAUDE_HOME>` / dest-root substitution is normalized scratch→live. Applied
+  to every **generated** dest, not just `template`: codex `hooks.json` embeds
+  absolute handler paths the same way. Verbatim `copy` dests stay byte-exact.
+- `skip_if_exists` dests (`HANDOFF.md`, `RESULT.md`) are live workflow state.
+- a `merge` JSON dest is compared **key-wise on template-owned keys** — keeping
+  live-only keys is what `merge` means, so a whole-text compare would flag every
+  machine.
+- inside owned dirs, dot-prefixed paths are vendor state (Codex ships
+  `skills/.system/**`, marked by its own `.codex-system-skills.marker`); the
+  manifest installs no dot-named path there, so it can never be a stale render
+  of ours.
+
+Live-only leftovers **are** reported, but only under directories the manifest
+fills outright (dir-copy dests, skills, agents) — a skill deleted from the repo
+keeps running until `install.py` re-runs, and nothing else caught that.
+
+Verification: 15 cases against a scratch install tree (never the live one),
+9 mutants, all killed — the axis has no test module in-repo because `check.py`
+has none and adding one changes the repo's test topology (the documented entry
+point is `orchestrator.tests.test_orchestrator`). **That is a real gap**: the
+mutation evidence is in a session scratchpad, not in the repo. If this axis is
+worth keeping, give it a test module.
+
+Not taken: the `SessionStart`-hook alternative — note the harness still uses only
+`PreToolUse` / `PostToolUse` / `UserPromptSubmit`, so `SessionStart`, `Stop`,
+`SubagentStop` and `PreCompact` remain unused.
+
+### B — isolate the Builder in a git worktree (tip §5.2) — completed 2026-08-06
 
 Architect and Builder currently share one working tree, so anything the
 Architect touches while the Builder runs is swept into the same `git status` the
 safety net judges. `git worktree add ../repo-build <branch>`, then
 `orchestrate.py build --repo <worktree>`.
 
-This is the tip that fits the Two-CLI design best and it is absent from the
-harness docs. **Caveat discovered during the ADR-0007 work:** a linked worktree's
-`rev-parse --git-dir` has no `info/` directory — the net now uses
-`--git-common-dir` for exactly this reason. Re-read the witness-fingerprint
-section of the ADR before wiring this up, and note the threat model's remark
-that a worktree is a *process-level* containment boundary, which is the thing
-the in-tree net explicitly cannot provide.
+Documented in `orchestrator/README.md`, `CLAUDE.md`, and `ROLE_ARCHITECT.md`.
+The procedure copies the approved handoff explicitly, runs and reviews strictly
+inside the Builder worktree, and calls out the shared common-directory witness
+inputs (`refs/stash`, `core.excludesFile`, `.git/info/exclude`). **Caveat
+discovered during the ADR-0007 work:** a linked worktree's `rev-parse --git-dir`
+has no `info/` directory — the net uses `--git-common-dir` for exactly this
+reason. A worktree is a *process-level* containment boundary; it does not make
+the in-tree net a containment mechanism.
 
 ### C — audit the approval allowlist (tip §5.4)
 
@@ -96,11 +147,20 @@ the in-tree net explicitly cannot provide.
 auto-approved command list accumulating in `settings.local.json`. Scan with
 `npx cc-safe ~/Documents`, then report and prune.
 
-### F — document the `!` prefix in CLAUDE.md (tip §2.2)
+Audit 2026-08-06: `cc-safe` found five settings files under `~/Documents` and
+reported two LOW `Bash(git push *)` entries, both in ProjectTetra local settings.
+The harness repo's local settings contain only the two `harness-review` skill
+entries and a `raw.githubusercontent.com` fetch allowance. No live allowlist was
+pruned: `~/.claude/settings.local.json` is runtime state outside the canonical
+tree and this continuation explicitly forbids direct live-tree edits. A user-
+approved follow-up must decide which accumulated global approvals to remove.
+
+### F — document the `!` prefix in CLAUDE.md (tip §2.2) — completed 2026-08-06
 
 `!git status` runs a shell command and puts only its output in context, with no
-model turn. Directly serves the token-economy principle the harness is built
-around, and it is undocumented.
+model turn. `content/instructions/CLAUDE.md` now documents the fast path,
+its token-economy use case, and the boundary that it is for read-only short
+output rather than a replacement for an agent turn.
 
 **Commit plan (user's decision, 2026-08-05):** land the four tips and ADR-0007
 together, but in **at least two commits** — the net rework is HIGH and touches a
@@ -115,14 +175,15 @@ G (plugin marketplace), H (thinking budget).
 
 ## 2. Deferred from ADR-0007
 
-- **Builder-timeout salvage.** A codex CLI finished its work, wrote correct
-  files, and never exited; `timeout_s=1800` fired and the changeset was
-  discarded — a successful build reported `BLOCKED`. Deliberately dropped from
-  the ADR-0007 change after an attempted fix produced three new holes in one
-  round. Preferred direction: expose `timeout_s` as a CLI flag and stream the
-  child's output — the thirty minutes of silence is the worse half of that bug.
-  On a `BLOCKED`, check `git status` for surviving output before falling back to
-  a manual run.
+- **Builder-timeout salvage — completed 2026-08-06.** A codex CLI finished its
+  work, wrote correct files, and never exited; `timeout_s=1800` fired and the
+  successful build reported `BLOCKED`. `orchestrate.py run|build --timeout-s N`
+  now exposes the per-turn budget and `vendors._run` streams + captures child
+  stdout/stderr. Timeout still kills the child and reports `BLOCKED` rather than
+  guessing success; inspect the Builder worktree with `git status`/`git diff`
+  for surviving output before retrying or manually falling back. The previous
+  attempted automatic salvage was deliberately not revived: a non-exiting child
+  cannot prove its RESULT/verdict is complete.
 - **A heartbeat during long scans.** The net now emits
   `net: scanning N file(s)` before the loop, which lets an operator bound the
   wait. At the 500-path ceiling the scan is still ~85 s with no further output.

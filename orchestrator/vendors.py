@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -128,11 +129,11 @@ def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None)
         return Turn(error=f"executable not found on PATH: {argv[0]!r}")
     argv = [exe, *argv[1:]]
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             argv,
             cwd=str(cfg.repo),
-            capture_output=True,
-            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             # Headless: give the CLI an immediate stdin EOF. Without this codex
             # exec waits to read "additional input from stdin" (it appends piped
             # stdin to the prompt), which stalls or perturbs a subprocess turn.
@@ -143,11 +144,36 @@ def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None)
             # aborts the turn.
             encoding="utf-8",
             errors="replace",
-            timeout=cfg.timeout_s,
+            bufsize=1,
         )
+        stdout: list[str] = []
+        stderr: list[str] = []
+
+        def pump(stream, captured: list[str], destination) -> None:
+            for line in iter(stream.readline, ""):
+                captured.append(line)
+                print(line, end="", file=destination, flush=True)
+            stream.close()
+
+        out_pump = threading.Thread(target=pump, args=(proc.stdout, stdout, sys.stdout), daemon=True)
+        err_pump = threading.Thread(target=pump, args=(proc.stderr, stderr, sys.stderr), daemon=True)
+        out_pump.start()
+        err_pump.start()
+        try:
+            proc.wait(timeout=cfg.timeout_s)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            out_pump.join()
+            err_pump.join()
+            return Turn(error=f"vendor turn timed out after {cfg.timeout_s}s")
+        out_pump.join()
+        err_pump.join()
+        output = "".join(stdout)
+        errors = "".join(stderr)
         if proc.returncode != 0:
-            return Turn(text=proc.stdout or "", error=f"exit {proc.returncode}: {(proc.stderr or '').strip()}")
-        text = proc.stdout or ""
+            return Turn(text=output, error=f"exit {proc.returncode}: {errors.strip()}")
+        text = output
         if last_message_file is not None:
             try:
                 text = last_message_file.read_text(encoding="utf-8-sig") or text

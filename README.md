@@ -113,6 +113,15 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 `~/.claude`·`~/.codex`를 직접 고치지 말고 — repo의 canonical 트리(`content/`·`assets/`)를 편집 → `py -3 check.py`로
 정합 확인 → `py -3 install.py --target claude --allow-live`(필요 시 `--target codex`)로 재생성한다.
 
+`check.py`는 재생성 **뒤에도** 한 번 돌린다 — install drift 축이 repo와 라이브 설치본을 대조해서 "고쳤는데
+설치를 안 했다"를 잡아준다(이게 실제로 두 번 물렸다). 설치본을 안 보려면 `--no-install`.
+
+> **되돌리기는 install 전에 준비해라.** `install.py`는 제자리에 덮어쓰고 **백업을 남기지 않는다** — 유일한
+> undo는 이전 커밋에서 다시 설치하는 것이다:
+> `git stash && py -3 install.py --target claude --allow-live && git stash pop`
+> (또는 이전 커밋을 checkout해서 거기서 install). `hooks/lib/common.py`는 **모든** 핸들러가 import하므로
+> 그 파일이 깨진 사본으로 덮이면 인터랙티브 hook 전체가 한 번에 죽는다. 상세는 `orchestrator/README.md`.
+
 ## 하네스 구성 (capabilities)
 
 이 하네스가 보유한 skills·agents·hooks. _frontmatter 파생 snapshot — skill/agent 변경 시 갱신 필요._ codex 타깃에서 어느 항목이 native/degraded/dropped인지는 `CODEX-COVERAGE.md` 참조.

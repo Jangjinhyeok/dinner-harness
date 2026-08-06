@@ -1,8 +1,13 @@
 # ADR-0007: The controller net judges the Builder's delta, not the dirty tree
 
-- **Status:** Proposed
-- **Date:** 2026-08-05
-- **Deciders:** Architect session (dinner-harness)
+- **Status:** Accepted (2026-08-06) — merged to `main` in PR #12 the same day,
+  accepted by the user's decision rather than by a passing panel. Round 10 then
+  ran against the merged state and returned **FAIL** (1 BLOCK, 2 REJECT, 1
+  APPROVE); all thirteen findings are closed on the branch. The install gate
+  stands separately, and round 11 has not seen the round-10 fixes — see
+  Follow-ups.
+- **Date:** 2026-08-05 (accepted 2026-08-06)
+- **Deciders:** Architect session (dinner-harness); accepted by the user
 
 ## Context
 
@@ -16,8 +21,10 @@ found on 2026-08-05 while exercising the `/delegate` document lane:
    handler found no file and, by design, **failed open**. Measured: identical
    out-of-scope changeset, `blocked=True` under `HANDOFF.md`, `blocked=False`
    under `HANDOFF_DELEGATE.md`. Every run of that lane had no scope enforcement.
-   `secret_scan` was unaffected. `check.py` cannot see this — it is repo-only and
-   does not compare the repo against the installed `~/.claude`.
+   `secret_scan` was unaffected. `check.py` could not see this — it was repo-only
+   and did not compare the repo against the installed `~/.claude`. (Closed on
+   2026-08-06 by its install-drift axis; that hole is what let the fix sit
+   uninstalled and unnoticed twice.)
 
 2. **A successful build could be reported `BLOCKED`.** A codex CLI finished the
    work, wrote correct files, and never exited; `timeout_s=1800` fired and the
@@ -149,10 +156,16 @@ Builder's work and is not charged to it.
   resolves into the checkout, so the harness repo could not dispatch a Builder
   to edit its own hooks. Both are unconditional, dryrun-exempt and fence-proof,
   so the only escape was turning the hook off. **Consequence, stated because it
-  was not obvious:** the net submits only paths inside the work repo, so under
-  this anchor the always-block layer never fires in a controller dispatch — the
-  fence is the whole of the scope enforcement there. A non-default install
-  (`install.py --dest <scratch>`) likewise does not protect itself. The
+  was not obvious:** the net normally submits only paths inside the work repo, so
+  under this anchor the always-block layer usually does not fire in a controller
+  dispatch — the fence is then the whole of the scope enforcement. Corrected in
+  round 10: that was stated as an absolute and is not one. `git status` reports
+  the whole git repo, so with the git root ABOVE the work repo the paths outside
+  it are submitted in absolute form — `_repo_relative` does that on purpose — and
+  the always-block layer can match. Only ever an extra block, never a missing
+  one, but a maintainer reasoning about the anchor should not be told the layer
+  is unreachable here. A non-default install (`install.py --dest <scratch>`)
+  likewise does not protect itself. The
   resolution is also lazy and guarded: `Path.home()` raises on Windows when
   `USERPROFILE`/`HOME` are absent, and an import-time raise exits the handler
   with code 1 — which the caller read as neither allow nor block.
@@ -348,17 +361,62 @@ made the gap read as a lie rather than a limit.
     layer — plus three test gaps on claims the code already honoured
     (`core.excludesFile` content, the stash ref, `_run_handler`'s own `-1`) and
     a handful of doc/comment overclaims. All addressed here.
-    **Still HIGH tier ⇒ unanimous `adversarial-review` + human end sign-off
-    before install. The round-9 fixes above have NOT themselves been juried** —
-    they are the jurors' own prescriptions, verified by test and by mutation,
-    but a tenth panel has not seen them.
-  - Until installed, `~/.claude` still runs the old handler: **the `/delegate`
-    scope fence is live-inert.** Original protection in that lane depends on the
-    Builder complying, not on enforcement.
-  - `install.py --target claude --allow-live` is required after merge —
-    `orchestrate.py`, `orchestrator/`, and the hook handlers are all installed
-    artifacts, and `check.py` will not warn that the live copy is stale. A third
-    "install freshness" axis for `check.py` is proposed separately.
+    The round-9 fixes were never juried before the merge; the user accepted this
+    ADR on 2026-08-06 with that gap open.
+  - **Round 10 (2026-08-06) ran against the merged state and returned FAIL** —
+    `code-reviewer` **BLOCK**, `architect` REJECT, `tdd-guide` REJECT,
+    `tools-programmer` APPROVE. HIGH tier needs unanimity, and a BLOCK fails
+    regardless of tier. Thirteen findings, all closed on this branch:
+    - **BLOCK, and the sharpest thing nine rounds missed:** `secret_scan` caught
+      its own ruleset-load failure and called `exit_allow()`. `run_handler` maps
+      `SystemExit(0)` to exit 0 and the net records exit 0 as a clean pass with an
+      empty reason list, so a corrupt or missing `secret_patterns.json` disarmed
+      secret scanning **silently** and a changeset carrying an AWS key reported
+      `BUILT`. `CLAUDE_HOOK_FAILS_CLOSED` never reached it — that flag is
+      consulted only when the handler *crashes*, and this one ran to completion
+      and chose to allow. `lib/common.exit_no_verdict` now covers that third
+      shape; interactive sessions keep the old fail-open answer.
+    - **The Architect's own output reached neither layer.** The baseline is taken
+      after `architect.invoke`, so everything the Architect wrote was pre-existing
+      dirt by construction, and `ARCHITECT_REVIEW` runs after the net entirely.
+      `--architect codex` is documented and a headless Codex Architect fires no
+      Claude hooks either — the same asymmetry this whole net exists for. Each
+      Architect turn is now snapshotted and its delta secret-scanned; the fence
+      stays the Builder's, because judging the Architect against it would fail
+      every cycle on the ADR its own protocol mandates.
+    - **The witness fingerprint failed open silently**: `vis_before` was stored
+      without being inspected, and `None != None` is False, so a fingerprint that
+      failed at both ends skipped the entire evidence layer in enforce with no
+      warning. It was the only "we could not see" path here that did not fail
+      closed.
+    - Bracket fence entries were literal only for *directories*, so a file entry
+      `[2026]resume.md` compiled to a character class — matching `2resume.md` and
+      not the name the operator whitelisted, while the block message named the
+      path that WAS in the fence. `_opaque_dirs` followed symlinks (git does not),
+      so a `latest -> builds/` link was read as a nested repo and refused every
+      dispatch. The gate read `cfg.handoff_name` while `run()` writes
+      `bus.HANDOFF`. The tamper stop ignored `--net-dryrun`. Plus the three claims
+      the suite did not pin (the `core.excludesFile` *setting*, the round-9
+      post-turn opaque fix, `Path.home()`'s guard) and two doc overclaims.
+    - `_build_and_gate` was split (`_gate` / `_pre_turn_checks` /
+      `_builder_changes`) with an `_Evidence` type carrying the unknown states,
+      in a **separate commit** so the re-jury can tell moved code from fixed code.
+    - Tests 89 → 106; 18 mutants, 17 killed. The survivor is the symlink skip,
+      whose test skips for want of the Windows symlink privilege (WinError 1314).
+  - **The recursion is honest and still open: round 11 has not seen the round-10
+    fixes.** This is the same debt one round later, and it does not resolve
+    itself by being written down — it closes when a panel passes, or when the
+    user accepts it again explicitly.
+  - **The install gate is separate and still stands.** Merging changed nothing at
+    runtime: until `install.py` runs, `~/.claude` keeps running the old handler
+    and **the `/delegate` scope fence is live-inert** — that lane's protection
+    depends on the Builder complying, not on enforcement. HIGH tier ⇒ human end
+    sign-off before `py -3 install.py --target claude --allow-live` (and
+    `--target codex`); `orchestrate.py`, `orchestrator/` and the hook handlers
+    are all installed artifacts.
+  - The "install freshness" axis proposed here **landed on 2026-08-06**:
+    `py -3 check.py` now compares the repo against the live install and reports
+    the staleness described above. It reports; it does not install.
   - Builder-timeout salvage (defect 2 above) deliberately dropped from this
     change after it produced three new holes in one round. Prefer exposing
     `timeout_s` as a CLI flag and streaming the child's output — the 30-minute
