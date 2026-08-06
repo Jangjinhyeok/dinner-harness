@@ -138,7 +138,32 @@ def exit_warn(reason: str) -> NoReturn:
 # ---------------------------------------------------------------------------
 
 # 80% of the 250ms hook budget — leaves headroom for process teardown.
+#
+# That budget belongs to an INTERACTIVE Claude hook, where a slow handler would
+# stall the user's keystroke and answering "allow" is the right trade. The
+# controller-side net is a different caller with a different bargain: it is the
+# only automatic defense against a headless Codex Builder, it hands the handler
+# whole file contents rather than one edit, and it already gives the subprocess
+# 30 seconds. Under the interactive budget a large enough payload could not be
+# read and parsed in time, so the watchdog answered "allow" — measured, an AWS
+# key that blocks at 1 KiB shipped at 48 MiB, for scope_check and secret_scan
+# alike, with no warning anywhere. Both knobs are set by safety.scan; unset,
+# every interactive session behaves exactly as before.
 _HANDLER_TIMEOUT_SECONDS = 0.2
+try:
+    _budget_ms = float(os.environ.get("CLAUDE_HOOK_TIMEOUT_MS", "") or 0)
+    if _budget_ms > 0:
+        _HANDLER_TIMEOUT_SECONDS = _budget_ms / 1000.0
+except (TypeError, ValueError):
+    pass  # garbled override -> keep the interactive default
+
+# Does "the handler did not reach a verdict" mean allow or block? 0 == allow is
+# the interactive default (never freeze the user over a slow or buggy handler).
+# The net sets this, because there a non-verdict is recorded as a clean pass
+# with no reason at all — indistinguishable from an approval nobody gave.
+# Covers both non-verdict shapes: the watchdog firing, and an unhandled crash.
+_FAILS_CLOSED = os.environ.get("CLAUDE_HOOK_FAILS_CLOSED") == "1"
+_TIMEOUT_EXIT_CODE = 2 if _FAILS_CLOSED else 0
 
 
 def _append_error_log(
@@ -174,11 +199,24 @@ def _timeout_kill(hook_name: str) -> None:
         _append_error_log(
             hook_name,
             "TimeoutError",
-            f"handler exceeded {int(_HANDLER_TIMEOUT_SECONDS * 1000)}ms safety margin",
+            f"handler exceeded {int(_HANDLER_TIMEOUT_SECONDS * 1000)}ms safety margin"
+            + (" (failing closed)" if _TIMEOUT_EXIT_CODE == 2 else ""),
             "",
         )
+        if _TIMEOUT_EXIT_CODE == 2:
+            # The caller reads stderr for the reason; the error log alone is not
+            # on the path that reaches the operator.
+            try:
+                sys.stderr.write(
+                    f"[{hook_name}:block] handler exceeded its "
+                    f"{int(_HANDLER_TIMEOUT_SECONDS * 1000)}ms budget — "
+                    "cannot vet this change, failing closed\n"
+                )
+                sys.stderr.flush()
+            except Exception:
+                pass
     finally:
-        os._exit(0)
+        os._exit(_TIMEOUT_EXIT_CODE)
 
 
 def run_handler(main_callable: Callable[[], None], *, hook_name: str) -> NoReturn:
@@ -190,7 +228,9 @@ def run_handler(main_callable: Callable[[], None], *, hook_name: str) -> NoRetur
       2 — block (only when ``main_callable`` raises ``SystemExit(2)``)
 
     Any other exception (including ``KeyboardInterrupt``) is logged to
-    ``<hook_name>.error.log`` and converted to exit 0.
+    ``<hook_name>.error.log`` and converted to exit 0 — unless the caller asked
+    to fail closed, in which case a handler that crashed is a handler that did
+    not vet the change, and that is not an approval.
     """
     timer = threading.Timer(_HANDLER_TIMEOUT_SECONDS, _timeout_kill, args=(hook_name,))
     timer.daemon = True
@@ -205,13 +245,21 @@ def run_handler(main_callable: Callable[[], None], *, hook_name: str) -> NoRetur
         timer.cancel()
         tb = traceback.format_exc()
         _append_error_log(hook_name, type(exc).__name__, str(exc), tb)
+        # An interactive session fails OPEN here on purpose: a handler bug must
+        # not stop the user from editing their own files. The controller-side
+        # net has the opposite duty — it is the only thing vetting a Builder
+        # that fires no hooks, and exit 0 there is recorded as a clean pass with
+        # NO reason at all, so a crash reads as approval.
+        crashed_closed = _FAILS_CLOSED
+        label = "block" if crashed_closed else "internal_error"
         try:
             sys.stderr.write(
-                f"[{hook_name}:internal_error] {type(exc).__name__}: {exc}\n"
+                f"[{hook_name}:{label}] {type(exc).__name__}: {exc}"
+                + (" — cannot vet this change, failing closed\n" if crashed_closed else "\n")
             )
         except Exception:
             pass
-        sys.exit(0)
+        sys.exit(2 if crashed_closed else 0)
     else:
         # main returned without calling exit_* — treat as allow.
         timer.cancel()

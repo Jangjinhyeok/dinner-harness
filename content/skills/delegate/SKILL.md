@@ -33,7 +33,7 @@ Only two things differ by lane:
 | Verify | test / build / lint command | structural check — 섹션 존재, 분량 상한, 금지 표현, 날짜 형식 |
 
 Everything else is identical: LOW-only, mandatory scope fence, `git diff` review,
-staged-not-committed.
+left in the working tree, not staged or committed.
 
 **Prerequisite (both lanes): the work directory must be a git repo.** The safety
 net collects the changeset via `git status --porcelain` and **fails closed** when
@@ -93,19 +93,38 @@ LOW-only by construction.
    offer the manual fallback (open a Codex terminal, `builder 모드`, run the
    handoff).
 5. **Report** — a §5 structure briefing: what changed, which files, verification
-   result. Changes are STAGED, not committed — the user owns the commit.
+   result. Changes are left in the working tree, NOT committed — the user owns
+   the commit.
 
 ## Guardrails
 
 - **LOW-only** — HIGH or multi-gate escalates to architect mode; never dispatched here.
 - **Scope fence is mandatory** — it is the safety boundary the controller-side net
   enforces (a Codex Builder fires no Claude hooks, so this net is the only
-  automatic defense).
+  automatic defense). In `enforce` the net now **fails closed when the handoff
+  carries no ```scope``` fence** (or an all-comment one): a dispatch without a
+  fence is refused rather than admitted unbounded.
+- **The fence must cover what VERIFICATION writes, not just what the work
+  writes.** The gate's check runs inside the Builder's turn, so anything it
+  creates is part of the delta the net judges — a Python verify writes
+  `__pycache__/`, a test run writes `.pytest_cache/`, a build writes its output
+  dir. Either name them in the fence or make sure the repo ignores them;
+  otherwise a correct build is refused for its own side effects. Widening the
+  fence to cover *source* paths to get past this is the anti-pattern — widen it
+  for artifacts only.
 - **Never clobber `HANDOFF.md`** — always dispatch from `HANDOFF_DELEGATE.md`.
 - **Document lane: keep the source OUT of the scope fence.** Whitelist only the
-  derived file(s), never the original. `scope_check` then hard-blocks any edit to
-  the source — 원본 보호가 기존 안전망에서 공짜로 따라온다. Never delegate an
-  in-place rewrite of a document that has no committed baseline.
+  derived file(s), never the original. `scope_check` then blocks edits to the
+  source — including **deleting or moving it away**, which the net sees even
+  when the file is untracked — 원본 보호가 기존 안전망에서 공짜로 따라온다.
+  Three honest limits: a block is a **refusal, not a rollback** (the net reports
+  the violation, it does not restore the file); anything the repo **ignores** is
+  invisible to the net; and the fence constrains a Builder that **over-reaches**,
+  not one that **evades** — a headless agent with a shell in the same tree
+  cannot be contained by a net living in that tree (see the threat model in
+  `orchestrator/README.md`). Never delegate an in-place rewrite of a document
+  that has no committed baseline — that baseline, not the fence, is what lets
+  you undo a bad turn.
 - **Default pairing only** — Claude=Architect dispatches Codex=Builder. If codex is
   unavailable/unauthenticated, fall back to manual.
 - **No commit/merge** — LOW is report-only; the user commits.
@@ -117,12 +136,14 @@ User: "위임 — src/util/date.py에 KST 기준 오늘 날짜를 'YYYY-MM-DD'�
 1. Triage: pure local util, no HIGH signal, single file → LOW, proceed.
 2. Write `HANDOFF_DELEGATE.md`:
    - Goal: add `today_kst() -> str` returning KST today as `YYYY-MM-DD` in `src/util/date.py`.
-   - ` ```scope `: `src/util/date.py`, `RESULT.md`
+   - ` ```scope `: `src/util/date.py`, `RESULT.md`, `**/__pycache__/` ← the
+     verify below imports the module, and the bytecode it writes is part of the
+     Builder's delta
    - ` ```tiers `: `gate 1: LOW`
    - Verify: `python -c "import re, src.util.date as d; assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', d.today_kst())"`
 3. Dispatch `orchestrate.py build --handoff HANDOFF_DELEGATE.md`.
 4. BUILT → read diff, run verify (PASS), accept.
-5. Report: `src/util/date.py` +1 function, verify PASS, staged (not committed).
+5. Report: `src/util/date.py` +1 function, verify PASS, left in the working tree (not committed).
 
 ## Example — document lane
 
@@ -143,4 +164,4 @@ User: "위임 — resume.md를 A사 JD(jd-a.md)에 맞춰 resume-a.md로 변형�
 3. Dispatch `orchestrate.py build --handoff HANDOFF_DELEGATE.md`.
 4. BUILT → `git diff` 리뷰: 새 파일만 생겼는지, 원본이 그대로인지, **원본에 없는
    사실이 들어가지 않았는지**(문서 lane의 핵심 리뷰 축) 확인 + verify 실행.
-5. Report: `resume-a.md` 신규, `resume.md` 무변경, verify PASS, staged.
+5. Report: `resume-a.md` 신규, `resume.md` 무변경, verify PASS, working tree에 남김(커밋 안 함).

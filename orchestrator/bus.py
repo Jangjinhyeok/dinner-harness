@@ -46,6 +46,27 @@ def extract_fence(text: str, name: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+def scope_entries(handoff_text: str) -> list[str]:
+    """Entries of the first ```scope``` fence: the Builder's edit whitelist.
+
+    Blank and ``#`` comment lines are dropped, so an all-comment fence yields
+    ``[]`` — it bounds nothing, which is the same hole as no fence at all.
+
+    Callers use only the emptiness of this list; the authoritative per-path
+    matching lives in the ``scope_check`` handler. Parsing the fence in one
+    place keeps the controller's "is there a fence?" question from drifting
+    away from the handler's "does this path match?" answer.
+    """
+    body = extract_fence(handoff_text, "scope")
+    if body is None:
+        return []
+    return [
+        line.strip()
+        for line in body.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
 def _gate_key(raw: str) -> str:
     """Normalize a gate label: 'Gate 2', 'gate2', '2' -> '2'."""
     m = re.search(r"(\d+)", raw)

@@ -81,7 +81,87 @@ wired into the controller — and every ambiguity fails **closed**:
   Builder having no native hooks. A hook block (exit 2) fails the cycle; in
   `enforce` a handler that is **missing or cannot launch also fails the cycle**
   (a net you cannot run is not a pass), and a changeset that cannot be
-  determined (git unavailable) fails closed too.
+  determined fails closed too — which means **git answering non-zero**, not only
+  git being absent: `git status` in a non-repository exits 128 with empty
+  output, and reading that as "clean tree" would run the net over nothing. The
+  fence comes from the handoff the build was actually dispatched from
+  (`cfg.handoff_name`, not a hardcoded `HANDOFF.md`) and is **pinned into the
+  handler's environment** rather than re-read from disk per file; a handoff
+  carrying **no ```scope``` fence** — or one holding only comments — is refused
+  in `enforce` **before the Builder turn starts**, since an unbounded changeset
+  is a net that cannot run. A handler that reaches no verdict — watchdog or
+  crash — is a block here, not the interactive fail-open.
+- **The evidence itself is checked.** `git status` is the net's only witness and
+  the Builder can edit the witness without touching a tracked file: a
+  `git commit` or `stash`, an ignore rule (`.git/info/exclude`,
+  `core.excludesFile`), or an `assume-unchanged`/`skip-worktree` index bit each
+  removes a path from *both* snapshots. All of them are fingerprinted across the
+  turn and any movement fails the cycle. The commit case is the one that is not
+  even adversarial — the Builder is told not to commit, which is why it needs
+  catching. This narrows the hole; see the threat model below.
+- **Directories in the snapshot are refused.** `-uall` expands untracked
+  directories per file but stops at a repository boundary, so a nested git repo
+  arrives as one opaque entry whose contents would reach `secret_scan` as an
+  empty string. The cycle fails rather than vet nothing — checked against the
+  snapshots (and once before the turn), not the delta, because a nested repo
+  that was already dirty at dispatch compares equal on both sides and would
+  otherwise never be seen. A repo with a dirty nested repo or submodule cannot
+  be dispatched until it is cleaned, committed, or ignored.
+- **The net's git calls ignore `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`/
+  `GIT_COMMON_DIR`** — inherited, they point git at a different repository and
+  the work repo's own changes disappear from the changeset. These are routinely
+  set inside git hooks and `git rebase --exec`.
+- **The net judges the DELTA of the Builder's turn** — `collect_changeset` is
+  snapshotted before and after, and only paths whose content differs are
+  submitted. Pre-existing dirt (the untracked handoff, an ADR the Architect
+  wrote at step 8, yesterday's scratch file) is not the Builder's work and is
+  not charged to it. The delta is keyed on the **union** of both snapshots, so a
+  path that *leaves* `git status` is judged too: deleting an **untracked** file
+  produces no `D` entry, it simply vanishes, and an after-only comparison would
+  never see the one edit git cannot undo. Exactly two paths are **scope**-exempt
+  — `RESULT.md` and the dispatched handoff, the two files the controller is
+  answerable for rather than the Builder. Neither is **secret**-exempt: both are
+  appended to the changeset every cycle, so `secret_scan` sees them even when
+  the delta drops them (an unchanged handoff sits in both snapshots;
+  `RESULT.md` is routinely `.gitignore`d). Nothing else is exempt from either.
+- **Handoff tamper stop** — the controller holds the text it dispatched and
+  compares after the turn: any drift fails the cycle. **Deletion counts as
+  drift**, and so does a file that no longer decodes. Separately, the fence the
+  handler enforces is **pinned by the controller** (passed in the environment)
+  rather than re-read from disk per file, which closes the window between that
+  one-shot comparison and the 2×N handler launches that follow.
+- **Changeset ceiling** — `-uall` lists untracked files individually, so a
+  target repo with a thin `.gitignore` can produce thousands of paths at two
+  handler subprocesses each. Past `_MAX_CHANGESET` the cycle fails closed rather
+  than stall for minutes. The ceiling is applied to the **paths git reported,
+  before any file content is read**, so the cost it exists to bound is never
+  paid first.
+- **Handler budget** — the hook handlers carry a 200 ms watchdog that answers
+  *allow* when it fires, which is right for an interactive Claude hook and wrong
+  here: the net passes whole file contents. For the net the budget is raised and
+  a timeout is made to mean **block**, so a change the handlers could not read
+  is never one they approved.
+
+**Threat model — what this net is for.** It constrains an **over-reaching**
+Builder: one that misreads the spec, refactors past its remit, edits a file it
+was told to leave alone, or pastes a key. That is the failure mode a headless
+agent actually produces, and against it the net is a hard gate.
+
+It does **not** contain an **evading** Builder, and cannot. The Builder runs a
+shell in the same tree the net lives in; anything it can reach, it can reach
+first. The `.git/info/exclude` and index-bit fingerprints above close the two
+cheapest evasions, not the class. Do not read a `BUILT` as proof that nothing
+else happened — read it as "nothing the net can see went wrong". If you need a
+containment boundary rather than a review aid, that belongs at the process
+level (a worktree the Builder cannot escape, a sandbox), not here.
+
+**What the net does not see**, even from an honest Builder: files matched by
+`.gitignore` (including a global `core.excludesFile`) never appear in
+`git status`. Widening to `--ignored` was rejected — on the repos the ceiling
+exists for it would report `node_modules` and refuse every dispatch — so treat
+the target repo's ignore rules as part of the safety boundary. And a block is a
+**refusal, not a rollback**: an out-of-fence deletion is reported, not undone.
+
 - **Tier-gate enforcement** — effective tier = the higher of the Architect's
   declared tier and the Builder's self-reported tier; a **missing/garbled
   ```tiers``` fence makes every gate HIGH**. Any `FAIL`/`BLOCK` panel fails any
@@ -94,6 +174,33 @@ wired into the controller — and every ambiguity fails **closed**:
   rejects.
 - **`--yes` guard** — auto-approving all gates is refused on a `--backend real`
   run unless `--dangerously-auto-approve-real` is passed explicitly.
+
+**One of the two layers, not both.** The handlers carry an `always_block` layer
+protecting the harness install itself (`settings.json`, `hooks/`). It is
+anchored on the **live install** (`~/.claude`), while the net only ever submits
+paths inside the work repo — so in a controller dispatch that layer never fires
+and the fence is the whole of the scope enforcement. That is deliberate: the
+alternatives anchor it on the work repo (making any target repo with a root
+`settings.json` undispatchable) or on the handler's own directory (making the
+harness repo unable to edit its own hooks). It does mean "reruns the handlers
+verbatim" above describes the *mechanism*, not two live layers.
+
+> **Install after every change here.** After touching anything under
+> `assets/claude/hooks/`, `orchestrator/`, or `orchestrate.py`, re-run
+> `py -3 install.py --target claude --allow-live` (and `--target codex`). All
+> three are installed, and the live dispatch
+> (`py -3 ~/.claude/orchestrate.py build`) runs the **installed** copy — so a fix
+> that stays in the repo is a fix that is not in force. `check.py` is repo-only
+> and will not warn you.
+>
+> **To back out**, re-install from the previous commit — `install.py` overwrites
+> in place and keeps no backup, so there is no other undo:
+> `git stash && py -3 install.py --target claude --allow-live && git stash pop`
+> (or check out the previous commit and install from there). This matters more
+> than usual for changes touching `hooks/lib/common.py`, which **every** handler
+> imports: a bad copy there breaks every interactive hook at once. Copying the
+> live tree aside first (`cp -r ~/.claude ~/.claude.bak`) is the cheap
+> insurance.
 
 ## Status & build-time verification
 
@@ -123,6 +230,9 @@ orchestrator/
   tests/                  offline unittest (mock + real handlers)
 ```
 
-This tool is repo-level tooling — it is **not** installed into `~/.claude` /
-`~/.codex` (like `install.py`), so it does not affect the harness capability
-catalog or `check.py`.
+`orchestrate.py` and this package **are** installed into `~/.claude` by
+`install.py` (see `harness.toml`), because the default dispatch documented in
+`ROLE_ARCHITECT.md` runs `py -3 ~/.claude/orchestrate.py build`. They are not
+skills/agents/hooks, so they do not appear in the harness capability catalog and
+`check.py` does not look at them — which is exactly why a change here can sit in
+the repo, unnoticed, while the live lane keeps running the old copy.

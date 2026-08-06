@@ -35,12 +35,12 @@
 기본 페어링(Claude=Architect, Codex=Builder)에서, HANDOFF.md가 in-session 사람 승인을 받은 직후 — 사용자에게 Codex 터미널 수동 전환을 시키지 말고 **자동으로 Builder를 dispatch**한다:
 
 1. Bash로 호출: `py -3 ~/.claude/orchestrate.py build --repo . --backend real`
-   - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경을 작업 repo에 stage하고 RESULT.md를 쓴다.
+   - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경을 작업 repo의 working tree에 남기고 RESULT.md를 쓴다. (orchestrator는 `git add`를 하지 않는다 — 변경은 untracked/unstaged 상태로 남는다.)
    - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex는 Claude hook을 안 쏘므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.
    - tier-gate(verdict)는 advisory다 — 판정은 아래 in-session 리뷰가 한다.
 2. 결과 처리:
    - `[outcome] BUILT` → RESULT.md + `git diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정.
-   - **HIGH 게이트 포함 시** merge/apply/commit 전 **사람 종단 서명**을 in-session에서 받는다(orchestrator는 stage만 하고 아무것도 merge/deploy 안 함).
+   - **HIGH 게이트 포함 시** merge/apply/commit 전 **사람 종단 서명**을 in-session에서 받는다(orchestrator는 파일만 남기고 stage·commit·merge·deploy 어느 것도 하지 않음).
    - 재작업 필요 → 새 HANDOFF.md 작성 후 1번 재-dispatch.
    - `[outcome] BLOCKED` 또는 명령 에러(codex 미인증/플래그 불일치 등) → **자동 진행하지 말고** 사용자에게 보고하고, 수동 fallback 안내: Codex 터미널에서 `builder 모드`로 HANDOFF.md 진행.
 

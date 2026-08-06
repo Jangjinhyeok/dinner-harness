@@ -13,3 +13,5 @@ HANDOFF.md
 RESULT.md
 # JetBrains IDE
 .idea/
+# omo run-continuation state (per-session runtime)
+.omo/
