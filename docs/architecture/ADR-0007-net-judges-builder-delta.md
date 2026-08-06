@@ -154,10 +154,16 @@ Builder's work and is not charged to it.
   resolves into the checkout, so the harness repo could not dispatch a Builder
   to edit its own hooks. Both are unconditional, dryrun-exempt and fence-proof,
   so the only escape was turning the hook off. **Consequence, stated because it
-  was not obvious:** the net submits only paths inside the work repo, so under
-  this anchor the always-block layer never fires in a controller dispatch — the
-  fence is the whole of the scope enforcement there. A non-default install
-  (`install.py --dest <scratch>`) likewise does not protect itself. The
+  was not obvious:** the net normally submits only paths inside the work repo, so
+  under this anchor the always-block layer usually does not fire in a controller
+  dispatch — the fence is then the whole of the scope enforcement. Corrected in
+  round 10: that was stated as an absolute and is not one. `git status` reports
+  the whole git repo, so with the git root ABOVE the work repo the paths outside
+  it are submitted in absolute form — `_repo_relative` does that on purpose — and
+  the always-block layer can match. Only ever an extra block, never a missing
+  one, but a maintainer reasoning about the anchor should not be told the layer
+  is unreachable here. A non-default install (`install.py --dest <scratch>`)
+  likewise does not protect itself. The
   resolution is also lazy and guarded: `Path.home()` raises on Windows when
   `USERPROFILE`/`HOME` are absent, and an import-time raise exits the handler
   with code 1 — which the caller read as neither allow nor block.

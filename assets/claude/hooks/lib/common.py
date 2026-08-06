@@ -3,6 +3,13 @@
 Standard-library only. Handler bugs must not block user work, so any
 unexpected exception in a hook should ultimately fall through to
 ``sys.exit(0)`` (safe-pass). Helpers here favour that contract.
+
+That contract is the INTERACTIVE one, and it inverts under the controller-side
+net (``CLAUDE_HOOK_FAILS_CLOSED``), which is the only automatic defense against
+a Builder that fires no hooks: there, exit 0 is recorded as a clean pass with no
+reason at all, so "I could not vet this" must not spell itself the same way as
+"I vetted this and it was clean". Use :func:`exit_no_verdict` for the former —
+:func:`exit_allow` means the check ran.
 """
 from __future__ import annotations
 
@@ -28,8 +35,10 @@ def _now_iso_z() -> str:
 def read_hook_input() -> dict:
     """Read a single JSON object from stdin.
 
-    On parse failure: log ``error_input`` and ``sys.exit(0)`` — a
-    malformed payload must never block the user.
+    On parse failure: log ``error_input``, then allow interactively and block
+    under the net (:func:`exit_no_verdict`). A malformed payload must never
+    block the user; but a payload the net could not even parse is a change no
+    handler read, and the net has nobody else to fall back on.
     """
     try:
         raw = sys.stdin.read()
@@ -41,7 +50,7 @@ def read_hook_input() -> dict:
             decision="error_input",
             reason=f"{type(exc).__name__}: {exc}",
         )
-        sys.exit(0)
+        exit_no_verdict("common", "hook payload could not be read or parsed")
 
 
 def get_cwd(payload: dict) -> Path:
@@ -164,6 +173,37 @@ except (TypeError, ValueError):
 # Covers both non-verdict shapes: the watchdog firing, and an unhandled crash.
 _FAILS_CLOSED = os.environ.get("CLAUDE_HOOK_FAILS_CLOSED") == "1"
 _TIMEOUT_EXIT_CODE = 2 if _FAILS_CLOSED else 0
+
+
+def exit_no_verdict(hook_name: str, reason: str) -> NoReturn:
+    """The handler could not vet this change: allow interactively, block under the net.
+
+    ``run_handler``'s two fail-closed paths cover the handler DYING — the
+    watchdog firing, an unhandled crash. This covers the third shape, which
+    neither reaches: a handler that runs to completion and chooses to allow
+    because it has nothing to judge with. ``secret_scan`` whose ruleset will not
+    load is the live case — it caught the error, logged it, and called
+    ``exit_allow()``, so the net recorded exit 0 as a clean pass with an empty
+    reason list and a run carrying an AWS key reported BUILT.
+
+    Interactively the old answer is still the right one: a handler that cannot
+    load its own ruleset must not stop the user editing their own files. Under
+    ``CLAUDE_HOOK_FAILS_CLOSED`` (set by ``safety.scan`` and nowhere else) the
+    same condition blocks, because there nobody else is looking.
+
+    Logging stays with the caller — the existing sites already log their own
+    decision, and a second record here would double-count them.
+    """
+    if _FAILS_CLOSED:
+        try:
+            sys.stderr.write(
+                f"[{hook_name}:block] {reason} — cannot vet this change, failing closed\n"
+            )
+            sys.stderr.flush()
+        except Exception:
+            pass
+        sys.exit(2)
+    sys.exit(0)
 
 
 def _append_error_log(

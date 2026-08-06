@@ -131,6 +131,13 @@ Run `check.py` **after** regenerating too — its install-drift axis compares th
 live install and catches "edited but never installed" (which has bitten twice). `--no-install`
 skips that axis.
 
+> **Have the back-out ready before you install.** `install.py` overwrites in place and keeps
+> **no backup** — the only undo is re-installing from the previous commit:
+> `git stash && py -3 install.py --target claude --allow-live && git stash pop`
+> (or check out the previous commit and install from there). `hooks/lib/common.py` is imported by
+> **every** handler, so a bad copy there breaks every interactive hook at once. Details in
+> `orchestrator/README.md`.
+
 ## What's inside (capabilities)
 
 The skills, agents, and hooks this harness ships. _A frontmatter-derived snapshot — update

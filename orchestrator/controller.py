@@ -405,6 +405,16 @@ def _opaque_dirs(changes, repo: Path) -> list[str]:
     for c in changes:
         p = Path(c.path) if Path(c.path).is_absolute() else repo / c.path
         try:
+            # is_dir() FOLLOWS the link, and git does not: it stores a symlink
+            # as a blob and `status -uall` lists it as one ordinary file entry.
+            # So a `latest -> builds/2026-08-06` convenience link, or a workspace
+            # link in a JS monorepo, was classified as an unvettable directory
+            # and refused every dispatch whole-tree, pre-turn, regardless of the
+            # fence — while the message sent the operator hunting for a submodule
+            # that does not exist and no fence edit could clear it. A link is a
+            # file to git, and is judged as one.
+            if p.is_symlink():
+                continue
             if p.is_dir():
                 out.append(c.path)
         except OSError:
@@ -568,9 +578,15 @@ class Orchestrator:
 
         for cycle in range(1, cfg.max_cycles + 1):
             self._emit(f"[cycle {cycle}] ARCHITECT_DESIGN ({cfg.architect_vendor})")
-            ad = self.architect.invoke(ROLE_ARCHITECT, design_prompt(cfg.goal, prior_result, cycle), cfg)
+            # Scanned BEFORE write_handoff, so the handoff itself is not in this
+            # delta — _build_and_gate appends it to the Builder's scan by name,
+            # every cycle, and scanning it twice would report it twice.
+            ad, arch_blocked = self._architect_turn(
+                design_prompt(cfg.goal, prior_result, cycle), cycle, "design")
             if ad.error:
                 return self._outcome(BLOCKED, cycle, f"architect design error: {ad.error}")
+            if arch_blocked is not None:
+                return arch_blocked
             bus.write_handoff(ad.text)
             tiers = parse_tiers(ad.text)
             self._emit(f"[cycle {cycle}] tiers={tiers or '(none) -> fail-closed HIGH'}")
@@ -579,16 +595,26 @@ class Orchestrator:
             if cfg.confirm_handoff and not self.human.confirm(f"[cycle {cycle}] approve HANDOFF?"):
                 return self._outcome(HELD, cycle, "human declined HANDOFF")
 
-            bd, verdicts, has_high, blocked = self._build_and_gate(bus, ad.text, tiers, cycle)
+            # bus.write_handoff above wrote busmod.HANDOFF, so that is the name
+            # the tamper stop must compare — not cfg.handoff_name, which this
+            # loop never honours.
+            bd, verdicts, has_high, blocked = self._build_and_gate(
+                bus, ad.text, tiers, cycle, handoff_name=busmod.HANDOFF)
             if blocked is not None:
                 return blocked
 
             # ARCHITECT_REVIEW happens BEFORE any acceptance, so the human never
             # signs off on a cycle the Architect itself then rejects.
             self._emit(f"[cycle {cycle}] ARCHITECT_REVIEW")
-            rv = self.architect.invoke(ROLE_ARCHITECT, review_prompt(ad.text, bd.text), cfg)
+            # This turn runs AFTER the net, so without its own scan its writes
+            # reached neither layer in this cycle and became baseline dirt in the
+            # next — the gap the net was least likely to notice.
+            rv, rv_blocked = self._architect_turn(
+                review_prompt(ad.text, bd.text), cycle, "review")
             if rv.error:
                 return self._outcome(BLOCKED, cycle, f"architect review error: {rv.error}")
+            if rv_blocked is not None:
+                return rv_blocked
             control = parse_control(rv.text)
             self._emit(f"[cycle {cycle}] control={control.verdict} ({control.reason})")
 
@@ -613,6 +639,72 @@ class Orchestrator:
 
         return self._outcome(MAX_CYCLES, cfg.max_cycles, "max cycles exceeded without DONE")
 
+    def _architect_turn(self, prompt: str, cycle: int, label: str):
+        """Invoke the Architect and secret-scan whatever the turn wrote.
+
+        Returns ``(turn, blocked_or_None)``.
+
+        The ```scope``` fence bounds the BUILDER. The Architect has none, and is
+        *expected* to author files no fence names — ``ROLE_ARCHITECT.md`` step 8
+        tells it to write an ADR before dispatching at step 9. So its output gets
+        the secret layer only.
+
+        Why it needs a layer at all: ``--architect codex`` is a documented
+        configuration, and a headless Codex Architect fires no Claude hooks —
+        the same asymmetry this whole module exists for. Before the delta rework
+        a post-turn whole-tree sweep happened to cover the Architect's files;
+        the delta dropped them, because ``_build_and_gate`` takes its baseline
+        AFTER the Architect has already written. Everything it authored was
+        pre-existing dirt by construction, and the ARCHITECT_REVIEW turn was
+        worse still: it runs after the net entirely, so its writes landed in the
+        next cycle's baseline and dropped out there too. A key pasted into an
+        ADR shipped with the run reporting DONE. The handoff and ``RESULT.md``
+        were already re-added by name for exactly this reason; this is the same
+        argument applied to the rest of what the Architect touches.
+        """
+        cfg = self.cfg
+        repo = Path(cfg.repo)
+        before_raw = collect_changeset(repo, max_files=_MAX_CHANGESET)
+        turn = self.architect.invoke(ROLE_ARCHITECT, prompt, cfg)
+        if turn.error:
+            return turn, None  # the caller reports the vendor error itself
+        after_raw = collect_changeset(repo, max_files=_MAX_CHANGESET)
+
+        if before_raw is OVERSIZED or after_raw is OVERSIZED:
+            msg = self._oversized_msg("working tree")
+            if cfg.net_enforce:
+                return turn, self._outcome(BLOCKED, cycle, msg)
+            self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}; skipping the scan")
+            return turn, None
+        before = _changeset_index(before_raw)
+        after = _changeset_index(after_raw)
+        if before is None or after is None:
+            msg = (f"cannot determine what the architect {label} turn wrote "
+                   f"({_git_why(repo)}) — fail-closed")
+            if cfg.net_enforce:
+                return turn, self._outcome(BLOCKED, cycle, msg)
+            self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
+            return turn, None
+
+        # Keyed on `after`, NOT on the union the Builder's delta uses. There the
+        # union is load-bearing: a path that leaves `git status` was deleted, and
+        # a deletion is a fence violation to judge. Here the scan is secret-only,
+        # and a path that is gone has no content to scan — the union would add a
+        # branch no test could ever kill.
+        changes = [safety.Change(path=p, content=content)
+                   for p, content in sorted(after.items())
+                   if before.get(p, _ABSENT) != content]
+        if not changes:
+            return turn, None
+        self._emit(f"[cycle {cycle}] net: scanning {len(changes)} architect file(s)")
+        net = safety.scan(changes, cfg, secret_only=True)
+        for r in net.reasons:
+            self._emit(f"[cycle {cycle}] net: {r}")
+        if net.blocked:
+            return turn, self._outcome(
+                BLOCKED, cycle, f"safety net blocked the architect {label} output")
+        return turn, None
+
     @staticmethod
     def _opaque_msg(opaque: list[str]) -> str:
         return ("changeset contains directories the net cannot look inside "
@@ -632,7 +724,7 @@ class Orchestrator:
 
     def _build_and_gate(
         self, bus: Bus, handoff_text: str, tiers: dict[str, str], cycle: int,
-        *, tier_gate_hard: bool = True,
+        *, handoff_name: str, tier_gate_hard: bool = True,
     ):
         """BUILDER_EXECUTE -> RESULT.md -> safety net (3.5) -> tier-gate.
 
@@ -641,6 +733,15 @@ class Orchestrator:
         terminal Outcome on any failure (the caller returns it) or ``None`` on
         success. ``verdicts`` / ``has_high`` are meaningful only when ``blocked``
         is ``None``.
+
+        ``handoff_name`` is the file the CALLER actually wrote or read, not
+        ``cfg.handoff_name``: ``run()`` authors ``bus.HANDOFF`` unconditionally
+        while ``run_from_handoff()`` honours the config, and reading the config
+        here made the tamper stop compare against a file the writer never wrote.
+        The two coincided only because no CLI exposes ``--handoff`` on ``run``;
+        adding one would have produced "builder altered or removed HANDOFF_X.md"
+        on every cycle — the most alarming and least accurate message this
+        system emits. The caller knows; it says.
 
         The safety net (scope_check / secret_scan) is ALWAYS a hard block — it
         is the deterministic compensation for a Codex Builder firing no Claude
@@ -660,12 +761,11 @@ class Orchestrator:
         # excuse, because here a changeset is admitted on the strength of the
         # fence. No fence is a net that cannot run, not a pass.
         if not busmod.scope_entries(handoff_text):
-            msg = f"no ```scope``` fence in {cfg.handoff_name or busmod.HANDOFF}: cannot bound the changeset"
+            msg = f"no ```scope``` fence in {handoff_name}: cannot bound the changeset"
             if cfg.net_enforce:
                 return None, [], False, self._outcome(BLOCKED, cycle, msg)
             self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
 
-        handoff_name = cfg.handoff_name or busmod.HANDOFF
         # Snapshot the whole working tree BEFORE the turn. The net judges the
         # BUILDER'S work, and `git status` reports everything that is merely
         # dirty — the handoff Claude just wrote, an ADR the Architect authored at
@@ -707,7 +807,24 @@ class Orchestrator:
                 self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
 
         before = _changeset_index(before_raw)
+        # The fingerprint is the evidence baseline, and it can fail to compute
+        # for reasons that have nothing to do with a Builder: an `ls-files`
+        # timeout on a huge tree, an unreadable info/exclude. Those fail the
+        # SAME way at both ends, and `None != None` is False — so the entire
+        # witness layer (commit, stash, ignore rules, index bits) was skipped in
+        # enforce with no warning and no reason, while `collect_changeset`, which
+        # needs less from git, kept succeeding and the run looked normal. It was
+        # the only "we could not see" case in this function that failed OPEN.
         vis_before = _witness_fingerprint(Path(cfg.repo))
+        if vis_before is None:
+            msg = ("cannot read what git reports from — HEAD, the stash ref, "
+                   ".git/info/exclude, core.excludesFile or the "
+                   "assume-unchanged/skip-worktree index bits are unreadable, so "
+                   "a mid-turn edit to any of them could not be detected; "
+                   "fail-closed before dispatching the builder")
+            if cfg.net_enforce:
+                return None, [], False, self._outcome(BLOCKED, cycle, msg)
+            self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
 
         self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
         bd = self.builder.invoke(ROLE_BUILDER, build_prompt(handoff_text), cfg)
@@ -725,24 +842,43 @@ class Orchestrator:
         # so this check is not what stops a mid-scan rewrite; it is what stops
         # us accepting work whose spec no longer exists.)
         if not _same_text(_read_bus(bus, handoff_name), handoff_text):
-            return bd, verdicts, False, self._outcome(
-                BLOCKED, cycle,
-                f"builder altered or removed {handoff_name} — the scope fence is the "
-                "rule it is judged by; refusing to trust the changed copy",
-            )
+            # Degrades in dryrun like every other check. It used to return
+            # BLOCKED unconditionally, which contradicted --net-dryrun's own
+            # documentation ("warn instead of block") and left an operator
+            # surveying an unfamiliar repo with a hard stop and no way past it.
+            # Safe to continue: the fence the handlers enforce is pinned from
+            # the DISPATCHED text below, not re-read from the changed file.
+            msg = (f"builder altered or removed {handoff_name} — the scope fence is the "
+                   "rule it is judged by; refusing to trust the changed copy")
+            if cfg.net_enforce:
+                return bd, verdicts, False, self._outcome(BLOCKED, cycle, msg)
+            self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
 
         # Did the Builder change what `git status` will report? Checked like the
         # handoff tamper stop, and for the same reason: the net's verdict is
         # only as good as the evidence it is given.
-        if bd.changeset is None and _witness_fingerprint(Path(cfg.repo)) != vis_before:
-            msg = ("builder changed what git reports — a commit/stash, an ignore "
-                   "rule (.git/info/exclude or core.excludesFile), or an "
-                   "assume-unchanged/skip-worktree index bit moved during the turn; "
-                   "the changeset can no longer be trusted. Leave changes in the "
-                   "working tree: the Architect reviews them with `git diff`")
-            if cfg.net_enforce:
-                return bd, verdicts, False, self._outcome(BLOCKED, cycle, msg)
-            self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
+        # vis_before is None only in dryrun (enforce already returned above), and
+        # there is nothing to compare against then — the baseline was already
+        # reported. Re-reading it is a separate failure from it having MOVED, and
+        # the two get separate messages: "could not look" is not "was tampered".
+        if bd.changeset is None and vis_before is not None:
+            vis_after = _witness_fingerprint(Path(cfg.repo))
+            if vis_after is None:
+                msg = ("cannot re-read what git reports from after the turn, so a "
+                       "mid-turn commit/stash, ignore rule or index-bit change "
+                       "cannot be ruled out; fail-closed")
+            elif vis_after != vis_before:
+                msg = ("builder changed what git reports — a commit/stash, an ignore "
+                       "rule (.git/info/exclude or core.excludesFile), or an "
+                       "assume-unchanged/skip-worktree index bit moved during the turn; "
+                       "the changeset can no longer be trusted. Leave changes in the "
+                       "working tree: the Architect reviews them with `git diff`")
+            else:
+                msg = ""
+            if msg:
+                if cfg.net_enforce:
+                    return bd, verdicts, False, self._outcome(BLOCKED, cycle, msg)
+                self._emit(f"[cycle {cycle}] net: WARN dryrun — {msg}")
 
         # RESULT.md is ours: the controller wrote it from the Builder's report
         # after the snapshot, so it shows up in the delta but is never the
@@ -836,7 +972,8 @@ class Orchestrator:
         # Pin the fence we DISPATCHED, so the handler judges against that text
         # rather than re-reading a file the Builder can still be writing to.
         net = safety.scan(changes, cfg, scope_exempt=scope_exempt,
-                          fence=busmod.scope_entries(handoff_text))
+                          fence=busmod.scope_entries(handoff_text),
+                          handoff_name=handoff_name)
         for r in net.reasons:
             self._emit(f"[cycle {cycle}] net: {r}")
         if net.blocked:
@@ -890,7 +1027,8 @@ class Orchestrator:
         attempt = 0
         for attempt in range(1, _MAX_BUILD_ATTEMPTS + 1):
             _bd, verdicts, has_high, blocked = self._build_and_gate(
-                bus, handoff_text, tiers, cycle=attempt, tier_gate_hard=False,
+                bus, handoff_text, tiers, cycle=attempt,
+                handoff_name=handoff_name, tier_gate_hard=False,
             )
             if blocked is not None:
                 return blocked  # safety net (scope/secret) tripped — hard block

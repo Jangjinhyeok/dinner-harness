@@ -74,7 +74,9 @@ def _run_handler(handler: Path, payload: dict, env: dict) -> tuple[int, str]:
 
 def scan(changes: list[Change], cfg: Config, *,
          scope_exempt: Optional[set[str]] = None,
-         fence: Optional[list[str]] = None) -> NetResult:
+         fence: Optional[list[str]] = None,
+         handoff_name: Optional[str] = None,
+         secret_only: bool = False) -> NetResult:
     """Run secret_scan + scope_check over every change.
 
     Block on any handler exit 2. In ``enforce`` the net also fails CLOSED when a
@@ -97,12 +99,28 @@ def scan(changes: list[Change], cfg: Config, *,
     the controller knows that — an exemption handed to a file the Builder wrote
     is a hole, not a convenience. A key pasted into a handoff is exactly as
     leaked as one in source, so ``secret_scan`` always runs.
+
+    ``handoff_name`` is likewise the CALLER's to supply — it names the file the
+    controller actually dispatched from, which is not always ``cfg.handoff_name``
+    (``run()`` always authors ``bus.HANDOFF``). Falling back to the config was
+    the last place the net resolved a bus name for itself; with the fence pinned
+    the name only reaches the operator's block message, but a message naming a
+    file nobody wrote is how an operator loses trust in the tool.
+
+    ``secret_only`` runs the secret layer alone. It exists for output the
+    ARCHITECT authored: the ```scope``` fence bounds the BUILDER, and the
+    Architect has none — its own protocol tells it to write an ADR before
+    dispatching, so judging its files against the Builder's whitelist would fail
+    every cycle on the Architect's own paperwork. A key is a key wherever it was
+    pasted, so the secret layer still runs. Spelling this as a blanket
+    ``scope_exempt`` would behave identically and say the wrong thing: nothing
+    here is exempt, there is simply no fence that applies.
     """
     res = NetResult()
     repo = Path(cfg.repo).resolve()
     enforce = cfg.net_enforce
     mode = "enforce" if enforce else "dryrun"
-    handoff_name = cfg.handoff_name or bus.HANDOFF
+    handoff_name = handoff_name or cfg.handoff_name or bus.HANDOFF
 
     base_env = dict(os.environ)
     # The other half of the UTF-8 pinning in _run_handler, and load-bearing:
@@ -139,8 +157,9 @@ def scan(changes: list[Change], cfg: Config, *,
     else:
         base_env["CLAUDE_SCOPE_FENCE"] = "\n".join(fence)
 
-    handlers = [("secret_scan", _handler(cfg, "secret_scan")),
-                ("scope_check", _handler(cfg, "scope_check"))]
+    handlers = [("secret_scan", _handler(cfg, "secret_scan"))]
+    if not secret_only:
+        handlers.append(("scope_check", _handler(cfg, "scope_check")))
 
     def _degrade(msg: str) -> None:
         if enforce:

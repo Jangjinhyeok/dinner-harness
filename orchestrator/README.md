@@ -177,9 +177,14 @@ the target repo's ignore rules as part of the safety boundary. And a block is a
 
 **One of the two layers, not both.** The handlers carry an `always_block` layer
 protecting the harness install itself (`settings.json`, `hooks/`). It is
-anchored on the **live install** (`~/.claude`), while the net only ever submits
-paths inside the work repo — so in a controller dispatch that layer never fires
-and the fence is the whole of the scope enforcement. That is deliberate: the
+anchored on the **live install** (`~/.claude`), while the net normally submits
+only paths inside the work repo — so in a typical controller dispatch that layer
+never fires and the fence is the whole of the scope enforcement. **Not
+universal:** `git status` reports the whole git repo, so when the git root sits
+ABOVE the work repo, paths outside it are submitted in absolute form (that is
+`_repo_relative`'s deliberate behaviour) and the always-block layer can match
+after all. The direction is safe — it only ever adds a block — but "exactly one
+layer is live here" is a rule of thumb, not an invariant. That is deliberate: the
 alternatives anchor it on the work repo (making any target repo with a root
 `settings.json` undispatchable) or on the handler's own directory (making the
 harness repo unable to edit its own hooks). It does mean "reruns the handlers

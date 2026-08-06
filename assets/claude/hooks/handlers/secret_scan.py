@@ -28,6 +28,7 @@ if str(_HOOKS_ROOT) not in sys.path:
 from lib.common import (  # noqa: E402  (sys.path insert above)
     exit_allow,
     exit_block,
+    exit_no_verdict,
     exit_warn,
     get_env_override,
     log_event,
@@ -158,8 +159,12 @@ def main() -> None:
 
     patterns = _load_patterns()
     if patterns is None:
-        # error_internal already logged; safe-pass.
-        exit_allow()
+        # error_internal already logged. Safe-pass interactively; under the net
+        # this is the ONE thing scanning a headless Builder's output, and a
+        # plain exit_allow() here was indistinguishable from a clean scan — a
+        # corrupt or missing secret_patterns.json disarmed the layer silently
+        # and the run reported BUILT with an AWS key in the changeset.
+        exit_no_verdict(_HOOK_NAME, "secret ruleset could not be loaded")
 
     tool_input = payload.get("tool_input") or {}
     match = _scan(tool_name, tool_input, patterns)
