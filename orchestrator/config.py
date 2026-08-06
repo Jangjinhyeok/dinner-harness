@@ -55,7 +55,7 @@ class Config:
 
     # --- backend -----------------------------------------------------------
     backend: str = "mock"             # mock | real
-    timeout_s: int = 1800             # per headless vendor turn
+    timeout_s: float = 1800           # per headless vendor turn
 
     # --- loop control ------------------------------------------------------
     max_cycles: int = 5
@@ -99,6 +99,8 @@ class Config:
             )
         if self.max_cycles < 1:
             problems.append("max_cycles must be >= 1")
+        if self.timeout_s <= 0:
+            problems.append("timeout_s must be > 0")
         if self.backend == "real" and not Path(self.repo).is_dir():
             problems.append(f"repo not a directory: {self.repo}")
         if self.auto_approve and self.backend == "real" and not self.allow_auto_approve_real:

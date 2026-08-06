@@ -6,6 +6,7 @@ hook handlers as the safety net). Run from the repo root:
 from __future__ import annotations
 
 import json
+import io
 import os
 import shutil
 import subprocess
@@ -13,7 +14,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import orchestrate
 from orchestrator import bus
 from orchestrator.config import Config
 from orchestrator.controller import (
@@ -28,6 +31,7 @@ from orchestrator.controller import (
     HELD,
 )
 from orchestrator import safety
+from orchestrator import vendors
 from orchestrator.vendors import (
     ROLE_BUILDER,
     Backend,
@@ -65,6 +69,47 @@ def tearDownModule():
             os.environ.pop(k, None)
         else:
             os.environ[k] = old
+
+
+class TestVendorRunner(unittest.TestCase):
+    def test_child_output_is_streamed_and_captured(self):
+        # The old subprocess.run(capture_output=True) held every progress line
+        # until the CLI exited. Keep stdout for Claude RESULT parsing while also
+        # showing both streams to the operator during a long Builder turn.
+        script = (
+            "import sys; "
+            "print('builder progress', flush=True); "
+            "print('builder warning', file=sys.stderr, flush=True)"
+        )
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as stdout, \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            turn = vendors._run([sys.executable, "-c", script], Config())
+        self.assertEqual(turn.error, "")
+        self.assertEqual(turn.text, "builder progress\n")
+        self.assertIn("builder progress", stdout.getvalue())
+        self.assertIn("builder warning", stderr.getvalue())
+
+    def test_timeout_kills_the_child_and_names_the_configured_budget(self):
+        # A timeout must terminate the child (rather than leave Codex behind)
+        # and the operator needs the actual CLI-configured budget to distinguish
+        # it from a policy block. The current salvage is the surviving worktree,
+        # not treating a still-running process as a successful Builder turn.
+        cfg = Config(timeout_s=0.05)
+        turn = vendors._run([sys.executable, "-c", "import time; time.sleep(5)"], cfg)
+        self.assertIn("timed out after 0.05s", turn.error)
+
+    def test_cli_passes_timeout_to_config_and_rejects_zero(self):
+        # `--timeout-s` is the supported escape hatch for a productive CLI
+        # process that has not exited. Without wiring it into Config, argparse
+        # accepts the flag but the runner silently keeps the 1800-second budget.
+        with mock.patch("sys.stdout", new_callable=io.StringIO), \
+             mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            status = orchestrate.main([
+                "run", "--goal", "demo", "--backend", "mock", "--yes",
+                "--timeout-s", "0",
+            ])
+        self.assertEqual(status, 2)
+        self.assertIn("timeout_s must be > 0", stderr.getvalue())
 
 
 def _git_available() -> bool:
