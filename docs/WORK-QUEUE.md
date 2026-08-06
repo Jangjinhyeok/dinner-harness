@@ -46,7 +46,9 @@ headless Codex Builder, which fires no Claude hooks.
 3. HIGH tier ⇒ **unanimous `adversarial-review` + human end sign-off** before
    install. After sign-off:
    `py -3 install.py --target claude --allow-live` (and `--target codex`).
-   `check.py` is repo-only and will **not** warn that the live copy is stale.
+   `py -3 check.py` now reports the staleness (item A below, landed) — it lists
+   the eleven claude-target files this branch and `7d1f874` changed. It is a
+   report, not a gate: it does not install anything.
 
 To back out an install: re-install from the previous commit — `install.py`
 overwrites in place and keeps no backup. See the note in
@@ -57,23 +59,50 @@ overwrites in place and keeps no backup. See the note in
 
 ## 1. Queued harness improvements (A/B/C/F) — NOT STARTED
 
-Four items picked from the Claude Code 70-tips document on 2026-08-05. None has
-been started. Suggested order is A first: it is the hole that actually bit twice
-in one session, and it is what will tell you whether the rest of this work is
-in force.
+Four items picked from the Claude Code 70-tips document on 2026-08-05. **A is
+done** (2026-08-06); B/C/F are not started.
 
-### A — add an install-drift axis to `check.py`
+### A — add an install-drift axis to `check.py` — DONE
 
-`check.py` is repo-only by its own docstring, so it never compares the repo
+`check.py` was repo-only by its own docstring, so it never compared the repo
 against the installed `~/.claude`. This bit twice on 2026-08-05: the `/delegate`
 document-lane commit (`7d1f874`) sat uninstalled and unnoticed, and the scope
 fence work has the same trap (see §0 above).
 
-Sketch: install to a scratch dir with `install.py --dest`, diff against the live
-tree, report **content** drift only (excluding path substitutions and runtime
-files). Alternative: a `SessionStart` hook — note the harness currently uses only
+Implemented as the sketch described: render the manifest into a temp dir through
+`install.py`'s own adapters, compare content against the live `~/.claude` /
+`~/.codex`. `--no-install` skips the axis; an absent install root is reported,
+not counted as drift. On its first run it reproduced **both** incidents above.
+
+Four false-positive sources are suppressed, and each is load-bearing rather than
+cosmetic — the axis is worthless if a stale tree hides in noise:
+
+- `<CLAUDE_HOME>` / dest-root substitution is normalized scratch→live. Applied
+  to every **generated** dest, not just `template`: codex `hooks.json` embeds
+  absolute handler paths the same way. Verbatim `copy` dests stay byte-exact.
+- `skip_if_exists` dests (`HANDOFF.md`, `RESULT.md`) are live workflow state.
+- a `merge` JSON dest is compared **key-wise on template-owned keys** — keeping
+  live-only keys is what `merge` means, so a whole-text compare would flag every
+  machine.
+- inside owned dirs, dot-prefixed paths are vendor state (Codex ships
+  `skills/.system/**`, marked by its own `.codex-system-skills.marker`); the
+  manifest installs no dot-named path there, so it can never be a stale render
+  of ours.
+
+Live-only leftovers **are** reported, but only under directories the manifest
+fills outright (dir-copy dests, skills, agents) — a skill deleted from the repo
+keeps running until `install.py` re-runs, and nothing else caught that.
+
+Verification: 15 cases against a scratch install tree (never the live one),
+9 mutants, all killed — the axis has no test module in-repo because `check.py`
+has none and adding one changes the repo's test topology (the documented entry
+point is `orchestrator.tests.test_orchestrator`). **That is a real gap**: the
+mutation evidence is in a session scratchpad, not in the repo. If this axis is
+worth keeping, give it a test module.
+
+Not taken: the `SessionStart`-hook alternative — note the harness still uses only
 `PreToolUse` / `PostToolUse` / `UserPromptSubmit`, so `SessionStart`, `Stop`,
-`SubagentStop` and `PreCompact` are all unused.
+`SubagentStop` and `PreCompact` remain unused.
 
 ### B — isolate the Builder in a git worktree (tip §5.2)
 

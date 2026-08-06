@@ -127,6 +127,10 @@ Don't edit `~/.claude` / `~/.codex` directly — edit the repo's canonical tree 
 run `py -3 check.py` to verify integrity, then regenerate with
 `py -3 install.py --target claude --allow-live` (and `--target codex` as needed).
 
+Run `check.py` **after** regenerating too — its install-drift axis compares the repo against the
+live install and catches "edited but never installed" (which has bitten twice). `--no-install`
+skips that axis.
+
 ## What's inside (capabilities)
 
 The skills, agents, and hooks this harness ships. _A frontmatter-derived snapshot — update

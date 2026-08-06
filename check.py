@@ -1,6 +1,6 @@
-"""dinner-harness drift-check — advisory, stdlib only, repo-only.
+"""dinner-harness drift-check — advisory, stdlib only.
 
-Two checks (manual; no CI/pre-commit — run after editing content):
+Three checks (manual; no CI/pre-commit — run after editing content):
   1. catalog completeness — the README capability catalog (`## 하네스 구성` / `## What's inside`)
      must list exactly the repo's skills (`content/skills/*/`) + agents (`content/agents`
      frontmatter `name`) + hooks (`assets/claude/hooks/handlers/*.py`), in BOTH READMEs with
@@ -8,22 +8,38 @@ Two checks (manual; no CI/pre-commit — run after editing content):
   2. curation drift — `content/instructions/CLAUDE.md` whole-file SHA-256 vs the blessed hash
      in `curation.toml`. `assets/codex/AGENTS.md` was curated from CLAUDE.md, so a change may
      need re-curation (advisory; §2 Two-CLI changes are irrelevant to the codex curation).
+  3. install drift — repo vs the LIVE `~/.claude` / `~/.codex`. Checks 1-2 are repo-only, so an
+     edited-but-uninstalled harness looked clean while the live copy ran the old behaviour;
+     that hole bit twice on 2026-08-05. Renders the manifest into a temp dir through install.py's
+     own adapters and compares content only — path substitutions are normalized, `skip_if_exists`
+     workflow files (HANDOFF/RESULT) are runtime state and are excluded, a `merge` JSON dest is
+     compared on template-owned keys only, and the manifest's own exclude lists apply. Live-only
+     leftovers are reported for directories the manifest owns outright (a skill deleted from the
+     repo keeps running until install.py is re-run), never for the rest of the install root.
+     Machine-local by nature: `--no-install` skips it.
 
 Usage:
-  py -3 check.py            run both; exit 0 if clean, 1 if drift (human-readable report)
+  py -3 check.py            run all three; exit 0 if clean, 1 if drift (human-readable report)
+  py -3 check.py --no-install   skip the install-drift axis (repo-only checks)
   py -3 check.py --update   re-bless: store the current CLAUDE.md hash in curation.toml
 """
 import argparse
 import hashlib
+import importlib.util
+import json
+import os
 import re
 import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 CURATION = REPO / "curation.toml"
 CLAUDE_MD = REPO / "content/instructions/CLAUDE.md"
+MANIFEST = REPO / "harness.toml"
 READMES = {"README.md": "## 하네스 구성", "README.en.md": "## What's inside"}
+INSTALL_TARGETS = ("claude", "codex")
 
 
 def frontmatter_name(text):
@@ -104,6 +120,128 @@ def check_curation():
     return []
 
 
+def _installer():
+    """Load install.py as a module — its adapter loading and dest defaults stay one source."""
+    spec = importlib.util.spec_from_file_location("_dh_install", REPO / "install.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _owned_dirs(target_cfg):
+    """Install-root-relative dirs the manifest fills entirely — the only place a live-only
+    file is judged stale. Everything else under the install root (settings.local.json,
+    projects/, history.jsonl, plugin state) is the runtime's, not ours."""
+    dirs = []
+    for src_rel, dest_rel in list(target_cfg.get("copy", [])) + list(target_cfg.get("hooks_copy", [])):
+        if (REPO / src_rel).is_dir():
+            dirs.append(dest_rel)
+    if target_cfg.get("skills_src"):
+        dirs.append(target_cfg.get("skills_dest", "skills"))
+    if target_cfg.get("agents_src"):
+        dirs.append(target_cfg.get("agents_dest", "agents"))
+    return dirs
+
+
+def _json_key_drift(rel, want_text, got_text):
+    """A `merge` dest keeps existing-dest keys the template does not own, so only the
+    rendered keys are ours to check — extra live keys are the point of merging."""
+    try:
+        want, got = json.loads(want_text), json.loads(got_text)
+    except json.JSONDecodeError as e:
+        return [f"{rel}: JSON 파싱 실패 — {e}"]
+    problems = []
+    for k in want:
+        if k not in got:
+            problems.append(f"{rel}: 설치본에 키 없음 — `{k}`")
+        elif got[k] != want[k]:
+            problems.append(f"{rel}: 키 내용 다름 — `{k}`")
+    return problems
+
+
+def check_install(target, live_root=None, username=None):
+    """Compare the rendered manifest against a live install tree.
+
+    Returns (present, problems). present=False means the install root does not exist —
+    reported, but not counted as drift: a machine need not use every target.
+    """
+    manifest = tomllib.load(open(MANIFEST, "rb"))
+    target_cfg = manifest.get("targets", {}).get(target)
+    if target_cfg is None:
+        return True, [f"harness.toml에 target '{target}' 없음"]
+    inst = _installer()
+    live = Path(live_root) if live_root else inst.default_dest(target)
+    if not live.is_dir():
+        return False, []
+    if username is None:
+        username = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+
+    exclude_dirs = set(target_cfg.get("exclude_dir_names", []))
+    exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
+    runtime = {dest_rel for _, dest_rel in target_cfg.get("skip_if_exists", [])}
+    problems = []
+
+    with tempfile.TemporaryDirectory(prefix="dh-check-") as td:
+        scratch = Path(td) / f".{target}"
+        if scratch.resolve() == live.resolve():  # never render onto the tree we are judging
+            return True, [f"scratch dest가 live와 동일 — 비교 불가 ({live})"]
+        adapter = inst.load_adapter(target)
+        plan = adapter.install(
+            repo_root=REPO, target_cfg=target_cfg, vars_cfg=manifest.get("vars", {}),
+            dest_root=scratch, username=username, dry_run=False,
+        )
+        expected = set()
+        for action, dest in plan:
+            rel = Path(dest).relative_to(scratch).as_posix()
+            if rel in runtime:  # HANDOFF.md / RESULT.md are live workflow state, never drift
+                continue
+            expected.add(rel)
+            live_p = live / rel
+            if not live_p.is_file():
+                problems.append(f"{rel}: 설치본에 없음 — install.py 미실행")
+                continue
+            if action == "copy":  # verbatim, byte-exact by construction
+                if Path(dest).read_bytes() != live_p.read_bytes():
+                    problems.append(f"{rel}: 설치본 내용 다름")
+                continue
+            # Everything else is generated and may embed the dest root — the templated
+            # <CLAUDE_HOME>, and codex hooks.json's absolute handler paths. Re-point the
+            # scratch root at the live one so this compares content, not where we rendered.
+            want = Path(dest).read_text(encoding="utf-8").replace(
+                scratch.as_posix(), live.as_posix())
+            try:
+                got = live_p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:  # a mangled live file is drift, not a traceback
+                problems.append(f"{rel}: 설치본이 UTF-8로 안 읽힘 — 손상")
+                continue
+            if action == "merge" and rel.endswith(".json"):
+                problems += _json_key_drift(rel, want, got)
+            elif want != got:
+                problems.append(f"{rel}: 설치본 내용 다름 ({action})")
+
+    for dir_rel in _owned_dirs(target_cfg):
+        root = live / dir_rel
+        if not root.is_dir():
+            continue
+        for f in sorted(root.rglob("*")):
+            if not f.is_file():
+                continue
+            sub = f.relative_to(root)
+            if any(p in exclude_dirs for p in sub.parts) or f.name.endswith(exclude_suffixes):
+                continue
+            rel = f.relative_to(live).as_posix()
+            if rel in expected:
+                continue
+            # Vendors drop their own state into these dirs under a dot prefix (Codex ships
+            # `skills/.system/**`, marked by its own `.codex-system-skills.marker`). The
+            # manifest installs no dot-named path inside an owned dir, so a dot entry here
+            # can never be a stale render of ours.
+            if any(part.startswith(".") for part in sub.parts):
+                continue
+            problems.append(f"{rel}: repo에 없는 설치본 잔존 — 삭제 후 재설치 필요")
+    return True, problems
+
+
 def do_update():
     blessed_at = "unknown"
     if CURATION.is_file():
@@ -125,6 +263,8 @@ def main():
         pass
     ap = argparse.ArgumentParser(description="dinner-harness drift-check (advisory).")
     ap.add_argument("--update", action="store_true", help="re-bless the current CLAUDE.md hash")
+    ap.add_argument("--no-install", action="store_true",
+                    help="skip the install-drift axis (repo-only checks)")
     args = ap.parse_args()
     if args.update:
         do_update()
@@ -132,6 +272,7 @@ def main():
 
     declared, cat_problems = check_catalog()
     cur_problems = check_curation()
+    inst_problems = []
 
     if not cat_problems:
         print(f"[catalog] skills {declared['Skills']} / agents {declared['Agents']} / "
@@ -147,7 +288,25 @@ def main():
         for p in cur_problems:
             print("  -", p)
 
-    return 0 if not (cat_problems or cur_problems) else 1
+    if args.no_install:
+        print("[install] skipped (--no-install)")
+    else:
+        for target in INSTALL_TARGETS:
+            present, problems = check_install(target)
+            if not present:
+                print(f"[install:{target}] {_installer().default_dest(target)} 없음 — skip")
+            elif not problems:
+                print(f"[install:{target}] repo == 설치본 — drift 없음")
+            else:
+                inst_problems += problems
+                print(f"[install:{target}] DRIFT ({len(problems)}건) — "
+                      f"`py -3 install.py --target {target} --allow-live` 필요:")
+                for p in problems[:20]:
+                    print("  -", p)
+                if len(problems) > 20:
+                    print(f"  … 외 {len(problems) - 20}건")
+
+    return 0 if not (cat_problems or cur_problems or inst_problems) else 1
 
 
 if __name__ == "__main__":
