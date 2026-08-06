@@ -37,14 +37,31 @@ The change is **HIGH tier** per `~/.claude/rules/autonomy-policy.md`: it is the
 only automatic defense against a headless Codex Builder, which fires no Claude
 hooks. Where the two gates actually stand:
 
-1. **Design gate: closed by decision, with one item open.** ADR-0007 is
-   **Accepted** and merged. `adversarial-review` ran four times (rounds 6–9);
-   round 9 produced the first APPROVE (architect) against three REJECTs that
-   converged on a single code defect plus three test gaps. All were fixed — but
-   **a tenth panel never saw those fixes**, so the unanimity HIGH tier asks for
-   was not reached. The user accepted and merged on 2026-08-06 with that gap
-   open. It is accepted debt, not a closed item; re-running `adversarial-review`
-   against the merged state is how to close it.
+1. **Design gate: round 10 ran, FAILed, and its findings are closed.** ADR-0007
+   is **Accepted** and merged; the user accepted on 2026-08-06 before a panel
+   passed. `adversarial-review` round 10 then ran against the merged state and
+   returned **FAIL** — `code-reviewer` **BLOCK**, `architect` REJECT,
+   `tdd-guide` REJECT, `tools-programmer` APPROVE (HIGH needs unanimity, and a
+   BLOCK fails at any tier).
+
+   The BLOCK was real and nine rounds had missed it: `secret_scan` answered its
+   own ruleset-load failure with `exit_allow()`, which the net records as a
+   clean pass with no reason — a corrupt `secret_patterns.json` disarmed secret
+   scanning silently and a key shipped as `BUILT`. Two HIGHs alongside it: the
+   **Architect's own output** reached neither layer (the baseline is taken after
+   its turn), and the **witness fingerprint failed open** when it could not be
+   computed, because `None != None` is False.
+
+   All thirteen findings are closed on this branch — `469384c` (behaviour) and
+   `03a4946` (the `_build_and_gate` split, kept separate so a re-jury can tell
+   moved code from fixed code). Tests 89 → 106; 18 mutants, 17 killed (the
+   survivor's test skips for want of the Windows symlink privilege). Full detail
+   in ADR-0007's Follow-ups.
+
+   **Still open, and it is the same debt one round later: round 11 has not seen
+   the round-10 fixes.** They are again the jurors' own prescriptions, verified
+   by test and mutation, and again unjuried. This closes when a panel passes or
+   the user accepts it explicitly — not by being documented.
 2. **Install gate: still standing.** Merging changed nothing at runtime.
    `~/.claude` still runs the previous handler, so the `/delegate` scope fence is
    **live-inert** — that lane's protection depends on the Builder complying, not

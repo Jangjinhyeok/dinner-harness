@@ -1,9 +1,11 @@
 # ADR-0007: The controller net judges the Builder's delta, not the dirty tree
 
-- **Status:** Accepted (2026-08-06) — merged to `main` in PR #12 the same day.
-  Accepted by the user's decision, **not** by a round-10 panel: the round-9 fixes
-  below were never juried, and that gap is recorded rather than closed. The
-  install gate stands separately — see Follow-ups.
+- **Status:** Accepted (2026-08-06) — merged to `main` in PR #12 the same day,
+  accepted by the user's decision rather than by a passing panel. Round 10 then
+  ran against the merged state and returned **FAIL** (1 BLOCK, 2 REJECT, 1
+  APPROVE); all thirteen findings are closed on the branch. The install gate
+  stands separately, and round 11 has not seen the round-10 fixes — see
+  Follow-ups.
 - **Date:** 2026-08-05 (accepted 2026-08-06)
 - **Deciders:** Architect session (dinner-harness); accepted by the user
 
@@ -359,11 +361,52 @@ made the gap read as a lie rather than a limit.
     layer — plus three test gaps on claims the code already honoured
     (`core.excludesFile` content, the stash ref, `_run_handler`'s own `-1`) and
     a handful of doc/comment overclaims. All addressed here.
-    **The round-9 fixes above were never juried** — they are the jurors' own
-    prescriptions, verified by test and by mutation, but a tenth panel has not
-    seen them. The user accepted this ADR and merged it on 2026-08-06 with that
-    gap open; it is a known, accepted debt, not a closed item. Re-running
-    `adversarial-review` against the merged state remains the way to close it.
+    The round-9 fixes were never juried before the merge; the user accepted this
+    ADR on 2026-08-06 with that gap open.
+  - **Round 10 (2026-08-06) ran against the merged state and returned FAIL** —
+    `code-reviewer` **BLOCK**, `architect` REJECT, `tdd-guide` REJECT,
+    `tools-programmer` APPROVE. HIGH tier needs unanimity, and a BLOCK fails
+    regardless of tier. Thirteen findings, all closed on this branch:
+    - **BLOCK, and the sharpest thing nine rounds missed:** `secret_scan` caught
+      its own ruleset-load failure and called `exit_allow()`. `run_handler` maps
+      `SystemExit(0)` to exit 0 and the net records exit 0 as a clean pass with an
+      empty reason list, so a corrupt or missing `secret_patterns.json` disarmed
+      secret scanning **silently** and a changeset carrying an AWS key reported
+      `BUILT`. `CLAUDE_HOOK_FAILS_CLOSED` never reached it — that flag is
+      consulted only when the handler *crashes*, and this one ran to completion
+      and chose to allow. `lib/common.exit_no_verdict` now covers that third
+      shape; interactive sessions keep the old fail-open answer.
+    - **The Architect's own output reached neither layer.** The baseline is taken
+      after `architect.invoke`, so everything the Architect wrote was pre-existing
+      dirt by construction, and `ARCHITECT_REVIEW` runs after the net entirely.
+      `--architect codex` is documented and a headless Codex Architect fires no
+      Claude hooks either — the same asymmetry this whole net exists for. Each
+      Architect turn is now snapshotted and its delta secret-scanned; the fence
+      stays the Builder's, because judging the Architect against it would fail
+      every cycle on the ADR its own protocol mandates.
+    - **The witness fingerprint failed open silently**: `vis_before` was stored
+      without being inspected, and `None != None` is False, so a fingerprint that
+      failed at both ends skipped the entire evidence layer in enforce with no
+      warning. It was the only "we could not see" path here that did not fail
+      closed.
+    - Bracket fence entries were literal only for *directories*, so a file entry
+      `[2026]resume.md` compiled to a character class — matching `2resume.md` and
+      not the name the operator whitelisted, while the block message named the
+      path that WAS in the fence. `_opaque_dirs` followed symlinks (git does not),
+      so a `latest -> builds/` link was read as a nested repo and refused every
+      dispatch. The gate read `cfg.handoff_name` while `run()` writes
+      `bus.HANDOFF`. The tamper stop ignored `--net-dryrun`. Plus the three claims
+      the suite did not pin (the `core.excludesFile` *setting*, the round-9
+      post-turn opaque fix, `Path.home()`'s guard) and two doc overclaims.
+    - `_build_and_gate` was split (`_gate` / `_pre_turn_checks` /
+      `_builder_changes`) with an `_Evidence` type carrying the unknown states,
+      in a **separate commit** so the re-jury can tell moved code from fixed code.
+    - Tests 89 → 106; 18 mutants, 17 killed. The survivor is the symlink skip,
+      whose test skips for want of the Windows symlink privilege (WinError 1314).
+  - **The recursion is honest and still open: round 11 has not seen the round-10
+    fixes.** This is the same debt one round later, and it does not resolve
+    itself by being written down — it closes when a panel passes, or when the
+    user accepts it again explicitly.
   - **The install gate is separate and still stands.** Merging changed nothing at
     runtime: until `install.py` runs, `~/.claude` keeps running the old handler
     and **the `/delegate` scope fence is live-inert** — that lane's protection
