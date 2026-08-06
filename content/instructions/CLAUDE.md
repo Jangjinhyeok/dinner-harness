@@ -101,6 +101,27 @@
 
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
+### Builder-first execution (opt-in Architect session)
+
+For multi-file implementation work where Claude should stay the Architect,
+start Claude through `~/.claude/dh-architect.cmd`. The launcher sets
+`DINNER_EXECUTION_MODE=builder-first` for that Claude process. In this mode the
+conditional `builder_guard` blocks Claude `Edit`/`Write` implementation edits;
+it permits only root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
+`docs/architecture/*.md`. Write the self-contained HANDOFF, create an ADR when
+the decision is structural, then dispatch Codex with `orchestrate.py build`.
+
+This is a workflow guard, not a sandbox. It deliberately does not parse or
+block arbitrary Bash/PowerShell commands: the Builder worktree and controller
+safety net remain the containment and deterministic decision boundaries. Use a
+normal `claude` session for one- or two-line work or read-only exploration.
+
+Each `build` appends content-free `attempted` then terminal (`built`, `blocked`,
+`timeout`, or `builder_bailed`) JSONL events under the harness runtime `logs/`
+directory and prints a `[receipt]` path only after the terminal event is
+written. The record has hashes and outcome metadata, never HANDOFF/RESULT text,
+prompts, or changed-file content.
+
 ### `!` shell-output fast path
 
 짧은 상태 확인은 메시지로 모델 turn을 소비하지 말고 Claude Code 입력에서 `!`를 앞에 붙여 shell command를 실행한다. 예를 들어 `!git status`는 command output만 현재 context에 넣고 모델 응답을 생성하지 않는다. diff 크기·현재 branch·테스트 결과처럼 **출력 자체를 다음 판단의 입력으로만 쓸 때** 사용해 token economy를 지킨다.

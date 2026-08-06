@@ -42,6 +42,11 @@ from orchestrator.vendors import (
 )
 from orchestrator.safety import Change
 
+_HOOKS_ROOT = Path(__file__).resolve().parents[2] / "assets" / "claude" / "hooks"
+if str(_HOOKS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_ROOT))
+from handlers import builder_guard  # noqa: E402
+
 
 _GIT_ISOLATION = {
     # The controller shells out to git itself, so isolation has to live in the
@@ -110,6 +115,92 @@ class TestVendorRunner(unittest.TestCase):
             ])
         self.assertEqual(status, 2)
         self.assertIn("timeout_s must be > 0", stderr.getvalue())
+
+
+class TestBuilderFirstGuard(unittest.TestCase):
+    def test_claude_template_wires_guard_for_structured_file_edits(self):
+        # A correct handler that is absent from settings is indistinguishable
+        # from no guard at all. Pin the installed Claude matcher and launcher.
+        template = json.loads(
+            (Path(__file__).resolve().parents[2] / "assets" / "claude" /
+             "settings.json.template").read_text(encoding="utf-8")
+        )
+        commands = [
+            hook["command"]
+            for entry in template["hooks"]["PreToolUse"]
+            if entry.get("matcher") == "Edit|Write"
+            for hook in entry["hooks"]
+        ]
+        self.assertIn("<CLAUDE_HOME>/hooks/launchers/builder_guard.cmd", commands)
+
+    def test_only_bus_and_architecture_artifacts_are_allowed(self):
+        # The guard is deliberately narrow: it reserves implementation edits
+        # for Codex without preventing an Architect from writing its spec/ADR.
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        try:
+            cwd = Path(tempfile.gettempdir()) / "builder-guard-test"
+            code = {"tool_name": "Edit", "cwd": str(cwd),
+                    "tool_input": {"file_path": "src/feature.py"}}
+            handoff = {"tool_name": "Write", "cwd": str(cwd),
+                       "tool_input": {"file_path": "HANDOFF_DELEGATE.md"}}
+            adr = {"tool_name": "Write", "cwd": str(cwd),
+                   "tool_input": {"file_path": "docs/architecture/ADR-0008.md"}}
+            self.assertEqual(builder_guard.guarded_paths(code), ["src/feature.py"])
+            self.assertEqual(builder_guard.guarded_paths(handoff), [])
+            self.assertEqual(builder_guard.guarded_paths(adr), [])
+        finally:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
+
+    def test_apply_patch_cannot_hide_a_code_edit_behind_an_allowed_handoff(self):
+        # A mixed patch is one structured file-edit call. Allowing it because
+        # its first target is HANDOFF.md would reopen the inline-code path.
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        try:
+            payload = {
+                "tool_name": "apply_patch",
+                "cwd": tempfile.gettempdir(),
+                "tool_input": {"command": """*** Begin Patch
+*** Update File: HANDOFF.md
++spec
+*** Update File: src/feature.py
++implementation
+*** End Patch
+"""},
+            }
+            self.assertEqual(builder_guard.guarded_paths(payload), ["src/feature.py"])
+        finally:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
+
+    def test_guard_audit_hashes_a_blocked_path_instead_of_retaining_it(self):
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        nonce = "customer-project-path-must-not-be-logged.py"
+        payload = {"tool_name": "Edit", "cwd": tempfile.gettempdir(),
+                   "tool_input": {"file_path": nonce}}
+        try:
+            with mock.patch.object(builder_guard, "read_hook_input", return_value=payload), \
+                 mock.patch.object(builder_guard, "log_event") as log_event, \
+                 mock.patch.object(builder_guard, "exit_block", side_effect=SystemExit(2)):
+                with self.assertRaises(SystemExit):
+                    builder_guard.main()
+            fields = log_event.call_args.kwargs
+            self.assertNotIn(nonce, json.dumps(fields))
+            self.assertEqual(fields["blocked_path_count"], 1)
+            self.assertEqual(fields["blocked_path_sha256"], builder_guard._path_digest(nonce))
+            self.assertNotIn("file_path", fields)
+        finally:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
 
 
 def _git_available() -> bool:
@@ -1078,6 +1169,228 @@ class TestBuildFromHandoff(unittest.TestCase):
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertTrue((repo / bus.RESULT).is_file())
+
+    def test_receipt_records_only_metadata_after_a_real_git_build(self):
+        # Receipt output must live outside the target repo and must not copy the
+        # handoff's text. The Builder uses the real git delta path, not an
+        # injected Turn.changeset, so the same safety boundary production uses
+        # passes before a BUILT receipt is emitted.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            nonce = "receipt-must-not-store-this-handoff-content"
+            handoff = (
+                f"# {nonce}\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n"
+            )
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            backend = _TamperingBackend(repo, "allowed.py", "VALUE = 1\n")
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertEqual(out.receipt_path, audit_dir / "build-audit.jsonl")
+            records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual([record["status"] for record in records], ["attempted", "built"])
+            self.assertEqual(records[-1]["outcome"], BUILT)
+            self.assertEqual(records[-1]["reason_code"], "built_low")
+            serialized = out.receipt_path.read_text(encoding="utf-8")
+            self.assertNotIn(nonce, serialized)
+            self.assertNotIn(str(repo), serialized)
+            self.assertIn("handoff_sha256", serialized)
+
+    def test_vendor_error_text_never_enters_the_receipt(self):
+        # Backend stderr is vendor-controlled and can echo task content. The
+        # audit may classify the failure, but must not retain that raw string.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            leaked = "vendor-stderr-must-not-enter-audit"
+
+            class _Errors(Backend):
+                name = "error"
+
+                def invoke(self, role, prompt, cfg):
+                    return Turn(error=leaked)
+
+            backend = _Errors()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.reason, f"builder error: {leaked}")
+            serialized = out.receipt_path.read_text(encoding="utf-8")
+            self.assertNotIn(leaked, serialized)
+            self.assertIn('"reason_code":"builder_error"', serialized)
+
+    def test_controller_exception_still_closes_the_audit_pair_without_text(self):
+        # Backend exceptions may include a prompt or vendor output. The caller
+        # keeps the original exception, but audit needs a fixed terminal record
+        # rather than an orphaned `attempted` event or leaked exception text.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            leaked = "backend-exception-must-not-enter-audit"
+
+            class _Explodes(Backend):
+                name = "explodes"
+
+                def invoke(self, role, prompt, cfg):
+                    raise RuntimeError(leaked)
+
+            backend = _Explodes()
+            with self.assertRaisesRegex(RuntimeError, leaked):
+                Orchestrator(
+                    _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                    log=lambda m: None,
+                ).run_from_handoff()
+            serialized = (audit_dir / "build-audit.jsonl").read_text(encoding="utf-8")
+            records = [json.loads(line) for line in serialized.splitlines()]
+            self.assertEqual([record["status"] for record in records], ["attempted", "blocked"])
+            self.assertEqual(records[-1]["outcome"], "ERROR")
+            self.assertEqual(records[-1]["reason_code"], "controller_error")
+            self.assertNotIn(leaked, serialized)
+
+    def test_cli_refuses_an_audit_directory_inside_the_real_git_worktree(self):
+        # A terminal receipt written under --repo lands after the net snapshot,
+        # so it would be target dirt that this dispatch never judged.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d) / "work"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text("# H\n", encoding="utf-8")
+            with mock.patch("sys.stdout", new_callable=io.StringIO), \
+                 mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                status = orchestrate.main([
+                    "build", "--repo", str(repo), "--backend", "mock",
+                    "--audit-dir", str(repo / "audit"),
+                ])
+            self.assertEqual(status, 2)
+            self.assertIn("audit_dir must be outside repo", stderr.getvalue())
+
+    def test_safety_block_never_receives_a_built_receipt(self):
+        # Outcome-only assertions are insufficient: a receipt mutation could
+        # still falsely claim success while the controller correctly BLOCKs.
+        # Drive the safety net through an actual git worktree delta.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            backend = _TamperingBackend(repo, "forbidden.py", "VALUE = 1\n")
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "safety net blocked the changeset")
+            records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(records[-1]["status"], "blocked")
+            self.assertNotEqual(records[-1]["status"], "built")
+
+    def test_timeout_receipt_is_not_a_generic_block(self):
+        # Timeout has a distinct operational remedy (inspect the preserved
+        # worktree), so collapsing it to an undifferentiated block loses the
+        # evidence the CLI just gained from --timeout-s.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+
+            class _TimesOut(Backend):
+                name = "timeout"
+
+                def invoke(self, role, prompt, cfg):
+                    return Turn(error="vendor turn timed out after 0.01s")
+
+            backend = _TimesOut()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "builder error: vendor turn timed out after 0.01s")
+            records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(records[-1]["status"], "timeout")
+
+    def test_second_builder_bail_blocks_and_is_audited(self):
+        # The old loop retried once but then called the final outcome BUILT even
+        # when the second Builder also produced no implementation. That makes a
+        # receipt only as trustworthy as the failure it is supposed to expose.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "work"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+
+            class _Bails(Backend):
+                name = "bails"
+
+                def invoke(self, role, prompt, cfg):
+                    return Turn(text="```verdicts\ngate 1: status=blocked tier=LOW panel=BLOCK\n```\n")
+
+            backend = _Bails()
+            out = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "builder bailed with no implementation after 2 attempt(s)")
+            records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(records[-1]["status"], "builder_bailed")
 
     def test_retries_once_on_builder_bail(self):
         # A headless Builder that bails (status=blocked, no changeset) after a

@@ -209,7 +209,7 @@ see `CODEX-COVERAGE.md`.
 **_unity (1)**
 - `unity-specialist` — single Unity engine agent (deep DOTS/shader/Addressables/UI guidance lives in `docs/specialists/unity-*.md` reference docs it Reads on demand — leaf agents demoted 2026-07-02)
 
-### Hooks (5)
+### Hooks (6)
 
 For the full firing flow and operating modes, see `assets/claude/README.md` + `assets/claude/hooks/README.md`.
 
@@ -218,3 +218,4 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
 - `learning_log` (PostToolUse) — capture Bash failure signals → promote via `learnings-review` (advisory)
 - `route_nudge` (UserPromptSubmit) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory)
+- `builder_guard` (PreToolUse) — in a Builder-first Claude session launched by `dh-architect.cmd`, reserve structured code edits for Codex Builder dispatch (conditional blocking)

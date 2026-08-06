@@ -1,5 +1,20 @@
 # Claude Code hooks (~/.claude/hooks/)
 
+## builder_guard (Builder-first only)
+
+`builder_guard` is a conditional `PreToolUse` hook for an interactive Claude
+Architect launched through `dh-architect.cmd`. That launcher sets
+`DINNER_EXECUTION_MODE=builder-first`; only then the guard blocks `Edit`/`Write`
+implementation changes. It permits root bus files (`HANDOFF*.md`, `RESULT.md`,
+`INPUT.md`) and `docs/architecture/*.md`, then tells Claude to dispatch
+`orchestrate.py build` to Codex. It logs each block as
+`logs/builder_guard.log`.
+
+The guard is intentionally not a shell sandbox: it does not parse Bash or
+PowerShell. The linked Builder worktree plus controller safety net remain the
+enforcement boundary for the headless Builder. A normal `claude` launch leaves
+this guard inert.
+
 이 디렉터리는 Claude Code의 **PreToolUse·PostToolUse hook 안전망** 인프라를 담는다. hook은 Claude가 도구를 실행하기 *직전(PreToolUse)·직후(PostToolUse)*에 자동으로 끼어들어 검사하고, 종료 코드로 통과(exit 0)/차단(exit 2)을 결정한다(advisory hook은 차단 없이 stderr 제안·로깅만 한다). 사용자가 직접 호출하지 않는다.
 
 ## 한눈에

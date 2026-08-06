@@ -57,6 +57,20 @@ turn runs and captured for parsing. A timeout kills the child and remains
 `BLOCKED`; inspect the Builder worktree for surviving output before retrying or
 starting a manual fallback.
 
+### Dispatch receipt and audit
+
+`build` writes two content-free JSONL events to the harness-side
+`logs/build-audit.jsonl` by default: `attempted` before the Builder work and a
+terminal `built`, `blocked`, `timeout`, or `builder_bailed` event after the
+controller decides the outcome. Pass `--audit-dir <path>` to move that runtime
+log; do not place it inside `--repo`, because it would pollute the worktree
+delta the safety net judges. A terminal event records dispatch id, UTC timestamp,
+vendor/backend, attempt count, duration, a fixed reason code, and SHA-256 hashes of
+the repo path, handoff name, and handoff text. It never records prompts,
+HANDOFF/RESULT bodies, changed-file paths, or changed-file contents. The CLI prints `[receipt]` only when that terminal
+event is written; its presence is audit evidence, not a substitute for the
+Architect's RESULT + diff review or HIGH human end sign-off.
+
 ## Isolate the Builder in a linked worktree
 
 For a real Builder dispatch, prefer a dedicated linked worktree. It is a

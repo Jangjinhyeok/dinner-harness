@@ -40,6 +40,7 @@ def _build_config(args: argparse.Namespace) -> Config:
         builder_model=args.builder_model or "",
         backend=args.backend,
         timeout_s=args.timeout_s,
+        audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
         max_cycles=args.max_cycles,
         confirm_handoff=not args.no_confirm_handoff,
         auto_approve=args.yes,
@@ -89,6 +90,7 @@ def _build(args: argparse.Namespace) -> int:
         timeout_s=args.timeout_s,
         handoff_name=args.handoff,
         net_enforce=not args.net_dryrun,
+        audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
     )
     problems = cfg.validate()
     if problems:
@@ -109,6 +111,8 @@ def _build(args: argparse.Namespace) -> int:
     )
     outcome = Orchestrator(cfg, builder, builder, AutoApprove()).run_from_handoff()
     print(f"\n[outcome] {outcome.status} after {outcome.cycles} cycle(s): {outcome.reason}")
+    if outcome.receipt_path is not None:
+        print(f"[receipt] {outcome.receipt_path} id={outcome.receipt_id}")
     if outcome.status == BUILT:
         print(f"[result] {cfg.repo / 'RESULT.md'}")
     return 0 if outcome.status == BUILT else 1
@@ -134,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--backend", default="mock", choices=["mock", "real"])
     r.add_argument("--timeout-s", type=float, default=1800,
                    help="per headless vendor turn; timeout preserves worktree changes but blocks the cycle")
+    r.add_argument("--audit-dir",
+                   help="harness-side directory for content-free dispatch audit JSONL (default: harness runtime logs)")
     r.add_argument("--max-cycles", type=int, default=5)
     r.add_argument("--no-confirm-handoff", action="store_true",
                    help="skip the start-gate HANDOFF confirmation")
@@ -160,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--backend", default="mock", choices=["mock", "real"])
     b.add_argument("--timeout-s", type=float, default=1800,
                    help="per headless Builder turn; timeout preserves worktree changes but blocks the build")
+    b.add_argument("--audit-dir",
+                   help="harness-side directory for content-free dispatch audit JSONL (default: harness runtime logs)")
     b.add_argument("--net-dryrun", action="store_true",
                    help="run the safety net in dryrun (warn) instead of enforce")
     b.set_defaults(func=_build)

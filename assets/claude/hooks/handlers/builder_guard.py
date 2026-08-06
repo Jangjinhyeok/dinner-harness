@@ -1,0 +1,106 @@
+"""Conditional Builder-first guard for interactive Claude Architect sessions.
+
+When ``DINNER_EXECUTION_MODE=builder-first``, Claude may author the file bus
+and an ADR but must dispatch file implementation to the Codex Builder.  This is
+an honest-session guard, not a sandbox: it deliberately judges only structured
+file-edit tools and does not attempt to parse arbitrary shell commands.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+from pathlib import Path
+
+_HANDLER_DIR = Path(__file__).resolve().parent
+_HOOKS_ROOT = _HANDLER_DIR.parent
+if str(_HOOKS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_HOOKS_ROOT))
+
+from lib.common import (  # noqa: E402
+    exit_allow,
+    exit_block,
+    get_cwd,
+    log_event,
+    parse_apply_patch,
+    read_hook_input,
+    run_handler,
+)
+
+
+_HOOK_NAME = "builder_guard"
+_EVENT = "PreToolUse"
+_MODE = "builder-first"
+_TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
+_BUS_NAMES = {"HANDOFF.md", "RESULT.md", "INPUT.md"}
+
+
+def _path_digest(path: str) -> str:
+    return hashlib.sha256(path.encode("utf-8")).hexdigest()
+
+
+def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
+    if tool_name == "apply_patch":
+        return [path for path, _ in parse_apply_patch(tool_input.get("command", "") or "")]
+    path = tool_input.get("file_path", "") or ""
+    return [path] if path else []
+
+
+def _allowed_path(raw_path: str, cwd: Path) -> bool:
+    """True only for root bus files and project-local architecture ADRs."""
+    try:
+        relative = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
+            strict=False
+        ).relative_to(cwd.resolve()).as_posix()
+    except (OSError, ValueError):
+        return False
+    if relative in _BUS_NAMES:
+        return True
+    if relative.startswith("HANDOFF_") and relative.endswith(".md") and "/" not in relative:
+        return True
+    return relative.startswith("docs/architecture/") and relative.endswith(".md")
+
+
+def guarded_paths(payload: dict) -> list[str]:
+    """Return code-edit targets that Builder-first mode must reserve for Codex."""
+    if os.environ.get("DINNER_EXECUTION_MODE") != _MODE:
+        return []
+    tool_name = payload.get("tool_name")
+    if tool_name not in _TARGET_TOOLS:
+        return []
+    paths = _extract_paths(tool_name, payload.get("tool_input") or {})
+    if not paths:
+        # A file edit whose target cannot be understood is not safe to classify
+        # as an Architect artifact. Fail closed only while this explicit mode is
+        # active; ordinary Claude sessions retain their current behaviour.
+        return ["<unparseable file edit>"]
+    cwd = get_cwd(payload)
+    return [path for path in paths if not _allowed_path(path, cwd)]
+
+
+def main() -> None:
+    payload = read_hook_input()
+    blocked = guarded_paths(payload)
+    if not blocked:
+        exit_allow()
+    target = blocked[0]
+    log_event(
+        _HOOK_NAME,
+        event=_EVENT,
+        decision="block",
+        reason="builder_first_code_edit",
+        tool_name=payload.get("tool_name", ""),
+        blocked_path_sha256=_path_digest(target),
+        blocked_path_count=len(blocked),
+        mode=_MODE,
+    )
+    exit_block(
+        "[builder_guard:block] Builder-first mode reserves implementation edits "
+        "for Codex Builder. Write HANDOFF*.md, RESULT.md, INPUT.md, or "
+        "docs/architecture/*.md, then dispatch orchestrate.py build. "
+        f"Blocked: {target}"
+    )
+
+
+if __name__ == "__main__":
+    run_handler(main, hook_name=_HOOK_NAME)

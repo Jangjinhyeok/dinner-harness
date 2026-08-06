@@ -26,9 +26,9 @@
 ├── roles/                     # Two-CLI workflow 역할 정의
 │   ├── ROLE_ARCHITECT.md      # 설계·영향분석·검토 세션
 │   └── ROLE_BUILDER.md        # 구현·빌드검증·self-review 세션
-├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
+├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact, builder_guard) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
 │   ├── launchers/             # 인자 없는 절대경로 BAT wrapper
-│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge)
+│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge·builder_guard)
 │   ├── lib/                   # fail-open / timeout 공통 wrapper
 │   ├── rules/                 # 패턴·스코프 룰셋 JSON
 │   ├── tests/                 # run_handler 안전 계약 unittest (stdlib only)
@@ -73,7 +73,7 @@
 
 ## hooks (PreToolUse + PostToolUse + UserPromptSubmit 안전망)
 
-`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`)과 advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다.
+`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`), Builder-first 전용 차단형 `builder_guard`, advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다.
 
 | hook | 이벤트·matcher | 역할 | 출처 |
 |---|---|---|---|
@@ -82,6 +82,7 @@
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post · Bash·PowerShell | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
 | `route_nudge` | UserPromptSubmit | 프롬프트의 UE 도메인 신호를 regex 검출 → nudge 주입. 차단 없음, 항상 exit 0 (advisory). 2026-07-02 재조준 완료 — 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 heavy-work 신호로 보고 `architect 모드` + Codex dispatch 제안 | 2026-06-16, commit 09aa4f9 |
+| `builder_guard` | Pre · Edit·Write | `dh-architect.cmd`가 설정한 Builder-first 세션에서 HANDOFF/RESULT/INPUT/ADR 외 Claude 직접 edit 차단 → Codex dispatch 유도. 일반 Claude 세션에서는 inert | ADR-0008 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
 

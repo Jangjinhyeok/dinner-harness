@@ -50,6 +50,15 @@
             "command": "<CLAUDE_HOME>/hooks/launchers/suggest_compact.cmd"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<CLAUDE_HOME>/hooks/launchers/builder_guard.cmd"
+          }
+        ]
       }
     ],
     "PostToolUse": [

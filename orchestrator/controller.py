@@ -25,6 +25,7 @@ from . import bus as busmod
 from . import safety
 from .bus import Bus, parse_tiers, parse_verdicts, parse_control, tier_for
 from .config import Config
+from .receipt import BuildAudit
 from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER
 
 
@@ -74,6 +75,8 @@ class Outcome:
     cycles: int = 0
     reason: str = ""
     log: list[str] = field(default_factory=list)
+    receipt_path: Optional[Path] = None
+    receipt_id: str = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -1033,6 +1036,41 @@ class Orchestrator:
         return bd, verdicts, has_high, None
 
     def run_from_handoff(self) -> Outcome:
+        """Run the single-shot build and append its attempt/terminal receipt."""
+        cfg = self.cfg
+        handoff_name = cfg.handoff_name or busmod.HANDOFF
+        audit = BuildAudit(
+            audit_dir=Path(cfg.audit_dir),
+            repo=Path(cfg.repo),
+            handoff_name=handoff_name,
+            builder_vendor=cfg.builder_vendor,
+            backend=cfg.backend,
+        )
+        audit.attempted()
+        try:
+            outcome = self._run_from_handoff(audit)
+        except Exception:
+            # Do not copy the exception string: a vendor exception may echo a
+            # prompt or output. The caller still receives the original error,
+            # while the audit keeps the attempted/terminal pairing intact.
+            audit.terminal(
+                status="blocked",
+                outcome="ERROR",
+                reason_code="controller_error",
+                attempts=0,
+            )
+            raise
+        audit.terminal(
+            status=_receipt_status(outcome),
+            outcome=outcome.status,
+            reason_code=_receipt_reason_code(outcome),
+            attempts=outcome.cycles,
+        )
+        outcome.receipt_path = audit.terminal_path
+        outcome.receipt_id = audit.dispatch_id if outcome.receipt_path is not None else ""
+        return outcome
+
+    def _run_from_handoff(self, audit: BuildAudit) -> Outcome:
         """Single-shot Builder pass from an existing handoff file
         (``cfg.handoff_name``, default HANDOFF.md).
 
@@ -1053,6 +1091,7 @@ class Orchestrator:
             return self._outcome(BLOCKED, 0, f"cannot read {handoff_name} as UTF-8 text")
         if not handoff_text.strip():
             return self._outcome(BLOCKED, 0, f"no {handoff_name} to build from")
+        audit.set_handoff(handoff_text)
         tiers = parse_tiers(handoff_text)
         self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
         # Advisory tier gate: the safety net still hard-blocks, but verdict gating
@@ -1080,9 +1119,45 @@ class Orchestrator:
                     f"[build] attempt {attempt}: builder bailed with no "
                     "implementation (likely a false read-only) — retrying once"
                 )
+        if _builder_bailed(verdicts):
+            return self._outcome(
+                BLOCKED,
+                attempt,
+                f"builder bailed with no implementation after {attempt} attempt(s)",
+            )
         note = (
             "HIGH gate present — in-session human sign-off required before merge/apply"
             if has_high else "all-LOW"
         )
         self._emit(f"[build] BUILT ({note}) — RESULT.md written, awaiting in-session review")
         return self._outcome(BUILT, attempt, note)
+
+
+def _receipt_status(outcome: Outcome) -> str:
+    """Map controller outcomes to the small stable audit vocabulary."""
+    if outcome.status == BUILT:
+        return "built"
+    if outcome.reason.startswith("builder error: vendor turn timed out after "):
+        return "timeout"
+    if outcome.reason.startswith("builder bailed with no implementation"):
+        return "builder_bailed"
+    return "blocked"
+
+
+def _receipt_reason_code(outcome: Outcome) -> str:
+    """Classify an outcome without copying vendor-controlled error text to audit."""
+    if outcome.status == BUILT:
+        return "built_high" if outcome.reason.startswith("HIGH gate present") else "built_low"
+    if outcome.reason.startswith("builder error: vendor turn timed out after "):
+        return "timeout"
+    if outcome.reason.startswith("builder bailed with no implementation"):
+        return "builder_bailed"
+    if outcome.reason == "safety net blocked the changeset":
+        return "safety_net"
+    if outcome.reason.startswith("cannot read "):
+        return "handoff_unreadable"
+    if outcome.reason.startswith("no ") and outcome.reason.endswith(" to build from"):
+        return "handoff_missing"
+    if outcome.reason.startswith("builder error:"):
+        return "builder_error"
+    return "blocked_other"

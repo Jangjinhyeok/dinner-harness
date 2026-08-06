@@ -191,7 +191,7 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 **_unity (1)**
 - `unity-specialist` — Unity 단일 엔진 agent (DOTS·shader·addressables·UI 심화는 `docs/specialists/unity-*.md` 참조 문서를 Read해 소비 — 2026-07-02 leaf agent 축소)
 
-### Hooks (5)
+### Hooks (6)
 
 상세 발화 흐름·운영 모드는 `assets/claude/README.md` + `assets/claude/hooks/README.md` 참조.
 
@@ -200,3 +200,4 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
 - `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
 - `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory)
+- `builder_guard` (PreToolUse) — `dh-architect.cmd`의 Builder-first Claude 세션에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도 (conditional blocking)

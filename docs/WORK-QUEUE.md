@@ -195,7 +195,19 @@ G (plugin marketplace), H (thinking budget).
 
 ---
 
-## 3. Gotchas for whoever picks this up
+## 3. Builder-first dispatch actuation ??implemented in canonical source, not installed
+
+ADR-0008 adds the opt-in `dh-architect.cmd` launcher, conditional
+`builder_guard`, and content-free Builder dispatch receipt/audit. The guard
+reserves Claude structured implementation edits for Codex only when the
+launcher sets `DINNER_EXECUTION_MODE=builder-first`; it is not an adversarial
+shell sandbox. `orchestrate.py build` now emits `attempted` plus a terminal
+receipt outside the target repo and refuses two consecutive Builder bails rather
+than printing `BUILT`. This is HIGH-tier source work: it remains inert until a
+user-approved live install, and the receipt never replaces RESULT/diff review
+or HIGH human end sign-off.
+
+## 4. Gotchas for whoever picks this up
 
 - **Never test the safety net with an injected `Turn.changeset`.** Real backends
   leave it `None`, so production always takes the git path; injection hid three

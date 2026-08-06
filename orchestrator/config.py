@@ -23,6 +23,16 @@ def _resolve_hooks_dir() -> Path:
 
 
 _DEFAULT_HOOKS_DIR = _resolve_hooks_dir()
+_DEFAULT_AUDIT_DIR = _REPO_ROOT / "logs"
+
+
+def _is_inside(child: Path, parent: Path) -> bool:
+    """Whether ``child`` is ``parent`` or a descendant after symlink resolve."""
+    try:
+        child.resolve(strict=False).relative_to(parent.resolve(strict=False))
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 @dataclass
@@ -75,6 +85,11 @@ class Config:
     # cycle regardless of the shipped hook default (dryrun).
     net_enforce: bool = True
 
+    # Dispatch receipts stay beside the harness, not inside ``repo``: putting
+    # audit artifacts in the worktree would add them to the Builder delta and
+    # contaminate the safety-net decision they are meant to record.
+    audit_dir: Path = field(default_factory=lambda: _DEFAULT_AUDIT_DIR)
+
     def role_of(self, vendor_slot: str) -> str:
         return self.architect_vendor if vendor_slot == "architect" else self.builder_vendor
 
@@ -101,6 +116,12 @@ class Config:
             problems.append("max_cycles must be >= 1")
         if self.timeout_s <= 0:
             problems.append("timeout_s must be > 0")
+        if self.audit_dir.exists() and not self.audit_dir.is_dir():
+            problems.append(f"audit_dir is not a directory: {self.audit_dir}")
+        if _is_inside(Path(self.audit_dir), Path(self.repo)):
+            problems.append(
+                "audit_dir must be outside repo: receipts cannot enter the Builder worktree"
+            )
         if self.backend == "real" and not Path(self.repo).is_dir():
             problems.append(f"repo not a directory: {self.repo}")
         if self.auto_approve and self.backend == "real" and not self.allow_auto_approve_real:
