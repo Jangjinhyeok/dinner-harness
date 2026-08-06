@@ -101,6 +101,13 @@
 
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
+### `!` shell-output fast path
+
+짧은 상태 확인은 메시지로 모델 turn을 소비하지 말고 Claude Code 입력에서 `!`를 앞에 붙여 shell command를 실행한다. 예를 들어 `!git status`는 command output만 현재 context에 넣고 모델 응답을 생성하지 않는다. diff 크기·현재 branch·테스트 결과처럼 **출력 자체를 다음 판단의 입력으로만 쓸 때** 사용해 token economy를 지킨다.
+
+- 이 경로도 shell 실행이다. secret을 출력하거나 state를 바꾸는 command, 길거나 대화형인 command에는 쓰지 않는다.
+- 판단·설계·파일 수정이 필요해지는 즉시 보통의 모델 turn으로 돌아간다. `!`는 agent 작업을 대체하는 자동화 문법이 아니다.
+
 ### 통신 메커니즘
 
 두 세션은 다음 파일들을 통해 통신한다:
@@ -125,9 +132,9 @@ Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 —
 - **Codex = Architect, Claude = Builder** (역방향 — Claude quota가 충분하거나 특정 작업에서 Codex 설계가 더 나을 때)
 - 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
 
-통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 두 세션은 같은 프로젝트 디렉터리에서 같은 파일을 읽고 쓴다. 런타임 IPC나 MCP는 필요 없다.
+통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본은 같은 프로젝트 디렉터리지만, 실제 Builder dispatch는 아래처럼 별도 git worktree를 사용해 Architect와 Builder의 변경을 격리한다. 런타임 IPC나 MCP는 필요 없다.
 
-**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, `py -3 ~/.claude/orchestrate.py build --repo . --backend real`로 **Codex Builder를 자동 dispatch**하고(headless), 돌아온 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch". (역방향·동일 vendor 2세션은 수동.)
+**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, 우선 `git worktree add -b builder/<task> ../<repo>-build HEAD`로 Builder worktree를 만들고 승인된 HANDOFF.md를 그 루트로 복사한다. 이어 `py -3 ~/.claude/orchestrate.py build --repo ../<repo>-build --backend real`로 **Codex Builder를 자동 dispatch**하고(headless), Builder worktree의 RESULT.md + `git -C ../<repo>-build diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
 
 cross-vendor 시 주의:
 

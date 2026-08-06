@@ -125,20 +125,21 @@ Not taken: the `SessionStart`-hook alternative — note the harness still uses o
 `PreToolUse` / `PostToolUse` / `UserPromptSubmit`, so `SessionStart`, `Stop`,
 `SubagentStop` and `PreCompact` remain unused.
 
-### B — isolate the Builder in a git worktree (tip §5.2)
+### B — isolate the Builder in a git worktree (tip §5.2) — completed 2026-08-06
 
 Architect and Builder currently share one working tree, so anything the
 Architect touches while the Builder runs is swept into the same `git status` the
 safety net judges. `git worktree add ../repo-build <branch>`, then
 `orchestrate.py build --repo <worktree>`.
 
-This is the tip that fits the Two-CLI design best and it is absent from the
-harness docs. **Caveat discovered during the ADR-0007 work:** a linked worktree's
-`rev-parse --git-dir` has no `info/` directory — the net now uses
-`--git-common-dir` for exactly this reason. Re-read the witness-fingerprint
-section of the ADR before wiring this up, and note the threat model's remark
-that a worktree is a *process-level* containment boundary, which is the thing
-the in-tree net explicitly cannot provide.
+Documented in `orchestrator/README.md`, `CLAUDE.md`, and `ROLE_ARCHITECT.md`.
+The procedure copies the approved handoff explicitly, runs and reviews strictly
+inside the Builder worktree, and calls out the shared common-directory witness
+inputs (`refs/stash`, `core.excludesFile`, `.git/info/exclude`). **Caveat
+discovered during the ADR-0007 work:** a linked worktree's `rev-parse --git-dir`
+has no `info/` directory — the net uses `--git-common-dir` for exactly this
+reason. A worktree is a *process-level* containment boundary; it does not make
+the in-tree net a containment mechanism.
 
 ### C — audit the approval allowlist (tip §5.4)
 
@@ -146,11 +147,20 @@ the in-tree net explicitly cannot provide.
 auto-approved command list accumulating in `settings.local.json`. Scan with
 `npx cc-safe ~/Documents`, then report and prune.
 
-### F — document the `!` prefix in CLAUDE.md (tip §2.2)
+Audit 2026-08-06: `cc-safe` found five settings files under `~/Documents` and
+reported two LOW `Bash(git push *)` entries, both in ProjectTetra local settings.
+The harness repo's local settings contain only the two `harness-review` skill
+entries and a `raw.githubusercontent.com` fetch allowance. No live allowlist was
+pruned: `~/.claude/settings.local.json` is runtime state outside the canonical
+tree and this continuation explicitly forbids direct live-tree edits. A user-
+approved follow-up must decide which accumulated global approvals to remove.
+
+### F — document the `!` prefix in CLAUDE.md (tip §2.2) — completed 2026-08-06
 
 `!git status` runs a shell command and puts only its output in context, with no
-model turn. Directly serves the token-economy principle the harness is built
-around, and it is undocumented.
+model turn. `content/instructions/CLAUDE.md` now documents the fast path,
+its token-economy use case, and the boundary that it is for read-only short
+output rather than a replacement for an agent turn.
 
 **Commit plan (user's decision, 2026-08-05):** land the four tips and ADR-0007
 together, but in **at least two commits** — the net rework is HIGH and touches a
@@ -165,14 +175,15 @@ G (plugin marketplace), H (thinking budget).
 
 ## 2. Deferred from ADR-0007
 
-- **Builder-timeout salvage.** A codex CLI finished its work, wrote correct
-  files, and never exited; `timeout_s=1800` fired and the changeset was
-  discarded — a successful build reported `BLOCKED`. Deliberately dropped from
-  the ADR-0007 change after an attempted fix produced three new holes in one
-  round. Preferred direction: expose `timeout_s` as a CLI flag and stream the
-  child's output — the thirty minutes of silence is the worse half of that bug.
-  On a `BLOCKED`, check `git status` for surviving output before falling back to
-  a manual run.
+- **Builder-timeout salvage — completed 2026-08-06.** A codex CLI finished its
+  work, wrote correct files, and never exited; `timeout_s=1800` fired and the
+  successful build reported `BLOCKED`. `orchestrate.py run|build --timeout-s N`
+  now exposes the per-turn budget and `vendors._run` streams + captures child
+  stdout/stderr. Timeout still kills the child and reports `BLOCKED` rather than
+  guessing success; inspect the Builder worktree with `git status`/`git diff`
+  for surviving output before retrying or manually falling back. The previous
+  attempted automatic salvage was deliberately not revived: a non-exiting child
+  cannot prove its RESULT/verdict is complete.
 - **A heartbeat during long scans.** The net now emits
   `net: scanning N file(s)` before the loop, which lets an operator bound the
   wait. At the 500-path ceiling the scan is still ~85 s with no further output.
