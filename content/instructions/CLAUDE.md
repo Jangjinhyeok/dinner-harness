@@ -101,6 +101,33 @@
 
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
+### Default-session automatic execution routing
+
+일반 `claude` 세션에서도 사용자가 `/delegate`나 `architect 모드`를 먼저
+입력할 필요는 없다. **구현 의도가 있는 요청마다** Claude가 repository를 읽어
+아래 순서로 route를 결정하고 실행한다. 이 절은 위의 "제안" 표현을 기본 write
+request에 대해서는 대체한다.
+
+1. **inline Claude**: read-only 또는 실제로 한 파일의 1~2줄에 한정되고, build/test
+   iterate·동작 변경·설계 판단이 없는 수정만 직접 처리한다.
+2. **LOW delegate**: 명확한 단일 목적 LOW 변경은 `/delegate` workflow를 **자동으로**
+   실행한다. 즉 `HANDOFF_DELEGATE.md`를 작성하고 `orchestrate.py build`로 Codex
+   Builder를 dispatch한 뒤 `RESULT.md`와 diff를 검토한다. 사용자의 원래 작업 요청이
+   LOW의 start intent이므로 `/delegate`를 다시 입력하라고 묻지 않는다.
+3. **architect route**: 다파일·다게이트·build iterate·구조적 결정 또는 HIGH signal은
+   Architect로 전환한다. HANDOFF(구조적 결정이면 ADR 포함)를 만든 뒤 **HIGH start
+   approval**을 사용자에게 받고, 그 후에만 Codex Builder를 dispatch한다. HIGH의
+   terminal approval도 그대로 사용자에게 남는다.
+
+사용자가 "이번 작은 수정은 Claude가 직접"이라고 명시할 수는 있지만, 이는 inline
+조건을 만족할 때만 적용된다. HIGH를 LOW/inline으로 낮추거나 사람 게이트를 우회하지
+않는다. `!`는 이 policy의 escape hatch가 아니다. Claude Code의 shell-output fast
+path이므로 기존 의미대로만 사용한다.
+
+`route_nudge` UserPromptSubmit hook은 이 protocol을 매 구현 요청의 context에
+주입한다. hook은 HANDOFF·scope·tier·승인 정보를 갖지 않으므로 스스로 dispatch하지
+않는다. dispatch는 위 workflow가 기존 controller를 통해 수행한다.
+
 ### Builder-first execution (opt-in Architect session)
 
 For multi-file implementation work where Claude should stay the Architect,

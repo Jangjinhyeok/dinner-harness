@@ -15,6 +15,15 @@ This wraps the existing `orchestrate.py build` dispatch (retry-hardened against 
 Builder's false read-only bail). It introduces no new engine or pairing — default
 pairing only (Claude=Architect, Codex=Builder).
 
+## Entry
+
+`/delegate` is an explicit force-route, but it is not required. In a normal
+Claude session, `CLAUDE.md` default-session routing enters this workflow
+automatically for a clear, single-purpose LOW implementation request. Do not ask
+the user to repeat the request with `/delegate`: their original request is the
+LOW start intent. If repository inspection finds a HIGH signal, multiple gates,
+or a design decision, stop this workflow and use the Architect route instead.
+
 ## Two lanes: code and document
 
 The dispatch path carries **no domain assumption**. The scope fence is a plain

@@ -45,7 +45,7 @@ from orchestrator.safety import Change
 _HOOKS_ROOT = Path(__file__).resolve().parents[2] / "assets" / "claude" / "hooks"
 if str(_HOOKS_ROOT) not in sys.path:
     sys.path.insert(0, str(_HOOKS_ROOT))
-from handlers import builder_guard  # noqa: E402
+from handlers import builder_guard, route_nudge  # noqa: E402
 
 
 _GIT_ISOLATION = {
@@ -201,6 +201,41 @@ class TestBuilderFirstGuard(unittest.TestCase):
                 os.environ.pop("DINNER_EXECUTION_MODE", None)
             else:
                 os.environ["DINNER_EXECUTION_MODE"] = old
+
+
+class TestDefaultSessionRouting(unittest.TestCase):
+    def test_clear_low_write_intent_injects_delegate_without_user_slash_command(self):
+        # The desired UX starts from an ordinary request, not a ritual command.
+        # If the generic path regresses to the former UE-only nudge, this becomes
+        # None and the automatic Codex route disappears for most repositories.
+        route = route_nudge.message_for_prompt("Implement a local date formatter.")
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["default"])
+        self.assertIn("single-purpose LOW change must run the delegate workflow now", message)
+        self.assertIn("without asking the user to type /delegate", message)
+        self.assertIn("dispatch Codex Builder", message)
+
+    def test_multi_subsystem_ue_work_adds_architect_signal_without_direct_dispatch(self):
+        route = route_nudge.message_for_prompt(
+            "Implement UMG replication support for the multiplayer HUD."
+        )
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["umg", "repl"])
+        self.assertIn("multi-file, multi-gate, design, or HIGH-signal work", message)
+        self.assertIn("human start approval", message)
+        self.assertIn("additional architect-route signal", message)
+        self.assertNotIn("orchestrate.py build --repo", message)
+
+    def test_read_only_or_meta_prompt_does_not_inject_a_write_route(self):
+        self.assertIsNone(route_nudge.message_for_prompt("Explain this function."))
+        self.assertIsNone(route_nudge.message_for_prompt("Audit the route_nudge hook."))
+
+    def test_meta_words_do_not_hide_an_actual_implementation_request(self):
+        # The old broad meta denylist treated the repository name "harness" as
+        # stronger than a write intent, silently restoring the UE-only gap.
+        self.assertIsNotNone(route_nudge.message_for_prompt("Fix the harness routing."))
 
 
 def _git_available() -> bool:

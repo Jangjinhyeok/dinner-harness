@@ -122,7 +122,7 @@
 
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 
-**무거운 작업 선제 감지(기본 세션, vendor-neutral)**: 인터랙티브 Architect로 동작하는 세션은(기본 페어링에선 Claude) 기본 모드에서 요청을 받을 때 토큰 무게를 먼저 가늠해, 다파일(≈3+)·빌드 iterate·다단계 구현·큰 diff 신호가 보이면 구현 전에 **architect 모드 전환 + Builder dispatch를 선제 제안**한다(자동 진입 아님 — 사용자 OK가 시작 게이트). 근거·상세 = CLAUDE.md §2 "무거운 작업 선제 감지".
+**무거운 작업 선제 감지(기본 세션, vendor-neutral)**: 인터랙티브 Architect는 요청을 받을 때 토큰 무게를 먼저 가늠한다. Codex 자체에는 Claude의 `UserPromptSubmit` auto-route hook이 없으므로, Codex 기본 세션은 다파일(≈3+)·빌드 iterate·다단계 구현·큰 diff 신호에 **architect 모드 전환 + Builder dispatch를 선제 제안**한다(자동 진입 아님 — 사용자 OK가 시작 게이트). 반대로 기본 Claude 세션은 `CLAUDE.md`의 default-session automatic execution routing을 따른다: clear LOW 단일목적은 delegate workflow로, HIGH/다파일은 HANDOFF + 사람 승인 후 Builder로 간다. 이 차이는 의도적이다.
 
 ### Architect 규약
 - 코드 파일에 직접 Edit/Write 하지 않는다(설계·분석·핸드오프 작성·결과 검토 담당). `HANDOFF.md`/`RESULT.md`는 작성 가능.

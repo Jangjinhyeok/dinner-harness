@@ -81,7 +81,7 @@
 | `scope_check` | Pre · Edit·Write | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post · Bash·PowerShell | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
-| `route_nudge` | UserPromptSubmit | 프롬프트의 UE 도메인 신호를 regex 검출 → nudge 주입. 차단 없음, 항상 exit 0 (advisory). 2026-07-02 재조준 완료 — 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 heavy-work 신호로 보고 `architect 모드` + Codex dispatch 제안 | 2026-06-16, commit 09aa4f9 |
+| `route_nudge` | UserPromptSubmit | 구현 의도마다 default execution route를 context에 주입하고, UE 도메인 신호에는 focused Architect reference도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0): HANDOFF/scope/tier/HIGH approval은 Claude workflow가 만든 뒤 기존 controller가 dispatch | 2026-06-16, 2026-08-07 auto-route protocol |
 | `builder_guard` | Pre · Edit·Write | `dh-architect.cmd`가 설정한 Builder-first 세션에서 HANDOFF/RESULT/INPUT/ADR 외 Claude 직접 edit 차단 → Codex dispatch 유도. 일반 Claude 세션에서는 inert | ADR-0008 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
