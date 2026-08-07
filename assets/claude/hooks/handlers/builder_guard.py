@@ -1,9 +1,10 @@
-"""Conditional Builder-first guard for interactive Claude Architect sessions.
+"""Default Builder-first guard for interactive Claude Architect sessions.
 
-When ``DINNER_EXECUTION_MODE=builder-first``, Claude may author the file bus
-and an ADR but must dispatch file implementation to the Codex Builder.  This is
-an honest-session guard, not a sandbox: it deliberately judges only structured
-file-edit tools and does not attempt to parse arbitrary shell commands.
+Claude may author the file bus and an ADR but must dispatch file implementation
+to the Codex Builder. ``DINNER_EXECUTION_MODE=direct`` is the explicit escape
+for a direct-edit session. This is an honest-session guard, not a sandbox: it
+deliberately judges only structured file-edit tools and does not attempt to
+parse arbitrary shell commands.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ from lib.common import (  # noqa: E402
 
 _HOOK_NAME = "builder_guard"
 _EVENT = "PreToolUse"
-_MODE = "builder-first"
+_DIRECT_MODE = "direct"
 _TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
 _BUS_NAMES = {"HANDOFF.md", "RESULT.md", "INPUT.md"}
 
@@ -62,8 +63,8 @@ def _allowed_path(raw_path: str, cwd: Path) -> bool:
 
 
 def guarded_paths(payload: dict) -> list[str]:
-    """Return code-edit targets that Builder-first mode must reserve for Codex."""
-    if os.environ.get("DINNER_EXECUTION_MODE") != _MODE:
+    """Return code-edit targets reserved for Codex outside direct-edit sessions."""
+    if os.environ.get("DINNER_EXECUTION_MODE") == _DIRECT_MODE:
         return []
     tool_name = payload.get("tool_name")
     if tool_name not in _TARGET_TOOLS:
@@ -71,8 +72,8 @@ def guarded_paths(payload: dict) -> list[str]:
     paths = _extract_paths(tool_name, payload.get("tool_input") or {})
     if not paths:
         # A file edit whose target cannot be understood is not safe to classify
-        # as an Architect artifact. Fail closed only while this explicit mode is
-        # active; ordinary Claude sessions retain their current behaviour.
+        # as an Architect artifact. Fail closed outside the explicit direct-edit
+        # escape, where this guard is intentionally disabled.
         return ["<unparseable file edit>"]
     cwd = get_cwd(payload)
     return [path for path in paths if not _allowed_path(path, cwd)]
@@ -92,7 +93,7 @@ def main() -> None:
         tool_name=payload.get("tool_name", ""),
         blocked_path_sha256=_path_digest(target),
         blocked_path_count=len(blocked),
-        mode=_MODE,
+        mode="builder-first",
     )
     exit_block(
         "[builder_guard:block] Builder-first mode reserves implementation edits "

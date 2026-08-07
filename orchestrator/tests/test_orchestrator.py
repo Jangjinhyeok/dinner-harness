@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from adapters import claude as claude_adapter
+from adapters import codex as codex_adapter
 import check
 import orchestrate
 import refresh
@@ -219,15 +220,15 @@ class TestBuilderFirstGuard(unittest.TestCase):
                 rel,
             )
 
-    def test_daily_launcher_enables_strict_builder_first_and_manifest_installs_it(self):
+    def test_direct_escape_launcher_and_manifest_are_installed(self):
         root = Path(__file__).resolve().parents[2] / "assets" / "claude"
-        daily = (root / "dh.cmd").read_text(encoding="utf-8")
+        direct = (root / "claude-direct.cmd").read_text(encoding="utf-8")
         manifest = (Path(__file__).resolve().parents[2] / "harness.toml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('set "DINNER_EXECUTION_MODE=builder-first"', daily)
-        self.assertIn("claude %*", daily)
-        self.assertIn('["assets/claude/dh.cmd",                "dh.cmd"]', manifest)
+        self.assertIn('set "DINNER_EXECUTION_MODE=direct"', direct)
+        self.assertIn("claude %*", direct)
+        self.assertIn('["assets/claude/claude-direct.cmd",     "claude-direct.cmd"]', manifest)
 
     def test_claude_template_wires_guard_for_structured_file_edits(self):
         # A correct handler that is absent from settings is indistinguishable
@@ -244,11 +245,23 @@ class TestBuilderFirstGuard(unittest.TestCase):
         ]
         self.assertIn("<CLAUDE_HOME>/hooks/launchers/builder_guard.cmd", commands)
 
+    def test_codex_hooks_exclude_the_claude_only_route_nudge(self):
+        # Codex is the Builder, so running Claude's dispatch nudge inside a
+        # standalone Codex session would route it to itself and cite files it
+        # does not install. Codex receives its guidance through AGENTS.md.
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d)
+            codex_adapter._write_hooks_json(dest, [], dry_run=False)
+            hooks = json.loads((dest / "hooks.json").read_text(encoding="utf-8"))
+        self.assertNotIn("UserPromptSubmit", hooks["hooks"])
+        commands = json.dumps(hooks)
+        self.assertNotIn("route_nudge.py", commands)
+
     def test_only_bus_and_architecture_artifacts_are_allowed(self):
         # The guard is deliberately narrow: it reserves implementation edits
         # for Codex without preventing an Architect from writing its spec/ADR.
         old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
         try:
             cwd = Path(tempfile.gettempdir()) / "builder-guard-test"
             code = {"tool_name": "Edit", "cwd": str(cwd),
@@ -266,9 +279,9 @@ class TestBuilderFirstGuard(unittest.TestCase):
             else:
                 os.environ["DINNER_EXECUTION_MODE"] = old
 
-    def test_raw_claude_remains_an_explicit_direct_edit_escape(self):
+    def test_direct_mode_is_an_explicit_direct_edit_escape(self):
         old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
+        os.environ["DINNER_EXECUTION_MODE"] = "direct"
         try:
             payload = {
                 "tool_name": "Edit",
@@ -284,7 +297,7 @@ class TestBuilderFirstGuard(unittest.TestCase):
         # A mixed patch is one structured file-edit call. Allowing it because
         # its first target is HANDOFF.md would reopen the inline-code path.
         old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
         try:
             payload = {
                 "tool_name": "apply_patch",
@@ -306,7 +319,7 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
     def test_guard_audit_hashes_a_blocked_path_instead_of_retaining_it(self):
         old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
         nonce = "customer-project-path-must-not-be-logged.py"
         payload = {"tool_name": "Edit", "cwd": tempfile.gettempdir(),
                    "tool_input": {"file_path": nonce}}
@@ -329,9 +342,9 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
 
 class TestDefaultSessionRouting(unittest.TestCase):
-    def test_strict_builder_first_nudge_routes_even_a_tiny_write_to_builder(self):
+    def test_default_nudge_routes_even_a_tiny_write_to_builder(self):
         old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
         try:
             route = route_nudge.message_for_prompt("Fix a typo in this document.")
             self.assertIsNotNone(route)

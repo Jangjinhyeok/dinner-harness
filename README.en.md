@@ -55,7 +55,8 @@ py -3 refresh.py --apply
   18 portable skills under `skills/`, reference dirs (`ecc-reference/`, `docs/`, `templates/`),
   and since adapter v2 (Cycle 3, Codex 0.141) **13 agents converted to `agents/*.toml` plus
   natively ported hooks** (`hooks/` copy + auto-generated `hooks.json` — advisory on Codex:
-  hard blocking lives in the sandbox/approval layer). Still dropped: `_mode`'s file-glob
+  hard blocking lives in the sandbox/approval layer). Claude-only `route_nudge` is deliberately
+  excluded because standalone Codex cannot dispatch itself to a Codex Builder. Still dropped: `_mode`'s file-glob
   auto-inject (no Codex equivalent → modes are entered by explicit declaration) and 8
   Claude-machinery skills (5 routing aliases + 2 harness-only + 1 multi-judge). The **Two-CLI
   roles are cross-vendor curated into AGENTS.md §8** (bidirectional — see "Two-CLI
@@ -104,19 +105,25 @@ unauthenticated or fails, the dispatch below falls back to manual mode automatic
 
 ### 1) Default — orchestrated single-pane (no separate Codex terminal)
 
-In PowerShell, start Claude through the daily strict launcher from the project
-directory:
+In PowerShell, start Claude normally from the project directory:
 
 ```powershell
-& "$env:USERPROFILE\.claude\dh.cmd"
+claude
 ```
-
-`%USERPROFILE%` is `cmd.exe` syntax and does not run directly in PowerShell.
 
 Claude still reads code, searches, uses MCP, designs, and reviews HANDOFF/RESULT/diffs
 in this session; every structured `Edit`/`Write` implementation-file write goes to the
-Codex Builder. Raw `claude`
-is the intentional direct-edit escape and does not provide the strict token boundary.
+Codex Builder. The normal `claude` command is therefore the strict Builder-first path.
+
+For the rare session that genuinely needs Claude to edit directly, use the explicit
+escape instead:
+
+```powershell
+& "$env:USERPROFILE\.claude\claude-direct.cmd"
+```
+
+`claude-direct.cmd` disables `builder_guard` only for that process; it does not provide
+the strict token boundary.
 
 Then state your intent in ordinary conversation:
 
@@ -258,5 +265,5 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `scope_check` (PreToolUse) — block out-of-scope edits + protect hook infra (dryrun, always-block hard-blocks)
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
 - `learning_log` (PostToolUse) — capture Bash failure signals → promote via `learnings-review` (advisory)
-- `route_nudge` (UserPromptSubmit) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory)
-- `builder_guard` (PreToolUse) — in a Builder-first Claude session launched by the daily `dh.cmd`, reserve structured code edits for Codex Builder dispatch; inert in the raw `claude` escape (conditional blocking)
+- `route_nudge` (Claude UserPromptSubmit only) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory). It is deliberately excluded from Codex `hooks.json`.
+- `builder_guard` (PreToolUse) — reserve structured code edits for Codex Builder by default; only the explicit `claude-direct.cmd` escape disables it

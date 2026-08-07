@@ -35,6 +35,10 @@ Two entry points:
   flow); it runs the Codex Builder + the hard safety net, then the in-session Claude
   reviews `RESULT.md`. See `roles/ROLE_ARCHITECT.md` "Builder 자동 dispatch".
 
+For interactive use, launch ordinary `claude` from the work repository. Its default
+Builder-first guard routes implementation edits to the `build` path; only
+`claude-direct.cmd` opens a direct-edit escape session.
+
 ## Quick start
 
 ```bash

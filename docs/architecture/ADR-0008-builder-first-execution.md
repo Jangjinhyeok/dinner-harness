@@ -65,6 +65,19 @@ implementation delta or malformed recovery remains `BLOCKED`.
 - This is not active until an authorized live install. Canonical files alone do
   not alter `~/.claude`.
 
+## Superseding operating update (2026-08-07)
+
+The decision's guard and observable Builder-dispatch mechanism remain in force,
+but its entrypoint changed to remove daily launcher friction. Ordinary
+`claude` now starts in Builder-first mode: structured implementation edits are
+blocked until Claude dispatches Codex Builder. `claude-direct.cmd` is the sole
+explicit direct-edit escape and sets `DINNER_EXECUTION_MODE=direct` for that
+process. `dh.cmd` and `dh-architect.cmd` remain compatibility launchers.
+
+This supersedes the original opt-in launcher wording, not the decision to keep
+the Architect review loop, linked Builder worktree, controller net, receipts,
+and human HIGH-tier sign-off.
+
 ## Alternatives considered
 
 - **Documentation/nudge only:** rejected; the transcript evidence already

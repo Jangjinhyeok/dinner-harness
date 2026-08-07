@@ -198,21 +198,22 @@ G (plugin marketplace), H (thinking budget).
 ## 3. Builder-first dispatch actuation ??implemented in canonical source, not installed
 
 **2026-08-07 operating-default update (canonical source; pending merge and live refresh):**
-the daily launcher is now `dh.cmd`, which enables Builder-first handling for every
-structured implementation write. `dh-architect.cmd` remains a compatibility
-launcher, while raw `claude` is the explicit direct-edit escape. The earlier
-"not installed" status was closed for the then-current source by `refresh.py --apply`;
-this new strict-entrypoint update is not active until it is merged and refreshed.
+ordinary `claude` is now the daily Builder-first entrypoint, so every structured
+implementation write is guarded by default. `claude-direct.cmd` is the explicit
+direct-edit escape; `dh.cmd` and `dh-architect.cmd` remain compatibility
+launchers. The earlier "not installed" status was closed for the then-current
+source by `refresh.py --apply`; this new default is not active until it is
+merged and refreshed.
 
-ADR-0008 adds the opt-in `dh-architect.cmd` launcher, conditional
-`builder_guard`, and content-free Builder dispatch receipt/audit. The guard
-reserves Claude structured implementation edits for Codex only when the
-launcher sets `DINNER_EXECUTION_MODE=builder-first`; it is not an adversarial
-shell sandbox. `orchestrate.py build` now emits `attempted` plus a terminal
-receipt outside the target repo and refuses two consecutive Builder bails rather
-than printing `BUILT`. This is HIGH-tier source work: it remains inert until a
-user-approved live install, and the receipt never replaces RESULT/diff review
-or HIGH human end sign-off.
+ADR-0008 adds the `builder_guard` and content-free Builder dispatch
+receipt/audit. The guard reserves Claude structured implementation edits for
+Codex unless the explicit direct launcher sets
+`DINNER_EXECUTION_MODE=direct`; it is not an adversarial shell sandbox.
+`orchestrate.py build` now emits `attempted` plus a terminal receipt outside the
+target repo and refuses two consecutive Builder bails rather than printing
+`BUILT`. This is HIGH-tier source work: it remains inert until a user-approved
+live install, and the receipt never replaces RESULT/diff review or HIGH human
+end sign-off.
 
 ## 4. Gotchas for whoever picks this up
 

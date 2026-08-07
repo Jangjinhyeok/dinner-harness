@@ -63,7 +63,7 @@ _WORK_INTENT = re.compile(
 
 def _default_route_message() -> str:
     """Return the routing protocol injected before implementation work."""
-    if os.environ.get("DINNER_EXECUTION_MODE") == "builder-first":
+    if os.environ.get("DINNER_EXECUTION_MODE") != "direct":
         return (
             "[execution-route] Apply CLAUDE.md strict Builder-first routing before source "
             "edits: keep read-only analysis in Claude, but every structured Edit/Write "
@@ -78,7 +78,7 @@ def _default_route_message() -> str:
             "fast path."
         )
     return (
-        "[execution-route] Apply CLAUDE.md default-session routing before source edits: "
+        "[execution-route] Apply CLAUDE.md direct-edit escape routing before source edits: "
         "read-only work or a truly trivial one- or two-line single-file change may stay "
         "inline; a clear single-purpose LOW change must run the delegate workflow now "
         "(write HANDOFF_DELEGATE.md, dispatch Codex Builder, then review RESULT.md plus "

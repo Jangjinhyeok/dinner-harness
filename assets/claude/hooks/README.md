@@ -1,19 +1,22 @@
 # Claude Code hooks (~/.claude/hooks/)
 
-## builder_guard (Builder-first only)
+## builder_guard (Builder-first by default)
 
-`builder_guard` is a conditional `PreToolUse` hook for an interactive Claude
-daily Claude session launched through `dh.cmd`. That launcher sets
-`DINNER_EXECUTION_MODE=builder-first`; only then the guard blocks `Edit`/`Write`
-implementation changes. It permits root bus files (`HANDOFF*.md`, `RESULT.md`,
-`INPUT.md`) and `docs/architecture/*.md`, then tells Claude to dispatch
-`orchestrate.py build` to Codex. It logs each block as
+`builder_guard` is a `PreToolUse` hook for every interactive Claude session. It
+blocks `Edit`/`Write` implementation changes by default, permits root bus files
+(`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and `docs/architecture/*.md`, then tells
+Claude to dispatch `orchestrate.py build` to Codex. It logs each block as
 `logs/builder_guard.log`.
 
 The guard is intentionally not a shell sandbox: it does not parse Bash or
 PowerShell. The linked Builder worktree plus controller safety net remain the
-enforcement boundary for the headless Builder. A raw `claude` launch is the
-explicit direct-edit escape and leaves this guard inert.
+enforcement boundary for the headless Builder. Only `claude-direct.cmd` sets
+`DINNER_EXECUTION_MODE=direct` and leaves this guard inert for that process.
+
+`route_nudge` remains a Claude-only `UserPromptSubmit` hook. The Codex adapter
+copies portable safety handlers but deliberately excludes this hook from its
+generated `hooks.json`: a standalone Codex session cannot dispatch itself to a
+Codex Builder, and receives its routing guidance through `AGENTS.md` instead.
 
 이 디렉터리는 Claude Code의 **PreToolUse·PostToolUse hook 안전망** 인프라를 담는다. hook은 Claude가 도구를 실행하기 *직전(PreToolUse)·직후(PostToolUse)*에 자동으로 끼어들어 검사하고, 종료 코드로 통과(exit 0)/차단(exit 2)을 결정한다(advisory hook은 차단 없이 stderr 제안·로깅만 한다). 사용자가 직접 호출하지 않는다.
 
@@ -221,6 +224,6 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 
 **운영 확정 (2026-05-24) → 부분 번복 (2026-06-01).** 2026-05-24에는 현 2개 PreToolUse hook(`secret_scan`, `scope_check`)으로 운영하며 추가 hook 계획이 없다고 확정했다(YAGNI — 두 안전망이 시크릿 누출·스코프 규율을 이미 덮음). 2026-06-01 사용자 승인 하에 이를 부분 번복하고 advisory-only hook `suggest_compact`를 도입하기로 했다. 이는 차단 hook이 아니라 stderr 제안 hook이라 안전망의 본래 취지(시크릿/스코프 enforce)와 충돌하지 않는다. **핸들러·런처는 `hooks/handlers/`·`hooks/launchers/`로 이동 완료, `settings.json.template`·로컬 `settings.json`(개인 PC)에 등록 완료(2026-06-01). `settings.json`은 always-block이라 활성화는 직접 hand-edit하거나 off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 했다 — 추가 즉시 hot-reload.** 차단형 hook(secret_scan/scope_check 계열)을 더 추가할 계획은 여전히 없다. `ADR-0004`(예약돼 있던 transcript/learning 기반 hook)는 2026-06-01 **활성화**됐다 — gap 분석 #4(반복 교정이 세션 사이 증발)에서 실제 마찰이 확인돼, 그 정책("마찰이 생기면 정의")에 따라 advisory PostToolUse 포착 hook `learning_log` + `learnings-review` 승격 skill로 정의했다(Tier B — homunculus 없이 실패 신호만 로깅, 사람이 승격). `ADR-0002`("차기 hook")는 여전히 미정의 placeholder로 보류. (`ADR-0003`은 번호 미사용.) 남은 단일 액션은 secret_scan enforce 승격 *결정*(~2026-05-31)뿐이며 이는 새 hook이 아니라 env var 전환이다.
 
-**route_nudge 도입 (2026-06-16, commit 09aa4f9; 2026-08-07 auto-route protocol).** 첫 **UserPromptSubmit** hook이자 세 번째 advisory hook이다. 구현 의도 prompt마다 stdout으로 default execution route를 주입한다: truly trivial inline, clear single-purpose LOW는 delegate workflow, multi-file/multi-gate/design/HIGH는 Architect HANDOFF + human start approval 후 Builder dispatch. UE 도메인 신호(UMG/GAS/Replication/Blueprint 또는 generic UE)는 focused Architect reference를 추가한다. 차단·직접 dispatch는 하지 않으며 항상 exit 0이다. hook은 prompt만 보므로 HANDOFF/scope/tier/approval을 만들 수 없고, 이를 건너뛰어 subprocess dispatch하면 controller safety model을 훼손한다. 핸들러 `hooks/handlers/route_nudge.py`, 런처 `hooks/launchers/route_nudge.cmd`, `settings.json.template`의 `UserPromptSubmit` 등록을 사용한다.
+**route_nudge 도입 (2026-06-16, commit 09aa4f9; 2026-08-07 auto-route protocol).** 첫 **UserPromptSubmit** hook이자 세 번째 advisory hook이다. 구현 의도 prompt마다 stdout으로 default execution route를 주입한다. 기본 `claude`에서는 tiny edit를 포함한 structured implementation을 Codex Builder로 보낸다. clear single-purpose LOW는 delegate workflow, multi-file/multi-gate/design/HIGH는 Architect HANDOFF + human start approval 후 Builder dispatch다. inline edit은 명시적 `claude-direct.cmd` escape에서만 가능하다. UE 도메인 신호(UMG/GAS/Replication/Blueprint 또는 generic UE)는 focused Architect reference를 추가한다. 차단·직접 dispatch는 하지 않으며 항상 exit 0이다. hook은 prompt만 보므로 HANDOFF/scope/tier/approval을 만들 수 없고, 이를 건너뛰어 subprocess dispatch하면 controller safety model을 훼손한다. 핸들러 `hooks/handlers/route_nudge.py`, 런처 `hooks/launchers/route_nudge.cmd`, `settings.json.template`의 `UserPromptSubmit` 등록을 사용한다.
 
 **scope_check 영구 dryrun 재확인 (2026-06-16, conformance 감사).** 회사·개인 PC 양쪽 실사용 감사가 scope_check를 "거의 전부 dryrun/자가테스트 → enforce 승격 or 일몰" 후보로 봤으나, 이는 always-block layer의 실차단 가치를 누락한 판단이다. always-block(`settings.json`·`hooks/` 본체)은 dryrun에서도 즉시 block(exit 2)이라 hook-integrity 보호는 이미 작동 중이고, scope codeblock enforce는 ad-hoc 편집 마찰만 키운다. 따라서 **영구 dryrun 유지**를 재확인한다(§"모드별 동작" 근거 불변).

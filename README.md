@@ -39,17 +39,11 @@ PowerShell에서 **작업할 프로젝트 폴더**로 이동한 뒤 아래 명�
 
 ```powershell
 cd C:\path\to\your-project
-& "$env:USERPROFILE\.claude\dh.cmd"
+claude
 ```
 
-`%USERPROFILE%`는 `cmd.exe` 문법이므로 PowerShell에서 그대로 쓰면 안 된다. launcher가
-없다고 나오면 설치 여부를 먼저 확인한다.
-
-```powershell
-Test-Path "$env:USERPROFILE\.claude\dh.cmd"
-```
-
-`True`가 아니면 dinner-harness repository에서 `py -3 refresh.py --apply`를 다시 실행한다.
+일반 `claude`가 기본 Builder-first 진입점이다. 설치 뒤에도 동작하지 않으면
+dinner-harness repository에서 `py -3 refresh.py --apply`를 다시 실행한다.
 
 ### 2. 평소처럼 요청한다
 
@@ -116,7 +110,8 @@ py -3 refresh.py --apply
 - **codex** — portable subset을 Codex-native 경로로 transform: curated `AGENTS.md`,
   `skills/` 아래 18 portable skills, reference 디렉터리(`ecc-reference/`, `docs/`, `templates/`),
   그리고 adapter v2(Cycle 3, Codex 0.141)부터 **agents 13개 → `agents/*.toml` 변환 + hooks native 포팅**
-  (`hooks/` 복사 + `hooks.json` 자동 생성 — 단 Codex에선 advisory: hard block은 sandbox/approval 레이어).
+   (`hooks/` 복사 + `hooks.json` 자동 생성 — 단 Codex에선 advisory: hard block은 sandbox/approval 레이어).
+   Claude 전용 `route_nudge`는 standalone Codex가 자신을 Codex Builder로 dispatch할 수 없으므로 `hooks.json`에서 의도적으로 제외한다.
   여전히 드롭: `_mode`의 file-glob 자동 inject(Codex 대응 기제 없음 → 모드 명시 선언으로 진입)와
   Claude-machinery skills 8종(routing 별칭 5 + harness 전용 2 + 다중 judge 1). **Two-CLI 역할(roles)은
   AGENTS.md §8로 cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
@@ -154,7 +149,7 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 
 ### 1) 기본 세션에서 실제로 일어나는 일
 
-`dh.cmd`로 시작한 Claude 세션은 다음 표처럼 동작한다. **읽기 비용까지 Codex에 넘기는
+일반 `claude`로 시작한 Claude 세션은 다음 표처럼 동작한다. **읽기 비용까지 Codex에 넘기는
 모드는 아직 의도적으로 넣지 않았다**. 먼저 이 흐름을 써 보고, 큰 코드 탐색의 Claude token
 비용이 실제 문제인지 확인한 뒤 별도 read-only Scout lane을 검토한다.
 
@@ -185,18 +180,17 @@ Builder는 linked git worktree에서 작업한다. primary project tree와 Build
 `BLOCKED`가 나오면 성공으로 취급하지 않는다. Claude가 제시한 reason, `RESULT.md`, Builder
 worktree의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 새 dispatch를 결정한다.
 
-### 3) 언제 raw `claude`를 쓰는가
+### 3) 언제 Claude 직접 수정을 쓰는가
 
-평소에는 `dh.cmd`를 쓴다. 아래처럼 일반 `claude`를 실행하면 strict Builder-first guard는
-동작하지 않는다.
+평소에는 일반 `claude`를 쓴다. 직접 수정이 정말 필요할 때만 아래 explicit escape를 쓴다.
 
 ```powershell
-claude
+& "$env:USERPROFILE\.claude\claude-direct.cmd"
 ```
 
-이것은 긴급 디버깅이나 사용자가 의도적으로 Claude의 직접 수정이 필요할 때만 쓰는 escape다.
-작은 수정도 Codex token으로 보내려는 기본 목적에는 맞지 않는다. 호환성 launcher인
-`dh-architect.cmd`도 남아 있지만, 일상 진입점은 `dh.cmd`다.
+이 escape는 그 Claude process에만 `DINNER_EXECUTION_MODE=direct`를 설정한다. 따라서
+`builder_guard`가 비활성화되고 strict token boundary는 보장되지 않는다. 기존 `dh.cmd`와
+`dh-architect.cmd`는 호환용 Builder-first launcher로 남지만 더 이상 일상 진입점이 아니다.
 
 ### 4) orchestrator 직접 호출 (고급·선택)
 
@@ -313,5 +307,5 @@ Git 변경을 받은 뒤에는 `py -3 refresh.py`로 plan을 확인하고 `py -3
 - `scope_check` (PreToolUse) — cycle 스코프 밖 수정 + hook 인프라 보호 (dryrun, always-block 즉시 차단)
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
 - `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
-- `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory)
-- `builder_guard` (PreToolUse) — 일상용 `dh.cmd`의 Builder-first Claude 세션에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도; raw `claude` escape에서는 inert (conditional blocking)
+- `route_nudge` (Claude UserPromptSubmit 전용) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory). standalone Codex가 self-dispatch할 수 없으므로 Codex `hooks.json`에서는 의도적으로 제외한다.
+- `builder_guard` (PreToolUse) — 일반 `claude`에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도; `claude-direct.cmd` escape에서만 inert

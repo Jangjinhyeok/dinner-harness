@@ -76,19 +76,19 @@
 
 모드 진입 시 해당 파일을 먼저 Read하고, "X 모드 시작" 또는 "X 모드, HANDOFF.md 진행"이라고 답한 뒤 작업 시작.
 
-### Raw `claude`에서의 무거운 작업 선제 감지
+### `claude-direct.cmd`에서의 직접 수정 escape
 
-raw `claude` escape 세션에서 요청을 받으면 구현에 바로 뛰어들기 전에 **토큰 무게를 먼저 가늠한다**. 아래 "무거운 작업 신호"가 보이면 진행에 앞서 **architect 모드 전환 + Codex Builder dispatch를 선제 제안**한다 — 자동 진입이 아니라 **제안**이며, 사용자의 OK가 시작 게이트다(per `autonomy-policy.md` — 사람은 시작·종단 경계):
+`claude-direct.cmd` escape 세션에서만 Claude 직접 수정이 허용된다. 이 경로에서도 구현에 바로 뛰어들기 전에 **토큰 무게를 먼저 가늠한다**. 아래 "무거운 작업 신호"가 보이면 진행에 앞서 **architect 모드 전환 + Codex Builder dispatch를 선제 제안**한다 — 자동 진입이 아니라 **제안**이며, 사용자의 OK가 시작 게이트다(per `autonomy-policy.md` — 사람은 시작·종단 경계):
 
 - 여러 파일(대략 3개 이상)을 만지거나, 빌드·테스트를 돌려가며 iterate해야 함
 - 시스템 단위 리팩토링·신규 기능 등 다단계 구현
 - 큰 diff가 예상됨
 
-제안 문구 예: *"이건 다파일/빌드 iterate가 필요한 무거운 작업으로 보입니다 — `architect 모드`로 전환해 HANDOFF를 쓰고 Codex Builder에 dispatch할까요? (또는 이대로 raw `claude` 세션에서 진행)"*.
+제안 문구 예: *"이건 다파일/빌드 iterate가 필요한 무거운 작업으로 보입니다 — `architect 모드`로 전환해 HANDOFF를 쓰고 Codex Builder에 dispatch할까요? (또는 이대로 `claude-direct.cmd` escape 세션에서 진행)"*.
 
 근거: main(Claude)이 Pro 등 quota가 빠듯한 plan일 수 있어, token sink인 구현을 기본 세션에서 떠안으면 **구독료 절감 목적이 무너진다**. 무거운 구현은 Codex(Builder)로 넘기는 게 이 하네스의 절감 설계다.
 
-질문·탐색·디버깅은 strict `dh.cmd`와 raw `claude` 모두에서 Claude가 직접 처리한다. 파일 수정은 raw `claude` escape에서만 1~2줄·단일 파일 조건으로 inline 처리할 수 있고, strict `dh.cmd`에서는 크기와 무관하게 Builder로 보낸다. 무게가 애매하면 한 줄로 제안만 하고 사용자 선택에 맡긴다 — 강권하지 않는다.
+질문·탐색·디버깅은 기본 `claude`와 `claude-direct.cmd` 모두에서 Claude가 직접 처리한다. 파일 수정은 `claude-direct.cmd` escape에서만 1~2줄·단일 파일 조건으로 inline 처리할 수 있고, 기본 `claude`에서는 크기와 무관하게 Builder로 보낸다. 무게가 애매하면 한 줄로 제안만 하고 사용자 선택에 맡긴다 — 강권하지 않는다.
 
 ### 중간 무게 → `/delegate` 경량 lane (full ceremony 없이 Codex dispatch)
 
@@ -97,33 +97,31 @@ raw `claude` escape 세션에서 요청을 받으면 구현에 바로 뛰어들�
 - **LOW 전용**: HIGH 신호(replication·save format·live config·migration·security·비가역 등)나 다파일·다게이트·설계토론 필요 시 `/delegate`는 거부하고 architect 모드로 에스컬레이션한다(보수적 OR — 모호하면 HIGH). 상세는 `~/.claude/skills/delegate/SKILL.md`.
 - **코드 전용이 아니다 — 문서도 같은 lane이다**: dispatch 경로엔 도메인 가정이 없다(scope fence는 파일 화이트리스트, 안전망은 `git status` + 파일 단위 hook). 그래서 파일 기반 문서 작업 — 이력서/경력기술서 변형, JD 대조 갭 분석, 톤 통일 — 도 `/delegate`로 위임한다. 문서 lane은 verify를 구조 체크(섹션·분량·금지 표현)로 대체하고, **원본을 scope fence에서 빼** `scope_check`가 원본 수정을 hard-block하게 한다. HIGH는 외부 제출·발송·공개 확정(초안 작성은 LOW).
 - **전제: 작업 디렉터리가 git repo여야 한다.** 안전망이 `git status --porcelain`으로 changeset을 수집하고 git이 없으면 fail-closed로 차단하므로, non-repo 디렉터리에선 dispatch 자체가 불가하다. 파일이 이미 있는 폴더에서 CLI를 켜고 baseline을 먼저 커밋한다.
-- 경로 요약: **strict `dh.cmd`**에서는 질문·읽기·탐색은 Claude, 모든 structured `Edit`/`Write` 구현 파일 수정은 Codex Builder다. **raw `claude` escape**에서는 1~2줄 inline · LOW 단일목적(코드·문서 무관)은 `/delegate` · 무거움/HIGH는 architect 모드다.
+- 경로 요약: **기본 `claude`**에서는 질문·읽기·탐색은 Claude, 모든 structured `Edit`/`Write` 구현 파일 수정은 Codex Builder다. **`claude-direct.cmd` escape**에서만 1~2줄 inline · LOW 단일목적(코드·문서 무관)은 `/delegate` · 무거움/HIGH는 architect 모드다.
 
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
-### Strict Builder-first daily entrypoint (default)
+### Default Builder-first entrypoint
 
-일상적인 구현 세션은 raw `claude` 대신 `~/.claude/dh.cmd`로 시작한다. 이
-launcher는 `DINNER_EXECUTION_MODE=builder-first`를 설정하므로, Claude는 읽기·검색·MCP
+일상적인 구현 세션은 project directory에서 일반 `claude`로 시작한다. Claude는 읽기·검색·MCP
 조사·설계·HANDOFF 작성·RESULT/diff 검토를 직접 수행하지만 **구현 파일의 structured
-Edit/Write는 할 수 없다**. `builder_guard`가 root bus artifact와 ADR 외의 직접 edit을
+Edit/Write는 할 수 없다**. `builder_guard`는 기본으로 root bus artifact와 ADR 외의 직접 edit을
 차단하고 Codex Builder dispatch로 돌려보낸다.
 
 - 단일 목적 LOW 구현은 `HANDOFF_DELEGATE.md`를 작성해 같은 turn에 Builder를 dispatch한다.
   사용자의 원래 요청이 start intent이므로 `/delegate`를 다시 입력하라고 묻지 않는다.
 - 다파일·다게이트·구조적 결정·HIGH는 HANDOFF(필요 시 ADR)를 작성하고 사람의 start
   approval 뒤에 Builder를 dispatch한다. HIGH terminal approval도 그대로 남는다.
-- raw `claude`는 의도적인 직접 수정이 필요한 경우의 **명시적 escape**다. 이 경우 guard는
-  동작하지 않으므로 strict token boundary를 보장하지 않는다. `claude` command 자체를
-  wrapper로 덮어쓰지 않는다.
+- 직접 수정이 꼭 필요할 때만 `~/.claude/claude-direct.cmd`를 실행한다. 이 명시적 escape에서는
+  guard가 동작하지 않으므로 strict token boundary를 보장하지 않는다.
 
 이 guard는 structured file-edit 도구만 다루는 honest-session workflow guard이며 Bash/
 PowerShell implementation을 sandbox처럼 해석·차단하지 않는다. Builder worktree와 controller
 safety net이 실제 containment 및 deterministic decision boundary다.
 
-### Raw `claude` adaptive routing (explicit escape only)
+### Direct-edit escape routing
 
-raw `claude` escape 세션에서도 사용자가 `/delegate`나 `architect 모드`를 먼저
+`claude-direct.cmd` escape 세션에서도 사용자가 `/delegate`나 `architect 모드`를 먼저
 입력할 필요는 없다. **구현 의도가 있는 요청마다** Claude가 repository를 읽어
 아래 순서로 route를 결정하고 실행한다. 이 절은 위의 "제안" 표현을 raw `claude` write
 request에 대해서는 대체한다.
@@ -150,22 +148,20 @@ path이므로 기존 의미대로만 사용한다.
 
 ### Builder-first execution details
 
-The daily strict entrypoint is `~/.claude/dh.cmd`. It starts Claude with
-`DINNER_EXECUTION_MODE=builder-first` for that Claude process. In this mode the
-conditional `builder_guard` blocks Claude `Edit`/`Write` implementation edits;
-it permits only root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
+The normal `claude` command is the daily strict entrypoint. `builder_guard`
+blocks Claude `Edit`/`Write` implementation edits by default; it permits only
+root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
 `docs/architecture/*.md`. Write the self-contained HANDOFF, create an ADR when
 the decision is structural, then dispatch Codex with `orchestrate.py build`.
 
-`~/.claude/dh-architect.cmd` remains a compatibility launcher with the same
-Builder-first behavior. It is not the recommended daily command because the
-strict workflow is appropriate for LOW writes as well as Architect-sized work.
+`~/.claude/dh.cmd` and `~/.claude/dh-architect.cmd` remain compatibility
+launchers with the same Builder-first behavior. They are not required for the
+daily workflow. `~/.claude/claude-direct.cmd` is the only direct-edit escape;
+it sets `DINNER_EXECUTION_MODE=direct` for that one Claude process.
 
 This is a workflow guard, not a sandbox. It deliberately does not parse or
 block arbitrary Bash/PowerShell commands: the Builder worktree and controller
-safety net remain the containment and deterministic decision boundaries. Use
-raw `claude` only as the documented direct-edit escape; read-only exploration
-does not need that escape and should normally stay in the strict session.
+safety net remain the containment and deterministic decision boundaries.
 
 Each `build` appends content-free `attempted` then terminal (`built`, `blocked`,
 `timeout`, or `builder_bailed`) JSONL events under the harness runtime `logs/`

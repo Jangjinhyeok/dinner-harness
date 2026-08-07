@@ -23,43 +23,43 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 ### (c) 포팅 feasibility 매트릭스 (0.140 정정)
 | 부품 | 판정 |
 |---|---|
-| **hooks 5** | **GO** — 전부 NATIVE-PORTABLE(`secret_scan`·`scope_check`·`suggest_compact`·`learning_log`·`route_nudge`). contract 일치·`lib/common` 재사용·stdin 필드 교집합 |
+| **portable safety hooks 4** | **GO** — `secret_scan`·`scope_check`·`suggest_compact`·`learning_log`. contract 일치·`lib/common` 재사용·stdin 필드 교집합. Claude 전용 `route_nudge`는 제외 |
 | **agents 21** (_core·_gamedev·**hub-leaf 포함**) | **PORTABLE-WITH-CAVEAT** — orchestration이 hub→leaf 지원. caveat = depth-1·prompt-driven(developer_instructions에 spawn 규칙 enumerate) |
-| **agent-routing** | **부분복원** — `route_nudge` hook이 specialist nudge 주입 |
+| **agent-routing** | **미포팅** — Claude 전용 `route_nudge`는 standalone Codex self-dispatch를 유도하므로 제외; Codex routing guidance는 `AGENTS.md` |
 | **`_mode` 조건부** | STILL-DEGRADED — file-glob → cwd-dir override만 |
 | **Two-CLI roles** | STILL-DEGRADED — 세션페어 없음 |
 | **depth-2 다중hop** | **STILL-DROPPED** — grandchildren 차단(`max_depth=1`) |
 | **routing 별칭 skills**(bp/gas/umg/ue/repl) | 중복 — prompt-driven spawn이 대체 |
 
 ### (d) 권고 tier (0.140 정정)
-- **GO**: hooks 5 (전부 native-portable).
+- **GO**: portable safety hooks 4.
 - **PORTABLE-WITH-CAVEAT**: agents 대부분 — `_core`·`_gamedev` flat + **`_ue`·`_unity` hub-leaf**(depth-1 orchestration), learnings-review.
 - **STILL-DROPPED**: `_mode` file-glob 조건부 · Two-CLI 세션페어 · **depth-2 다중hop** · routing 별칭 skills.
 
 ### (e) 미검증 → 3 해소, 1 잔존 (0.140 조사)
-- ✅ route_nudge stdout→context (`UserPromptSubmit.hookSpecificOutput.additionalContext` + plain stdout 수용)
+- 🚫 route_nudge는 Claude 전용 — standalone Codex self-dispatch를 유도하므로 `UserPromptSubmit`에 등록하지 않음
 - ✅ config syntax (config.toml `[hooks]` / hooks.json)
 - ✅ hub→leaf depth (depth-1 fit)
 - ⚠️ **잔존 = depth-2 다중hop 위임**(grandchildren 차단) — 실 포팅 cycle preflight에서 우회 설계.
 
 ## Porting Plan (Codex ≥0.140 업그레이드 후 실행 — codex adapter v2)
 
-> **※ Cycle 3 구현 갱신 (2026-06-19):** 아래 Phase A(hooks)·Phase B(agents)가 `adapters/codex.py` v2로 **구현·로컬 검증**됨(Codex `0.141`). 산출물·검증·잔존 = `CODEX-COVERAGE.md` "Cycle 3 / adapter v2" 노트. **Preflight 완료**(증거 = `CODEX-COVERAGE.md` §6): hooks.json 스키마 native 일치 ✓ / 편집 tool = `apply_patch`(`tool_input.command` 패치) → 핸들러 배선·검증 완료 ✓ / hub→leaf depth-1 동작·depth-2 차단 ✓ / skill 경로 `~/.codex/skills` 유효 ✓. **핵심 정정**: Codex 0.141은 PreToolUse exit-2로 `apply_patch`를 hard block하지 않음 → 포팅 hooks는 **advisory**(hard enforce = sandbox/approval 레이어). **남은 후속**: Phase C(route_nudge Codex 표현)·env 이름(`CLAUDE_*`) Codex 정리·(원하면) approval-layer enforce.
+> **※ Cycle 3 구현 갱신 (2026-06-19, 2026-08-07 routing 정정):** 아래 Phase A(hooks)·Phase B(agents)가 `adapters/codex.py` v2로 **구현·로컬 검증**됨(Codex `0.141`). 산출물·검증·잔존 = `CODEX-COVERAGE.md` "Cycle 3 / adapter v2" 노트. **Preflight 완료**(증거 = `CODEX-COVERAGE.md` §6): hooks.json 스키마 native 일치 ✓ / 편집 tool = `apply_patch`(`tool_input.command` 패치) → 핸들러 배선·검증 완료 ✓ / hub→leaf depth-1 동작·depth-2 차단 ✓ / skill 경로 `~/.codex/skills` 유효 ✓. **핵심 정정**: Codex 0.141은 PreToolUse exit-2로 `apply_patch`를 hard block하지 않음 → 포팅 hooks는 **advisory**(hard enforce = sandbox/approval 레이어). Claude 전용 `route_nudge`는 standalone Codex self-dispatch를 유도하므로 Codex `hooks.json`에서 제외하고, routing guidance는 `AGENTS.md`가 담당한다. **남은 후속**: env 이름(`CLAUDE_*`) Codex 정리·(원하면) approval-layer enforce.
 
 > 실행 = **별도 cycle**(이 플랜이 그 HANDOFF의 기반). 본 cycle은 플랜 기록만.
 
 **선결**: 사용자 Codex 0.111.0 → **≥0.140 업그레이드**(무료). 포팅은 hand-edit 아니라 **codex adapter v2(`codex.py` 확장)**로 repo canonical → `~/.codex` 생성(source-of-truth 유지).
 
 **Preflight (업그레이드 직후 실증 → 최종 scope 확정)**:
-1. hook 발화 — PreToolUse `exit 2` block, UserPromptSubmit `additionalContext` 렌더.
+1. hook 발화 — PreToolUse `exit 2` block (Codex에서는 advisory), UserPromptSubmit는 Claude 전용 `route_nudge`로 유지.
 2. hub→leaf — prompt-driven spawn→wait→synthesise 실동작(depth-1).
 3. depth-2 차단 확인 — grandchildren 거부.
 
-**Phase A — hooks (GO)**: `assets/claude/hooks/handlers/*.py` + `lib/common.py` + `rules/*.json` → `~/.codex/hooks/`; `codex.py`가 `~/.codex/config.toml [hooks]`(or hooks.json) 등록 생성(matcher per hook·`commandWindows`). 이벤트 매핑 PreToolUse/PostToolUse/UserPromptSubmit. stdin 필드 교집합이라 핸들러 거의 무변경(검증). 비파괴+백업.
+**Phase A — portable safety hooks (GO)**: `assets/claude/hooks/handlers/*.py` 전부와 `lib/common.py`·`rules/*.json` → `~/.codex/hooks/` 복사; `codex.py`가 그중 `secret_scan`·`scope_check`·`suggest_compact`·`learning_log` 4개만 `~/.codex/config.toml [hooks]`(or hooks.json)에 등록한다(matcher per hook·`commandWindows`). Claude 전용 `route_nudge`와 `builder_guard`는 파일만 복사되고 Codex hooks에는 등록하지 않는다. stdin 필드 교집합이라 핸들러 거의 무변경(검증). 비파괴+백업.
 
 **Phase B — agents (PORTABLE-WITH-CAVEAT)**: `content/agents/**.md` → `~/.codex/agents/*.toml`(body→developer_instructions·model·sandbox_mode·mcp_servers). hub agent는 developer_instructions에 "언제 어떤 leaf를 spawn"을 enumerate(prompt-driven, depth-1).
 
-**Phase C — routing 부분복원**: Phase A의 `route_nudge`가 specialist nudge 주입(agent-routing 대체).
+**Phase C — routing은 미포팅**: `route_nudge`는 Claude의 Architect→Codex Builder dispatch 전제라 standalone Codex에 맞지 않는다. Codex는 `AGENTS.md`의 명시적 architect/builder 선언 안내를 사용한다.
 
 **Still-dropped (미포팅·문서화)**: `_mode` file-glob 조건부 · Two-CLI 세션페어 · **depth-2 다중hop** · routing 별칭 skills.
 

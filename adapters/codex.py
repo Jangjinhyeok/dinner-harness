@@ -152,9 +152,9 @@ def _write_hooks_json(dest_root, plan, dry_run):
                     "hooks": [{"type": "command", "command": command("learning_log"), "timeout": 30}],
                 }
             ],
-            "UserPromptSubmit": [
-                {"hooks": [{"type": "command", "command": command("route_nudge"), "timeout": 30}]}
-            ],
+            # route_nudge is Claude-specific: a standalone Codex session cannot
+            # dispatch itself to a Codex Builder. Codex gets its routing guidance
+            # from AGENTS.md instead.
         }
     }
     target = dest_root / "hooks.json"

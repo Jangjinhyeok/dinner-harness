@@ -36,6 +36,9 @@ HANDOFF/RESULT가 self-contained여야 하므로 각 turn은 repo와 bus를 매�
   같은 Claude 세션이 `RESULT.md`를 검토합니다. 상세는
   `roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"를 참조하세요.
 
+interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한다. 기본 Builder-first
+guard가 구현 edit을 `build` 경로로 보내며, `claude-direct.cmd`만 Claude 직접 수정 escape를 연다.
+
 ## 빠른 시작
 
 ```bash
