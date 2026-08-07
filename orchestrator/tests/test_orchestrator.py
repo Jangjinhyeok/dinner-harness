@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import orchestrate
+import refresh
 from orchestrator import bus
 from orchestrator.config import Config
 from orchestrator.controller import (
@@ -236,6 +237,42 @@ class TestDefaultSessionRouting(unittest.TestCase):
         # The old broad meta denylist treated the repository name "harness" as
         # stronger than a write intent, silently restoring the UE-only gap.
         self.assertIsNotNone(route_nudge.message_for_prompt("Fix the harness routing."))
+
+
+class TestRefreshWrapper(unittest.TestCase):
+    def test_preview_only_preflights_both_targets_without_live_install(self):
+        with mock.patch.object(refresh.check, "main", return_value=0) as check_main, \
+             mock.patch.object(refresh.install, "main", return_value=0) as install_main:
+            self.assertEqual(refresh.refresh(apply=False), 0)
+        check_main.assert_called_once_with(["--no-install"])
+        self.assertEqual(
+            install_main.call_args_list,
+            [
+                mock.call(["--target", "claude", "--allow-live", "--dry-run"]),
+                mock.call(["--target", "codex", "--allow-live", "--dry-run"]),
+            ],
+        )
+
+    def test_apply_requires_preflight_then_installs_both_and_checks_drift(self):
+        with mock.patch.object(refresh.check, "main", return_value=0) as check_main, \
+             mock.patch.object(refresh.install, "main", return_value=0) as install_main:
+            self.assertEqual(refresh.refresh(apply=True), 0)
+        self.assertEqual(check_main.call_args_list, [mock.call(["--no-install"]), mock.call([])])
+        self.assertEqual(
+            install_main.call_args_list,
+            [
+                mock.call(["--target", "claude", "--allow-live", "--dry-run"]),
+                mock.call(["--target", "codex", "--allow-live", "--dry-run"]),
+                mock.call(["--target", "claude", "--allow-live"]),
+                mock.call(["--target", "codex", "--allow-live"]),
+            ],
+        )
+
+    def test_failed_preflight_never_reaches_a_live_install(self):
+        with mock.patch.object(refresh.check, "main", return_value=1), \
+             mock.patch.object(refresh.install, "main") as install_main:
+            self.assertEqual(refresh.refresh(apply=True), 1)
+        install_main.assert_not_called()
 
 
 def _git_available() -> bool:

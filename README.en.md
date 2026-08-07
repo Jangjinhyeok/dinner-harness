@@ -23,6 +23,7 @@ directly** — they are generated outputs. Regenerate a target with the installe
 - `adapters/` — per-target renderers (`claude.py`, `codex.py`).
 - `harness.toml` — manifest: targets, template vars, copy / template(merge) / skip / exclude.
 - `install.py` — CLI entry: `install --target claude|codex [--dest PATH] [--dry-run] [--allow-live]`.
+- `refresh.py` — two-target refresh wrapper: preview by default; `--apply` is the explicit live-install signature.
 
 ## Install
 
@@ -33,6 +34,18 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 
 Defaults to `~/.<target>` when `--dest` is omitted; writing to the live dir requires
 `--allow-live`. Use `--dry-run` to preview the plan without writing.
+
+To refresh both targets together, use the wrapper below. Its default mode validates
+the source and previews both targets; only an explicit `--apply` performs live writes.
+
+```
+py -3 refresh.py
+py -3 refresh.py --apply
+```
+
+> **`--apply` is not transactional and creates no backup.** If the Codex refresh
+> fails after Claude succeeds, the two live targets can be on different revisions.
+> Check out the desired prior commit and rerun `refresh.py --apply` from it to recover.
 
 - **claude** — verbatim copy of the full inclusion set; `settings.json` is generated
   from `settings.json.template` (substitute `<USERNAME>`, strip `_template`) and **merged**
@@ -124,8 +137,8 @@ run it in `builder mode` and return `RESULT.md`. Communication is via the projec
 ### 4) Modifying the harness itself
 
 Don't edit `~/.claude` / `~/.codex` directly — edit the repo's canonical tree (`content/`, `assets/`),
-run `py -3 check.py` to verify integrity, then regenerate with
-`py -3 install.py --target claude --allow-live` (and `--target codex` as needed).
+preview with `py -3 refresh.py`, then have a human explicitly run
+`py -3 refresh.py --apply` to regenerate Claude and Codex together.
 
 Run `check.py` **after** regenerating too — its install-drift axis compares the repo against the
 live install and catches "edited but never installed" (which has bitten twice). `--no-install`

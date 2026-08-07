@@ -256,7 +256,7 @@ def do_update():
     print(f"re-blessed CLAUDE.md hash → curation.toml ({h[:16]}…)")
 
 
-def main():
+def main(argv=None):
     try:  # report uses em-dash + Korean; force UTF-8 stdout regardless of console codepage
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
@@ -265,7 +265,7 @@ def main():
     ap.add_argument("--update", action="store_true", help="re-bless the current CLAUDE.md hash")
     ap.add_argument("--no-install", action="store_true",
                     help="skip the install-drift axis (repo-only checks)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if args.update:
         do_update()
         return 0

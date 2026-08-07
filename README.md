@@ -19,6 +19,7 @@
 - `adapters/` — 타깃별 renderer (`claude.py`, `codex.py`).
 - `harness.toml` — manifest: targets, template 변수, copy / template(merge) / skip / exclude.
 - `install.py` — CLI entry: `install --target claude|codex [--dest PATH] [--dry-run] [--allow-live]`.
+- `refresh.py` — two-target refresh wrapper: preview by default; `--apply` is the explicit live-install signature.
 
 ## Install
 
@@ -29,6 +30,18 @@ py -3 install.py --target codex  --dest C:/Users/<you>/.codex
 
 `--dest` 생략 시 `~/.<target>`이 기본값이며, 라이브 디렉터리에 쓰려면 `--allow-live`가 필요하다.
 `--dry-run`으로 쓰기 없이 plan을 미리 본다.
+
+두 target을 함께 갱신할 때는 아래 wrapper를 쓴다. 기본 실행은 source 정합 확인과 두 target의
+dry-run만 수행하고, 실제 라이브 write는 사람이 명시적으로 `--apply`를 붙였을 때만 수행한다.
+
+```
+py -3 refresh.py
+py -3 refresh.py --apply
+```
+
+> **`--apply`는 transaction이 아니며 backup도 만들지 않는다.** Claude 갱신 뒤 Codex 갱신이
+> 실패하면 두 설치본 revision이 달라질 수 있다. 원하는 이전 commit을 checkout한 뒤 그 commit에서
+> `refresh.py --apply`를 다시 실행해 복구한다.
 
 - **claude** — inclusion set 전체의 verbatim copy. `settings.json`은
   `settings.json.template`에서 생성(`<USERNAME>` 치환, `_template` strip)되어 기존 파일과
@@ -110,8 +123,8 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 
 ### 4) 하네스 자체를 수정할 때
 
-`~/.claude`·`~/.codex`를 직접 고치지 말고 — repo의 canonical 트리(`content/`·`assets/`)를 편집 → `py -3 check.py`로
-정합 확인 → `py -3 install.py --target claude --allow-live`(필요 시 `--target codex`)로 재생성한다.
+`~/.claude`·`~/.codex`를 직접 고치지 말고 — repo의 canonical 트리(`content/`·`assets/`)를 편집 →
+`py -3 refresh.py`로 plan을 확인 → 사람이 `py -3 refresh.py --apply`로 Claude·Codex를 함께 재생성한다.
 
 `check.py`는 재생성 **뒤에도** 한 번 돌린다 — install drift 축이 repo와 라이브 설치본을 대조해서 "고쳤는데
 설치를 안 했다"를 잡아준다(이게 실제로 두 번 물렸다). 설치본을 안 보려면 `--no-install`.

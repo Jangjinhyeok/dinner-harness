@@ -30,7 +30,7 @@ def default_dest(target):
     return Path.home() / f".{target}"
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description="Install the dinner-harness into a target.")
     ap.add_argument("--target", required=True, choices=["claude", "codex"])
     ap.add_argument("--dest", default=None, help="install root (default: ~/.<target>)")
@@ -38,7 +38,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-live", action="store_true",
                     help="permit installing onto the live ~/.<target> (guarded off by default)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     with open(REPO_ROOT / "harness.toml", "rb") as f:
         manifest = tomllib.load(f)
@@ -70,7 +70,8 @@ def main():
     for action, p in plan:
         if action in ("template", "skip", "write"):
             print(f"  {action:8} {p}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
