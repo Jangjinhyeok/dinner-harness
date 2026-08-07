@@ -15,6 +15,10 @@ username_token = "<USERNAME>"
 claude_home_token = "<CLAUDE_HOME>"
 
 [targets.claude]
+# Directories shared with another tool. Leftovers under them are advisory-only;
+# other manifest-owned directory leftovers remain exit-code-affecting.
+shared_dirs = []
+
 # Verbatim copies. Each entry: [src (repo-relative), dest (target-root-relative)].
 # src may be a file or a directory (recursive). Directories honor the exclude lists below.
 copy = [
@@ -62,6 +66,8 @@ exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
 # Claude-only machinery (agents, hooks, roles, agent-routing, _mode) is dropped by this adapter
 # — a design decision (newer Codex supports hooks/agents but the semantics don't fully map; see
 # CODEX-RECON.md), accounted for in CODEX-COVERAGE.md. MCP is out of scope (no source; D5).
+shared_dirs = ["agents"]
+
 copy = [
   ["assets/codex/AGENTS.md",  "AGENTS.md"],
   ["content/ecc-reference",   "ecc-reference"],

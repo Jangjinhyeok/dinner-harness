@@ -14,9 +14,9 @@ Three checks (manual; no CI/pre-commit — run after editing content):
      own adapters and compares content only — path substitutions are normalized, `skip_if_exists`
      workflow files (HANDOFF/RESULT) are runtime state and are excluded, a `merge` JSON dest is
      compared on template-owned keys only, and the manifest's own exclude lists apply. Live-only
-     leftovers are reported for directories the manifest owns outright (a skill deleted from the
-     repo keeps running until install.py is re-run), never for the rest of the install root.
-     Machine-local by nature: `--no-install` skips it.
+     leftovers are reported separately for manifest-owned directories and require manual deletion:
+     install.py intentionally does not prune. `shared_dirs` leftovers are advisory-only; other
+     leftovers affect exit status. Machine-local by nature: `--no-install` skips it.
 
 Usage:
   py -3 check.py            run all three; exit 0 if clean, 1 if drift (human-readable report)
@@ -143,6 +143,12 @@ def _owned_dirs(target_cfg):
     return dirs
 
 
+def _shared_dir(dir_rel, shared_dirs):
+    """Whether an owned directory is explicitly shared with an external tool."""
+    normalized = Path(dir_rel).as_posix().rstrip("/")
+    return normalized in shared_dirs
+
+
 def _json_key_drift(rel, want_text, got_text):
     """A `merge` dest keeps existing-dest keys the template does not own, so only the
     rendered keys are ours to check — extra live keys are the point of merging."""
@@ -184,18 +190,19 @@ def _json_key_drift(rel, want_text, got_text):
 def check_install(target, live_root=None, username=None):
     """Compare the rendered manifest against a live install tree.
 
-    Returns (present, problems). present=False means the install root does not exist —
-    reported, but not counted as drift: a machine need not use every target.
+    Returns (present, drift_problems, leftovers). ``leftovers`` contains
+    ``(install-relative path, advisory)`` pairs. present=False means the install root does
+    not exist — reported, but not counted as drift: a machine need not use every target.
     """
     with open(MANIFEST, "rb") as manifest_file:
         manifest = tomllib.load(manifest_file)
     target_cfg = manifest.get("targets", {}).get(target)
     if target_cfg is None:
-        return True, [f"harness.toml에 target '{target}' 없음"]
+        return True, [f"harness.toml에 target '{target}' 없음"], []
     inst = _installer()
     live = Path(live_root) if live_root else inst.default_dest(target)
     if not live.is_dir():
-        return False, []
+        return False, [], []
     if username is None:
         username = os.environ.get("USERNAME") or os.environ.get("USER") or ""
 
@@ -203,11 +210,16 @@ def check_install(target, live_root=None, username=None):
     exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
     runtime = {dest_rel for _, dest_rel in target_cfg.get("skip_if_exists", [])}
     problems = []
+    leftovers = []
+    shared_dirs = {
+        Path(dir_rel).as_posix().rstrip("/")
+        for dir_rel in target_cfg.get("shared_dirs", [])
+    }
 
     with tempfile.TemporaryDirectory(prefix="dh-check-") as td:
         scratch = Path(td) / f".{target}"
         if scratch.resolve() == live.resolve():  # never render onto the tree we are judging
-            return True, [f"scratch dest가 live와 동일 — 비교 불가 ({live})"]
+            return True, [f"scratch dest가 live와 동일 — 비교 불가 ({live})"], []
         adapter = inst.load_adapter(target)
         plan = adapter.install(
             repo_root=REPO, target_cfg=target_cfg, vars_cfg=manifest.get("vars", {}),
@@ -261,8 +273,8 @@ def check_install(target, live_root=None, username=None):
             # can never be a stale render of ours.
             if any(part.startswith(".") for part in sub.parts):
                 continue
-            problems.append(f"{rel}: repo에 없는 설치본 잔존 — 삭제 후 재설치 필요")
-    return True, problems
+            leftovers.append((rel, _shared_dir(dir_rel, shared_dirs)))
+    return True, problems, leftovers
 
 
 def do_update():
@@ -315,12 +327,13 @@ def main(argv=None):
         print("[install] skipped (--no-install)")
     else:
         for target in INSTALL_TARGETS:
-            present, problems = check_install(target)
+            present, problems, leftovers = check_install(target)
             if not present:
                 print(f"[install:{target}] {_installer().default_dest(target)} 없음 — skip")
-            elif not problems:
+                continue
+            if not problems and not leftovers:
                 print(f"[install:{target}] repo == 설치본 — drift 없음")
-            else:
+            if problems:
                 inst_problems += problems
                 print(f"[install:{target}] DRIFT ({len(problems)}건) — "
                       f"`py -3 install.py --target {target} --allow-live` 필요:")
@@ -328,6 +341,22 @@ def main(argv=None):
                     print("  -", p)
                 if len(problems) > 20:
                     print(f"  … 외 {len(problems) - 20}건")
+            blocking = [rel for rel, advisory in leftovers if not advisory]
+            advisory = [rel for rel, advisory in leftovers if advisory]
+            if blocking:
+                inst_problems += blocking
+                print(f"[install:{target}] LEFTOVERS ({len(blocking)}건, exit 1) — 수동 삭제 필요:")
+                for rel in blocking[:20]:
+                    print(f"  - {rel}: repo에 없는 설치본 잔존")
+                if len(blocking) > 20:
+                    print(f"  … 외 {len(blocking) - 20}건")
+            if advisory:
+                print(f"[install:{target}] ADVISORY LEFTOVERS ({len(advisory)}건, exit 0) — "
+                      "공유 디렉터리이므로 수동 정리 여부만 확인:")
+                for rel in advisory[:20]:
+                    print(f"  - {rel}: repo에 없는 설치본 잔존")
+                if len(advisory) > 20:
+                    print(f"  … 외 {len(advisory) - 20}건")
 
     return 0 if not (cat_problems or cur_problems or inst_problems) else 1
 

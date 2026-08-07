@@ -151,7 +151,10 @@ path이므로 기존 의미대로만 사용한다.
 The normal `claude` command is the daily strict entrypoint. `builder_guard`
 blocks Claude `Edit`/`Write` implementation edits by default; it permits only
 root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
-`docs/architecture/*.md`. Write the self-contained HANDOFF, create an ADR when
+`docs/architecture/*.md`, plus persistent-memory Markdown under
+`<CLAUDE_CONFIG_DIR>/projects/*/memory/` (or `~/.claude/...` when the variable
+is unset). The memory path is resolved before segment-based matching, so path
+traversal is not allowed. Write the self-contained HANDOFF, create an ADR when
 the decision is structural, then dispatch Codex with `orchestrate.py build`.
 
 `~/.claude/dh.cmd` and `~/.claude/dh-architect.cmd` remain compatibility

@@ -170,15 +170,81 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertEqual(permissions["allow"].count(dispatch), 1)
             self.assertEqual(permissions["additionalDirectories"], ["C:/Tools"])
 
-            present, problems = check.check_install("claude", live_root=dest, username="tester")
+            present, problems, leftovers = check.check_install(
+                "claude", live_root=dest, username="tester"
+            )
             self.assertTrue(present)
             self.assertEqual(problems, [])
+            self.assertEqual(leftovers, [])
 
             permissions["allow"].remove(dispatch)
             (dest / "settings.json").write_text(json.dumps(installed), encoding="utf-8")
-            present, problems = check.check_install("claude", live_root=dest, username="tester")
+            present, problems, leftovers = check.check_install(
+                "claude", live_root=dest, username="tester"
+            )
             self.assertTrue(present)
             self.assertTrue(any("permissions.allow" in problem for problem in problems), problems)
+            self.assertEqual(leftovers, [])
+
+    def test_codex_shared_agent_leftover_is_advisory(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target = manifest["targets"]["codex"]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".codex"
+            codex_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            (dest / "agents" / "foo.toml").write_text("name = 'external'\n", encoding="utf-8")
+            present, problems, leftovers = check.check_install(
+                "codex", live_root=dest, username="tester"
+            )
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [("agents/foo.toml", True)])
+
+    def test_claude_owned_directory_leftover_remains_blocking(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target = manifest["targets"]["claude"]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            (dest / "skills" / "foo.md").write_text("external\n", encoding="utf-8")
+            present, problems, leftovers = check.check_install(
+                "claude", live_root=dest, username="tester"
+            )
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [("skills/foo.md", False)])
+
+    def test_advisory_leftovers_do_not_fail_the_cli(self):
+        with mock.patch.object(
+            check,
+            "check_install",
+            side_effect=[(True, [], [("agents/foo.toml", True)]), (True, [], [])],
+        ), mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(check.main([]), 0)
+        self.assertIn("ADVISORY LEFTOVERS", stdout.getvalue())
+        self.assertIn("exit 0", stdout.getvalue())
+
+    def test_owned_leftovers_fail_the_cli_and_require_manual_removal(self):
+        with mock.patch.object(
+            check,
+            "check_install",
+            side_effect=[(True, [], [("skills/foo.md", False)]), (True, [], [])],
+        ), mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(check.main([]), 1)
+        self.assertIn("LEFTOVERS", stdout.getvalue())
+        self.assertIn("수동 삭제 필요", stdout.getvalue())
+        self.assertNotIn("install.py --target claude", stdout.getvalue())
+
+    def test_missing_install_root_skips_without_failure(self):
+        with mock.patch.object(
+            check,
+            "check_install",
+            side_effect=[(False, [], []), (False, [], [])],
+        ), mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(check.main([]), 0)
+        self.assertEqual(stdout.getvalue().count("— skip"), 2)
 
     def test_architect_and_delegate_document_an_unpiped_absolute_dispatch_shape(self):
         root = Path(__file__).resolve().parents[2]

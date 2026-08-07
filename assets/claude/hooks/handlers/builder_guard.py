@@ -22,6 +22,7 @@ from lib.common import (  # noqa: E402
     exit_allow,
     exit_block,
     get_cwd,
+    get_env_override,
     log_event,
     parse_apply_patch,
     read_hook_input,
@@ -48,18 +49,39 @@ def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
 
 
 def _allowed_path(raw_path: str, cwd: Path) -> bool:
-    """True only for root bus files and project-local architecture ADRs."""
+    """True only for Architect artifacts and Claude persistent-memory Markdown."""
     try:
-        relative = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
+        path = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
             strict=False
-        ).relative_to(cwd.resolve()).as_posix()
+        )
+    except OSError:
+        return False
+    try:
+        relative = path.relative_to(cwd.resolve()).as_posix()
+    except (OSError, ValueError):
+        relative = None
+    if relative is not None:
+        if relative in _BUS_NAMES:
+            return True
+        if relative.startswith("HANDOFF_") and relative.endswith(".md") and "/" not in relative:
+            return True
+        if relative.startswith("docs/architecture/") and relative.endswith(".md"):
+            return True
+
+    try:
+        claude_home = Path(
+            get_env_override("CLAUDE_CONFIG_DIR", Path.home() / ".claude")
+        ).expanduser().resolve(strict=False)
+        memory_relative = path.relative_to(claude_home)
     except (OSError, ValueError):
         return False
-    if relative in _BUS_NAMES:
-        return True
-    if relative.startswith("HANDOFF_") and relative.endswith(".md") and "/" not in relative:
-        return True
-    return relative.startswith("docs/architecture/") and relative.endswith(".md")
+    parts = memory_relative.parts
+    return (
+        len(parts) >= 4
+        and parts[0] == "projects"
+        and parts[2] == "memory"
+        and path.suffix.lower() == ".md"
+    )
 
 
 def guarded_paths(payload: dict) -> list[str]:
@@ -98,7 +120,9 @@ def main() -> None:
     exit_block(
         "[builder_guard:block] Builder-first mode reserves implementation edits "
         "for Codex Builder. Write HANDOFF*.md, RESULT.md, INPUT.md, or "
-        "docs/architecture/*.md, then dispatch orchestrate.py build. "
+        "docs/architecture/*.md; Claude persistent memory Markdown under "
+        "<CLAUDE_CONFIG_DIR>/projects/*/memory/ is also allowed. Then dispatch "
+        "orchestrate.py build. "
         f"Blocked: {target}"
     )
 
