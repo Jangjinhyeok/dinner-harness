@@ -58,7 +58,7 @@ py -3 refresh.py --apply
   hard blocking lives in the sandbox/approval layer). Still dropped: `_mode`'s file-glob
   auto-inject (no Codex equivalent → modes are entered by explicit declaration) and 8
   Claude-machinery skills (5 routing aliases + 2 harness-only + 1 multi-judge). The **Two-CLI
-  roles are cross-vendor curated into AGENTS.md §7** (bidirectional — see "Two-CLI
+  roles are cross-vendor curated into AGENTS.md §8** (bidirectional — see "Two-CLI
   collaboration" below). See `CODEX-RECON.md` and `CODEX-COVERAGE.md`.
 
 ## Targets
@@ -90,7 +90,7 @@ Three operating modes (all communicate through project-root `HANDOFF.md` / `RESU
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/` (auto-injected when a
   communication file matches its paths glob).
-- **Codex**: the same protocol is curated into `assets/codex/AGENTS.md` §7. Codex has no paths
+- **Codex**: the same protocol is curated into `assets/codex/AGENTS.md` §8. Codex has no paths
   auto-inject, so modes are entered by **explicit declaration** ("architect/builder mode").
 
 Being file-based, it works on Codex 0.111+; only the Architect's optional subagent delegation
@@ -126,6 +126,12 @@ Then state your intent in ordinary conversation:
 3. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
 4. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
 5. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
+
+The branch you checked out before the session is the only delivery branch. A Builder
+worktree branch is isolation only and is never pushed. Claude creates no delivery
+branch; it stages and commits the accepted delta on your current branch only when you
+explicitly authorize `commit` or `commit and push` in that conversation. Push likewise
+requires that explicit authorization; task completion alone never authorizes it.
 
 > Questions, reading, and searching stay with Claude in the strict session. Even a tiny file
 > edit takes the Codex Builder route in that session.

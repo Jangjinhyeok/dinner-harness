@@ -69,8 +69,10 @@ Claude가 코드·문서 읽기, 검색, MCP 조사, 설계, HANDOFF 작성과 �
   Codex Builder를 자동 dispatch한 뒤 결과를 검토한다.
 - **다파일·구조 변경·HIGH 작업**: Claude가 HANDOFF(필요하면 ADR)를 보여 주고 시작 승인을
   요청한다. 완료 후에도 merge/apply 전에 사람의 종단 승인을 받는다.
-- **Git integration**: Builder는 변경을 별도 worktree에 남기며 자동 commit·merge·push하지
-  않는다. Claude의 `RESULT.md`/diff 검토 뒤 어떤 변경을 가져올지는 사용자가 결정한다.
+- **Git integration**: Builder는 변경을 별도 worktree에 남긴다. 사용자가 session 시작 전에
+  checkout해 둔 현재 branch가 delivery branch이며, `commit` 또는 `commit and push`를 현재
+  대화에서 명시 승인한 경우에만 Claude가 그 branch에 반영한다. 새 delivery branch를 만들지
+  않으며 `builder/<task>` worktree branch를 push하지 않는다.
 
 ## Layout
 
@@ -117,7 +119,7 @@ py -3 refresh.py --apply
   (`hooks/` 복사 + `hooks.json` 자동 생성 — 단 Codex에선 advisory: hard block은 sandbox/approval 레이어).
   여전히 드롭: `_mode`의 file-glob 자동 inject(Codex 대응 기제 없음 → 모드 명시 선언으로 진입)와
   Claude-machinery skills 8종(routing 별칭 5 + harness 전용 2 + 다중 judge 1). **Two-CLI 역할(roles)은
-  AGENTS.md §7로 cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
+  AGENTS.md §8로 cross-vendor curate된다**(양방향 — 아래 "Two-CLI 협업" 참조). 상세 = `CODEX-RECON.md`·`CODEX-COVERAGE.md`.
 
 ## Targets
 
@@ -142,7 +144,7 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 - **fully headless** — `orchestrate.py run`이 양쪽을 headless 구동.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/`(통신 파일 paths 매칭 시 자동 inject).
-- **Codex**: 동일 프로토콜을 `assets/codex/AGENTS.md` §7로 curate. Codex엔 paths 자동 inject가 없어 모드는
+- **Codex**: 동일 프로토콜을 `assets/codex/AGENTS.md` §8로 curate. Codex엔 paths 자동 inject가 없어 모드는
   **명시 선언**("architect/builder 모드")으로 진입한다.
 
 파일 기반이라 Codex 0.111+에서 동작하며, Architect의 옵션 서브에이전트 위임만 0.140+를 쓴다. 상세 규약은
@@ -175,8 +177,10 @@ Builder는 linked git worktree에서 작업한다. primary project tree와 Build
 1. `RESULT.md`에서 완료 gate, 변경 파일, 검증 결과와 미해결 이슈를 읽는다.
 2. Builder worktree의 `git diff`와 실제 파일을 확인한다.
 3. 요구사항·스코프·검증이 맞는지 판단한다.
-4. 통과한 변경만 사용자가 자신의 Git 절차로 integration한다. harness는 commit, merge, push를
-   자동으로 하지 않는다.
+4. 통과한 변경을 사용자가 선택한 primary branch로 integration한다. 사용자가 이 대화에서
+   `commit` 또는 `commit and push`를 명시 승인한 경우에만 agent가 정확한 파일을 그 branch에
+   stage·commit/push한다. task 완료만으로 push하지 않으며, 새 delivery branch·force-push·merge는
+   별도 지시가 필요하다.
 
 `BLOCKED`가 나오면 성공으로 취급하지 않는다. Claude가 제시한 reason, `RESULT.md`, Builder
 worktree의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 새 dispatch를 결정한다.

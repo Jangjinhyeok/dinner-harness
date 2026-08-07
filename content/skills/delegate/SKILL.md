@@ -41,8 +41,11 @@ Only two things differ by lane:
 | HIGH signals | replication/RPC, save format, live config, migration, security, public API/ABI, build pipeline | 외부로 제출·발송·공개되는 최종본 확정 (비가역 outward-facing) |
 | Verify | test / build / lint command | structural check — 섹션 존재, 분량 상한, 금지 표현, 날짜 형식 |
 
-Everything else is identical: LOW-only, mandatory scope fence, `git diff` review,
-left in the working tree, not staged or committed.
+Everything else is identical: LOW-only, mandatory scope fence and `git diff` review.
+The Builder delta remains uncommitted until Architect review. If the user explicitly
+authorizes `commit` or `commit and push` in the current conversation, integrate only
+the accepted delta into the user-selected current delivery branch; never create or
+push a new delivery branch.
 
 **Prerequisite (both lanes): the work directory must be a git repo.** The safety
 net collects the changeset via `git status --porcelain` and **fails closed** when
@@ -102,8 +105,9 @@ LOW-only by construction.
    offer the manual fallback (open a Codex terminal, `builder 모드`, run the
    handoff).
 5. **Report** — a §5 structure briefing: what changed, which files, verification
-   result. Changes are left in the working tree, NOT committed — the user owns
-   the commit.
+   result. Do not commit merely because the LOW build passed. An explicit current-turn
+   `commit` or `commit and push` authorization targets only the user-selected current
+   delivery branch after the accepted delta is integrated.
 
 ## Guardrails
 
@@ -136,7 +140,9 @@ LOW-only by construction.
   you undo a bad turn.
 - **Default pairing only** — Claude=Architect dispatches Codex=Builder. If codex is
   unavailable/unauthenticated, fall back to manual.
-- **No commit/merge** — LOW is report-only; the user commits.
+- **Delivery discipline** — LOW is report-only unless the user explicitly authorizes
+  `commit` or `commit and push` in the current conversation. Use the user-selected
+  current branch only; do not create, switch, merge, or push a delivery branch.
 
 ## Example — code lane
 
@@ -152,7 +158,8 @@ User: "위임 — src/util/date.py에 KST 기준 오늘 날짜를 'YYYY-MM-DD'�
    - Verify: `python -c "import re, src.util.date as d; assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', d.today_kst())"`
 3. Dispatch `orchestrate.py build --handoff HANDOFF_DELEGATE.md`.
 4. BUILT → read diff, run verify (PASS), accept.
-5. Report: `src/util/date.py` +1 function, verify PASS, left in the working tree (not committed).
+5. Report: `src/util/date.py` +1 function, verify PASS, awaiting optional explicit
+   integration/commit authorization on the user's current branch.
 
 ## Example — document lane
 

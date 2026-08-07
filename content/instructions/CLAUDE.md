@@ -211,7 +211,7 @@ Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 —
 cross-vendor 시 주의:
 
 - **HANDOFF.md는 self-contained여야 한다.** Builder가 다른 vendor면 상대에게 없는 도구(특정 skill·subagent·`/명령`)를 전제하지 않는다. 게이트의 빌드·검증은 표준 CLI 명령으로 기술한다.
-- **Codex 세션은 path-매칭 auto-inject가 없다.** Claude는 `HANDOFF.md`/`RESULT.md`를 읽으면 `_mode` reminder가 자동으로 박히지만, Codex엔 그 기제가 없으므로 사용자가 모드를 **명시 선언**한다(`architect 모드`/`builder 모드`). Codex의 역할 프로토콜은 `~/.codex/AGENTS.md`의 Two-CLI 섹션(§7)에 있다.
+- **Codex 세션은 path-매칭 auto-inject가 없다.** Claude는 `HANDOFF.md`/`RESULT.md`를 읽으면 `_mode` reminder가 자동으로 박히지만, Codex엔 그 기제가 없으므로 사용자가 모드를 **명시 선언**한다(`architect 모드`/`builder 모드`). Codex의 역할 프로토콜은 `~/.codex/AGENTS.md`의 Two-CLI 섹션(§8)에 있다.
 
 ### 모드를 사용하지 않아도 되는 경우
 
@@ -260,7 +260,28 @@ cross-vendor 시 주의:
 
 ---
 
-## 6. Self-Review 규칙
+## 6. Git branch ownership과 delivery
+
+사용자가 작업 전에 checkout해 둔 **현재 non-detached branch**가 유일한 delivery branch다.
+agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 switch·checkout·rebase·merge하지
+않는다. 작업 시작 시 `git branch --show-current`으로 branch를 확인하고, 비어 있거나 detached면
+사용자에게 먼저 branch를 준비해 달라고 요청한다.
+
+- Builder의 `builder/<task>` linked worktree branch는 safety net을 위한 **임시 격리 경계**이며
+  delivery branch가 아니다. 그 branch에서 remote push하지 않으며, 수용한 delta의 integration은
+  사용자가 열어 둔 primary branch로만 한다.
+- 사용자가 현재 대화에서 명시적으로 `commit` 또는 `commit and push`를 요청/승인한 경우에만,
+  수용된 정확한 파일을 그 현재 branch에 stage·commit한다. `push`도 같은 명시 권한이 있어야 하며,
+  upstream/remote가 없거나 대상이 예상과 다르면 추측하지 말고 중단·질문한다.
+- task 완료, LOW 판정, `BUILT`만으로 commit/push 권한이 생기지 않는다. force-push, history rewrite,
+  merge는 별도의 명시 지시가 필요하다.
+
+이 규약의 목적은 사용자 branch를 delivery의 단일 기준으로 유지하는 것이다. agent가 새 branch를
+만들어 작업을 숨기거나, Builder isolation branch를 사용자의 공개 history로 밀어 넣어서는 안 된다.
+
+---
+
+## 7. Self-Review 규칙
 
 코드 작성/수정 완료 후 self-review를 수행한다. 단일 self-review는 자기 작업을 영합적으로 통과시키기 쉬우므로, 규모·위험에 따라 검토 주체를 나눈다(per `~/.claude/rules/autonomy-policy.md`):
 
@@ -279,7 +300,7 @@ cross-vendor 시 주의:
 
 ---
 
-## 7. 프로젝트별 CLAUDE.md와의 관계
+## 8. 프로젝트별 CLAUDE.md와의 관계
 
 - 이 문서(user-level)는 **메타 원칙**과 **개인 스타일** 전용이다.
 - 프로젝트별 `CLAUDE.md`는 **그 프로젝트의 도메인 지식**(아키텍처, 컨벤션, 모듈 구조 등)을 담는다.

@@ -45,6 +45,7 @@
    - tier-gate(verdict)는 advisory다 — 판정은 아래 in-session 리뷰가 한다.
 3. 결과 처리:
    - `[outcome] BUILT` → Builder worktree의 RESULT.md + `git -C ../<repo>-build diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정. 수용된 출력의 primary branch 반영은 별도의 repository change-integration 절차다.
+   - **Delivery branch**: Architect가 시작 시 확인한 사용자의 current non-detached branch만 delivery 대상이다. `builder/<task>`는 격리용이고 push하지 않는다. 사용자가 현재 대화에서 `commit` 또는 `commit and push`를 명시 승인한 경우에만, 수용된 delta를 그 primary branch에 integration한 뒤 정확한 파일만 stage·commit한다. push 전에 current branch·upstream·remote를 재확인하고, 다르면 중단한다. agent는 delivery branch를 새로 만들거나 switch·merge·force-push하지 않는다.
    - **HIGH 게이트 포함 시** merge/apply/commit 전 **사람 종단 서명**을 in-session에서 받는다(orchestrator는 파일만 남기고 stage·commit·merge·deploy 어느 것도 하지 않음).
    - 재작업 필요 → 새 HANDOFF.md 작성 후 1번부터 재-dispatch.
    - `[outcome] BLOCKED` 또는 명령 에러(codex 미인증/플래그 불일치 등) → **자동 진행하지 말고** 사용자에게 보고하고, 수동 fallback 안내: Codex 터미널에서 `builder 모드`로 HANDOFF.md 진행.

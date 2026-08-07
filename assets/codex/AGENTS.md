@@ -2,7 +2,7 @@
 
 이 문서는 Codex의 `~/.codex/AGENTS.md`로 로드되는 사용자 레벨 지침이다. 프로젝트별 `AGENTS.md`가 있으면 그것과 함께 들어가며, 프로젝트별 지침이 더 구체적이고 우선한다. 목적은 도메인과 무관한 **메타 원칙**과 **개인 작업 스타일**을 명문화하는 것이다.
 
-이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. **Two-CLI 역할 모드(Architect/Builder)는 cross-vendor로 지원된다 — §7 참조.** custom agents(13개 — 2026-07-02 엔진 leaf 8개가 `~/.codex/docs/specialists/` 참조 문서로 강등) + hooks는 이제 이 codex 설치에 **포팅돼 있다**(adapter v2, Codex 0.141). 단 **hooks는 advisory다** — 발화·로그·warn은 하지만 hard block은 안 한다(Codex의 실제 차단은 PreToolUse 훅 exit-2가 아니라 sandbox/approval 레이어; 검증 = dinner-harness `CODEX-COVERAGE.md` §6.3). `_mode` 파일 자동 inject(paths 매칭)와 depth-2 다중hop 위임은 여전히 미대응이다(Two-CLI 모드는 명시 선언으로 진입 — §7; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
+이 문서는 Claude 하네스 user-instructions의 **Codex-큐레이션 버전**이다. **Two-CLI 역할 모드(Architect/Builder)는 cross-vendor로 지원된다 — §8 참조.** custom agents(13개 — 2026-07-02 엔진 leaf 8개가 `~/.codex/docs/specialists/` 참조 문서로 강등) + hooks는 이제 이 codex 설치에 **포팅돼 있다**(adapter v2, Codex 0.141). 단 **hooks는 advisory다** — 발화·로그·warn은 하지만 hard block은 안 한다(Codex의 실제 차단은 PreToolUse 훅 exit-2가 아니라 sandbox/approval 레이어; 검증 = dinner-harness `CODEX-COVERAGE.md` §6.3). `_mode` 파일 자동 inject(paths 매칭)와 depth-2 다중hop 위임은 여전히 미대응이다(Two-CLI 모드는 명시 선언으로 진입 — §8; 상세 = dinner-harness `CODEX-RECON.md`·`CODEX-COVERAGE.md`). 외부 룰셋(ECC cherry-pick)은 `~/.codex/ecc-reference/`에 lookup-only 참고 카탈로그로 둔다 — 자동 inject되지 않으며 필요할 때만 읽는다.
 
 > **Codex 환경 안전 노트 (중요):**
 > - **Hooks는 advisory (hard block 아님)**: `secret_scan`·`scope_check` 훅은 이제 포팅돼 **발화·로그·warn은 하지만**, Codex 0.141에서 PreToolUse exit-2가 파일 편집(`apply_patch`)을 **차단하지 못한다**(검증 = `CODEX-COVERAGE.md` §6.3; 실제 차단점은 file-change approval·sandbox 레이어). 따라서 시크릿 유출·스코프 침범의 hard 방지는 **사용자 + Codex sandbox/approval의 책임**이며 이 훅들은 경고일 뿐이다. `.env`·자격증명 파일을 읽거나 출력하지 않도록 스스로 엄격히 주의한다.
@@ -82,20 +82,41 @@
 ## 4. 응답 스타일
 
 - **위험 경고를 먼저**: 라이브 서비스나 큰 변경 가능성이 있는 작업은 위험을 먼저 명시한 후 진행한다.
-- **계획 먼저, risk tier로 게이팅**: 비단순 작업은 변경 계획과 risk tier(LOW/HIGH)를 먼저 제시한다. 사람은 시작(intent)·종단(수용) 두 경계에 선다. **Codex 주의**: Claude 쪽의 자율화는 agent jury(`adversarial-review`)와 hook 안전망에 기댄다 — Codex엔 **둘 다 없으므로** 더 보수적으로 간다. **LOW**는 deterministic 검증(`verification-loop`) 후 결과를 사람이 종단 검토; **HIGH**는 매 게이트를 사람이 명시 리뷰한다(아래 §7). (Claude 쪽 LOW는 jury가 있어 종단 검토도 생략하고 결과 보고만 하지만, Codex LOW는 jury가 없어 사람이 종단에서 검토한다 — 의도된 보수화.)
+- **계획 먼저, risk tier로 게이팅**: 비단순 작업은 변경 계획과 risk tier(LOW/HIGH)를 먼저 제시한다. 사람은 시작(intent)·종단(수용) 두 경계에 선다. **Codex 주의**: Claude 쪽의 자율화는 agent jury(`adversarial-review`)와 hook 안전망에 기댄다 — Codex엔 **둘 다 없으므로** 더 보수적으로 간다. **LOW**는 deterministic 검증(`verification-loop`) 후 결과를 사람이 종단 검토; **HIGH**는 매 게이트를 사람이 명시 리뷰한다(아래 §8). (Claude 쪽 LOW는 jury가 있어 종단 검토도 생략하고 결과 보고만 하지만, Codex LOW는 jury가 없어 사람이 종단에서 검토한다 — 의도된 보수화.)
 - **대안 제시**: 접근법이 여러 개일 때는 각각의 장단점을 비교한다. 특히 성능과 안정성 관점에서.
 - **단계별 안내**: 복잡한 작업은 한 번에 전체 코드를 주지 않고 단계별로 나눠 진행한다.
 - **구조 브리핑**: 코드 구현·수정의 완료 보고에는 결과(파일·검증)만이 아니라 **구조**를 담는다 — 새/변경 클래스·모듈과 책임 한 줄, 데이터/호출 흐름, 왜 이 구조인지(버린 대안 하나), 직접 열어볼 파일 2~3개. 코드는 AI가 짜도 구조는 사용자 머리에 남아야 한다(comprehension debt 방지).
 
 ---
 
-## 5. Self-Review 규칙
+## 5. Git branch ownership과 delivery
+
+사용자가 작업 전에 checkout해 둔 **현재 non-detached branch**가 유일한 delivery branch다.
+agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 switch·checkout·rebase·merge하지
+않는다. 작업 시작 시 `git branch --show-current`으로 branch를 확인하고, 비어 있거나 detached면
+사용자에게 먼저 branch를 준비해 달라고 요청한다.
+
+- Builder의 `builder/<task>` linked worktree branch는 safety net을 위한 **임시 격리 경계**이며
+  delivery branch가 아니다. 그 branch에서 remote push하지 않으며, 수용한 delta의 integration은
+  사용자가 열어 둔 primary branch로만 한다.
+- 사용자가 현재 대화에서 명시적으로 `commit` 또는 `commit and push`를 요청/승인한 경우에만,
+  수용된 정확한 파일을 그 현재 branch에 stage·commit한다. `push`도 같은 명시 권한이 있어야 하며,
+  upstream/remote가 없거나 대상이 예상과 다르면 추측하지 말고 중단·질문한다.
+- task 완료, LOW 판정, `BUILT`만으로 commit/push 권한이 생기지 않는다. force-push, history rewrite,
+  merge는 별도의 명시 지시가 필요하다.
+
+이 규약의 목적은 사용자 branch를 delivery의 단일 기준으로 유지하는 것이다. agent가 새 branch를
+만들어 작업을 숨기거나, Builder isolation branch를 사용자의 공개 history로 밀어 넣어서는 안 된다.
+
+---
+
+## 6. Self-Review 규칙
 
 코드 작성/수정 완료 후 self-review를 수행한다. 리뷰 결과는 "리뷰 완료, 이슈 N개: ..." 형식으로 명시 보고하고, 이슈가 없으면 "리뷰 완료, 이슈 없음"이라고 명시한다.
 
-> **degraded 주의**: Claude 하네스는 비-trivial/HIGH 변경의 중간 판단을 `adversarial-review`(직교 축 다중 judge) 패널로 내린다. 이 패널은 **Claude subagent 전용 기제라 이 codex 설치엔 없다**. 따라서 Codex에선 self-review가 단일 검토로 남으며, HIGH-tier 변경은 그 약점을 **사람의 명시 게이트 검토**로 메운다(§7).
+> **degraded 주의**: Claude 하네스는 비-trivial/HIGH 변경의 중간 판단을 `adversarial-review`(직교 축 다중 judge) 패널로 내린다. 이 패널은 **Claude subagent 전용 기제라 이 codex 설치엔 없다**. 따라서 Codex에선 self-review가 단일 검토로 남으며, HIGH-tier 변경은 그 약점을 **사람의 명시 게이트 검토**로 메운다(§8).
 
-**Two-CLI 이행 인정**: Builder 세션(§7)의 산출물은 별도 Architect 세션의 **RESULT.md + `git diff` 검토**가 self-review 이행으로 인정된다 — Builder가 같은 세션에서 이중 리뷰할 필요 없다. 단 Two-CLI 밖의 대형 인라인 세션(대략 4파일+ 변경)은 이 조항으로 리뷰를 건너뛸 수 없다 — 세션 종료 전 위 체크리스트를 반드시 거친다.
+**Two-CLI 이행 인정**: Builder 세션(§8)의 산출물은 별도 Architect 세션의 **RESULT.md + `git diff` 검토**가 self-review 이행으로 인정된다 — Builder가 같은 세션에서 이중 리뷰할 필요 없다. 단 Two-CLI 밖의 대형 인라인 세션(대략 4파일+ 변경)은 이 조항으로 리뷰를 건너뛸 수 없다 — 세션 종료 전 위 체크리스트를 반드시 거친다.
 
 체크리스트:
 1. 빌드 — 컴파일 통과하는가?
@@ -105,7 +126,7 @@
 
 ---
 
-## 6. 프로젝트별 AGENTS.md와의 관계
+## 7. 프로젝트별 AGENTS.md와의 관계
 
 - 이 문서(user-level)는 **메타 원칙**과 **개인 스타일** 전용이다.
 - 프로젝트별 `AGENTS.md`는 **그 프로젝트의 도메인 지식**(아키텍처, 컨벤션, 모듈 구조 등)을 담는다.
@@ -114,7 +135,7 @@
 
 ---
 
-## 7. Two-CLI 역할 모드 (cross-vendor)
+## 8. Two-CLI 역할 모드 (cross-vendor)
 
 큰 작업은 설계·검토(**Architect**)와 구현(**Builder**) 두 역할로 나눈다. "Two-CLI"는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**을 뜻한다. 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 그리고 기본 모드에서 **Codex Builder는 사람이 여는 세션이 아니라 인터랙티브 Claude(Architect)가 `orchestrate.py build`로 dispatch하는 headless `codex exec` 호출**(single-pane)이다 — 이때 아래 "헤드리스 orchestration 모드" 규약을 따른다. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다.
 
