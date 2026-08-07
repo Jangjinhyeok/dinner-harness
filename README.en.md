@@ -122,7 +122,9 @@ Then state your intent in ordinary conversation:
 
 1. Claude explores the codebase, then writes **`HANDOFF_DELEGATE.md`** for a single-purpose LOW task or **`HANDOFF.md`** (gates, scope, risk tier) otherwise.
 2. The original LOW request is its start gate; a HIGH task waits for **HANDOFF approval**. Claude then auto-runs
-   `py -3 ~/.claude/orchestrate.py build --repo . --backend real`, **dispatching the Codex Builder headless**.
+   `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real`,
+   **dispatching the Codex Builder headless**. The paths are resolved before the Bash call;
+   it must not add `cd`, a pipe, or redirection.
 3. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
 4. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
 5. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
@@ -138,15 +140,21 @@ requires that explicit authorization; task completion alone never authorizes it.
 
 ### 2) Calling the orchestrator directly (optional)
 
+In PowerShell, resolve the two placeholders to forward-slash absolute paths before
+calling the command. This is copyable; do not add `cd`, a pipe, or redirection.
+
 ```
+$claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
+$builderWorktree = (Resolve-Path '..\your-repo-build').Path -replace '\\', '/'
+
 # Builder-only, once, from an existing HANDOFF.md (the command single-pane uses internally)
-py -3 ~/.claude/orchestrate.py build --repo . --backend real
+py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree" --backend real
 
 # Both Architect and Builder fully headless (human only at the boundaries)
 py -3 ~/.claude/orchestrate.py run --goal "..." --backend real --repo .
 
 # Offline smoke, no CLIs needed
-py -3 ~/.claude/orchestrate.py build --repo . --backend mock
+py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree" --backend mock
 ```
 
 ### 3) Manual dual-session (fallback / reverse pairing)

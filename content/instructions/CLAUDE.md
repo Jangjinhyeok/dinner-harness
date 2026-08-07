@@ -206,7 +206,11 @@ Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 —
 
 통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본은 같은 프로젝트 디렉터리지만, 실제 Builder dispatch는 아래처럼 별도 git worktree를 사용해 Architect와 Builder의 변경을 격리한다. 런타임 IPC나 MCP는 필요 없다.
 
-**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, 우선 `git worktree add -b builder/<task> ../<repo>-build HEAD`로 Builder worktree를 만들고 승인된 HANDOFF.md를 그 루트로 복사한다. 이어 `py -3 ~/.claude/orchestrate.py build --repo ../<repo>-build --backend real`로 **Codex Builder를 자동 dispatch**하고(headless), Builder worktree의 RESULT.md + `git -C ../<repo>-build diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
+**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, 우선 `git worktree add -b builder/<task> ../<repo>-build HEAD`로 Builder worktree를 만들고 승인된 HANDOFF.md를 그 루트로 복사한다.
+
+이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real` 형태로 **Codex Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다.
+
+Builder worktree의 RESULT.md + `git -C <ABSOLUTE_BUILDER_WORKTREE> diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
 
 cross-vendor 시 주의:
 
@@ -231,7 +235,7 @@ cross-vendor 시 주의:
 - 기술 토론은 한국어로 진행하고, 기술 용어는 영어를 그대로 사용한다.
 - 예: "UMG widget hierarchy를 최적화하자" (한국어 구조 + 영어 용어)
 - "UMG 위젯 계층"처럼 모든 기술 용어를 번역하지 않는다.
-- 코드 주석과 커밋 메시지는 영어를 기본으로 한다.
+- 코드 주석은 영어를 기본으로 하고, 커밋 메시지는 한글로 작성한다.
 - 변수명, 함수명, 클래스명은 항상 영어.
 
 ---

@@ -5,6 +5,9 @@
       "CLAUDE_SECRET_SCAN_MODE": "enforce"
     },
   "permissions": {
+    "allow": [
+      "Bash(py -3 \"<CLAUDE_HOME>/orchestrate.py\" build --repo *)"
+    ],
     "deny": [
       "Bash(rm -rf *)",
       "Bash(git reset --hard*)",

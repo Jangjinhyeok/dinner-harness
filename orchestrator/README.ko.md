@@ -83,7 +83,9 @@ $builderWorktree = "../repo-build"
 git worktree add -b builder/my-task $builderWorktree HEAD
 Copy-Item -LiteralPath .\HANDOFF.md -Destination "$builderWorktree\HANDOFF.md"
 
-py -3 ~/.claude/orchestrate.py build --repo $builderWorktree --backend real
+$claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
+$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path -replace '\\', '/'
+py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real
 
 # primary가 아니라 Builder worktree에서 bus와 diff를 검토한다.
 Get-Content -Raw "$builderWorktree\RESULT.md"
@@ -207,7 +209,7 @@ mechanism 설명이지 두 layer가 항상 동시에 active라는 뜻은 아닙�
 > **이 영역을 바꾸면 반드시 install합니다.** `assets/claude/hooks/`, `orchestrator/`,
 > `orchestrate.py` 아래를 바꾼 뒤에는
 > `py -3 install.py --target claude --allow-live`(필요하면 `--target codex`)를 다시
-> 실행하세요. live dispatch는 `py -3 ~/.claude/orchestrate.py build`로 **설치본**을
+> 실행하세요. live dispatch는 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>"`로 **설치본**을
 > 실행하므로 repo에만 있는 수정은 runtime에 적용되지 않습니다. `py -3 check.py`의
 > install-drift axis가 repo와 설치본의 차이를 보고합니다. 이것은 report일 뿐 install하지는
 > 않습니다.
@@ -246,7 +248,7 @@ orchestrator/
 ```
 
 `orchestrate.py`와 이 package는 `install.py`가 `~/.claude`에 설치합니다
-(`harness.toml` 참조). 기본 dispatch가 `py -3 ~/.claude/orchestrate.py build`를
+(`harness.toml` 참조). 기본 dispatch가 quoted absolute-path `orchestrate.py build`를
 실행하기 때문입니다. 이들은 skill/agent/hook이 아니므로 harness capability catalog에
 나타나지 않으며, 설치본 대조가 없던 예전 `check.py`에서는 보지도 않았습니다. 따라서 이
 영역의 수정이 repo에만 남고 live lane은 구버전을 계속 실행할 수 있습니다.

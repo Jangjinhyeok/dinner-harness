@@ -85,7 +85,9 @@ $builderWorktree = "../repo-build"
 git worktree add -b builder/my-task $builderWorktree HEAD
 Copy-Item -LiteralPath .\HANDOFF.md -Destination "$builderWorktree\HANDOFF.md"
 
-py -3 ~/.claude/orchestrate.py build --repo $builderWorktree --backend real
+$claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
+$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path -replace '\\', '/'
+py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real
 
 # Review the Builder's bus and diff in the Builder worktree, not the primary one.
 Get-Content -Raw "$builderWorktree\RESULT.md"
@@ -254,7 +256,7 @@ verbatim" above describes the *mechanism*, not two live layers.
 > `assets/claude/hooks/`, `orchestrator/`, or `orchestrate.py`, re-run
 > `py -3 install.py --target claude --allow-live` (and `--target codex`). All
 > three are installed, and the live dispatch
-> (`py -3 ~/.claude/orchestrate.py build`) runs the **installed** copy — so a fix
+> (`py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>"`) runs the **installed** copy — so a fix
 > that stays in the repo is a fix that is not in force. `py -3 check.py` will
 > tell you: its install-drift axis lists every file whose live copy differs from
 > the repo. It reports, it does not install.
@@ -298,7 +300,7 @@ orchestrator/
 
 `orchestrate.py` and this package **are** installed into `~/.claude` by
 `install.py` (see `harness.toml`), because the default dispatch documented in
-`ROLE_ARCHITECT.md` runs `py -3 ~/.claude/orchestrate.py build`. They are not
+`ROLE_ARCHITECT.md` runs the quoted absolute-path `orchestrate.py build` form. They are not
 skills/agents/hooks, so they do not appear in the harness capability catalog and
 `check.py` does not look at them — which is exactly why a change here can sit in
 the repo, unnoticed, while the live lane keeps running the old copy.

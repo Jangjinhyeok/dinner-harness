@@ -38,7 +38,8 @@
    - `git worktree add -b builder/<task> ../<repo>-build HEAD`
    - `Copy-Item -LiteralPath .\HANDOFF.md -Destination ..\<repo>-build\HANDOFF.md`
    - HANDOFF.md는 uncommitted bus artifact라 worktree에 자동으로 생기지 않는다. 복사한 승인본만 dispatch하며 Builder가 바꾼 handoff를 primary tree로 되돌려 복사하지 않는다.
-2. Bash로 호출: `py -3 ~/.claude/orchestrate.py build --repo ../<repo>-build --backend real`
+2. Bash로 호출: `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real`
+   - `<CLAUDE_HOME>`은 설치된 Claude home의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, pipe, redirection을 붙이지 않는다. 이 정확한 command shape만 Claude permission allowlist가 허용한다.
    - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경과 RESULT.md를 **Builder worktree**에 남긴다. primary Architect tree의 동시 변경은 Builder `git status`/safety-net snapshot에 들어가지 않는다. (orchestrator는 `git add`를 하지 않는다 — 변경은 untracked/unstaged 상태로 남는다.)
    - linked worktree는 Git common directory를 공유한다. Builder 실행 중 primary tree에서 `git stash`, `core.excludesFile`, `.git/info/exclude`를 바꾸지 않는다. 이들은 witness fingerprint의 공유 입력이라 변경 시 net은 의도적으로 fail-closed 한다.
    - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex는 Claude hook을 안 쏘므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.

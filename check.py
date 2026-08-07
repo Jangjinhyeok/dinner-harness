@@ -154,6 +154,28 @@ def _json_key_drift(rel, want_text, got_text):
     for k in want:
         if k not in got:
             problems.append(f"{rel}: 설치본에 키 없음 — `{k}`")
+        elif k == "permissions" and isinstance(want[k], dict) and isinstance(got[k], dict):
+            for permission_key, required in want[k].items():
+                if permission_key not in got[k]:
+                    problems.append(
+                        f"{rel}: permissions에 키 없음 — `{permission_key}`"
+                    )
+                elif permission_key in {"allow", "ask", "deny"} and isinstance(required, list):
+                    actual = got[k][permission_key]
+                    if not isinstance(actual, list):
+                        problems.append(
+                            f"{rel}: permissions.{permission_key} 내용 다름"
+                        )
+                    else:
+                        for rule in required:
+                            if rule not in actual:
+                                problems.append(
+                                    f"{rel}: permissions.{permission_key}에 canonical rule 없음 — `{rule}`"
+                                )
+                elif got[k][permission_key] != required:
+                    problems.append(
+                        f"{rel}: permissions.{permission_key} 내용 다름"
+                    )
         elif got[k] != want[k]:
             problems.append(f"{rel}: 키 내용 다름 — `{k}`")
     return problems
@@ -165,7 +187,8 @@ def check_install(target, live_root=None, username=None):
     Returns (present, problems). present=False means the install root does not exist —
     reported, but not counted as drift: a machine need not use every target.
     """
-    manifest = tomllib.load(open(MANIFEST, "rb"))
+    with open(MANIFEST, "rb") as manifest_file:
+        manifest = tomllib.load(manifest_file)
     target_cfg = manifest.get("targets", {}).get(target)
     if target_cfg is None:
         return True, [f"harness.toml에 target '{target}' 없음"]

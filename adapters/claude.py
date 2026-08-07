@@ -14,6 +14,42 @@ import shutil
 from pathlib import Path
 
 
+_PERMISSION_RULE_LISTS = ("allow", "ask", "deny")
+
+
+def _stable_union(existing, rendered):
+    """Return ordered, duplicate-free permission rules from both install states."""
+    merged = []
+    for rules in (existing, rendered):
+        for rule in rules:
+            if rule not in merged:
+                merged.append(rule)
+    return merged
+
+
+def _merge_template_json(existing, rendered):
+    """Merge a rendered template without clobbering user permission policy.
+
+    The template owns its top-level keys, but Claude permission rule lists are an
+    additive policy surface: preserving existing rules avoids changing a user's
+    approval posture when harness adds one required dispatch rule.
+    """
+    merged = {**existing, **rendered}
+    existing_permissions = existing.get("permissions")
+    rendered_permissions = rendered.get("permissions")
+    if not isinstance(existing_permissions, dict) or not isinstance(rendered_permissions, dict):
+        return merged
+
+    permissions = {**existing_permissions, **rendered_permissions}
+    for key in _PERMISSION_RULE_LISTS:
+        old_rules = existing_permissions.get(key)
+        new_rules = rendered_permissions.get(key)
+        if isinstance(old_rules, list) and isinstance(new_rules, list):
+            permissions[key] = _stable_union(old_rules, new_rules)
+    merged["permissions"] = permissions
+    return merged
+
+
 def _excluded(rel, exclude_dirs, exclude_suffixes):
     return any(part in exclude_dirs for part in rel.parts) or rel.name.endswith(exclude_suffixes)
 
@@ -71,7 +107,7 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
                 data.pop(k, None)
             if merge and dest.is_file():
                 existing = json.loads(dest.read_text(encoding="utf-8"))
-                data = {**existing, **data}  # template keys win; existing-only keys kept
+                data = _merge_template_json(existing, data)
             text = json.dumps(data, indent=2) + "\n"
         plan.append(("merge" if merge else "template", dest))
         if not dry_run:

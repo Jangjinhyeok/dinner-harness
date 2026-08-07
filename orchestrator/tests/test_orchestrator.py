@@ -12,10 +12,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from adapters import claude as claude_adapter
+import check
 import orchestrate
 import refresh
 from orchestrator import bus
@@ -119,6 +122,103 @@ class TestVendorRunner(unittest.TestCase):
 
 
 class TestBuilderFirstGuard(unittest.TestCase):
+    def test_template_wires_one_narrow_rendered_builder_dispatch_allow(self):
+        template = json.loads(
+            (Path(__file__).resolve().parents[2] / "assets" / "claude" /
+             "settings.json.template").read_text(encoding="utf-8")
+        )
+        allow = template["permissions"].get("allow", [])
+        expected = 'Bash(py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo *)'
+        self.assertEqual(allow, [expected])
+        self.assertNotIn("Bash(py -3 *)", allow)
+        self.assertNotIn("Bash(py *)", allow)
+        self.assertNotIn("Bash(*)", allow)
+
+    def test_claude_install_preserves_permission_rules_and_check_detects_missing_dispatch_allow(self):
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            dest.mkdir()
+            existing = {
+                "skipWorkflowUsageWarning": True,
+                "permissions": {
+                    "allow": ["Bash(git status *)"],
+                    "ask": ["Bash(npm publish *)"],
+                    "deny": ["Bash(custom destructive *)"],
+                    "additionalDirectories": ["C:/Tools"],
+                },
+            }
+            (dest / "settings.json").write_text(
+                json.dumps(existing), encoding="utf-8"
+            )
+            manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+            target = manifest["targets"]["claude"]
+            vars_cfg = manifest["vars"]
+            claude_adapter.install(root, target, vars_cfg, dest, "tester", dry_run=False)
+            claude_adapter.install(root, target, vars_cfg, dest, "tester", dry_run=False)
+
+            installed = json.loads((dest / "settings.json").read_text(encoding="utf-8"))
+            permissions = installed["permissions"]
+            dispatch = f'Bash(py -3 "{dest.as_posix()}/orchestrate.py" build --repo *)'
+            self.assertTrue(installed["skipWorkflowUsageWarning"])
+            self.assertIn("Bash(git status *)", permissions["allow"])
+            self.assertIn(dispatch, permissions["allow"])
+            self.assertIn("Bash(npm publish *)", permissions["ask"])
+            self.assertIn("Bash(custom destructive *)", permissions["deny"])
+            self.assertIn("Bash(git clean -f*)", permissions["deny"])
+            self.assertEqual(permissions["allow"].count(dispatch), 1)
+            self.assertEqual(permissions["additionalDirectories"], ["C:/Tools"])
+
+            present, problems = check.check_install("claude", live_root=dest, username="tester")
+            self.assertTrue(present)
+            self.assertEqual(problems, [])
+
+            permissions["allow"].remove(dispatch)
+            (dest / "settings.json").write_text(json.dumps(installed), encoding="utf-8")
+            present, problems = check.check_install("claude", live_root=dest, username="tester")
+            self.assertTrue(present)
+            self.assertTrue(any("permissions.allow" in problem for problem in problems), problems)
+
+    def test_architect_and_delegate_document_an_unpiped_absolute_dispatch_shape(self):
+        root = Path(__file__).resolve().parents[2]
+        architect = (root / "content" / "roles" / "ROLE_ARCHITECT.md").read_text(encoding="utf-8")
+        delegate = (root / "content" / "skills" / "delegate" / "SKILL.md").read_text(encoding="utf-8")
+        architect_cmd = (
+            'py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
+            '"<ABSOLUTE_BUILDER_WORKTREE>" --backend real'
+        )
+        delegate_cmd = architect_cmd + " --handoff HANDOFF_DELEGATE.md"
+        self.assertIn(architect_cmd, architect)
+        self.assertIn(delegate_cmd, delegate)
+        self.assertNotIn("cd &&", architect)
+        self.assertNotIn("| tail", architect)
+        self.assertNotIn("| head", architect)
+
+        for rel in (
+            "content/instructions/CLAUDE.md",
+            "content/rules/_mode/architect.md",
+            "assets/claude/README.md",
+        ):
+            text = (root / rel).read_text(encoding="utf-8")
+            self.assertIn(architect_cmd, text, rel)
+            self.assertNotIn("~/.claude/orchestrate.py build", text, rel)
+
+        readme = (root / "README.en.md").read_text(encoding="utf-8")
+        direct_section = readme.split("### 2) Calling the orchestrator directly (optional)", 1)[1]
+        direct_section = direct_section.split("### 3)", 1)[0]
+        self.assertIn('py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree"', direct_section)
+        self.assertNotIn("<CLAUDE_HOME>", direct_section)
+        self.assertNotIn("<ABSOLUTE_BUILDER_WORKTREE>", direct_section)
+
+        for rel in ("orchestrator/README.md", "orchestrator/README.ko.md"):
+            text = (root / rel).read_text(encoding="utf-8")
+            self.assertIn('$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path', text, rel)
+            self.assertIn(
+                'py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real',
+                text,
+                rel,
+            )
+
     def test_daily_launcher_enables_strict_builder_first_and_manifest_installs_it(self):
         root = Path(__file__).resolve().parents[2] / "assets" / "claude"
         daily = (root / "dh.cmd").read_text(encoding="utf-8")

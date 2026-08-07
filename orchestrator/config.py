@@ -14,7 +14,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # Two layouts resolve the same _REPO_ROOT differently: in the dev source tree the
 # hooks live at assets/claude/hooks; once installed to ~/.claude (orchestrator/
 # copied alongside hooks/) they live at <root>/hooks. Prefer the dev path, fall
-# back to the installed path so `py -3 ~/.claude/orchestrate.py build` still finds
+# back to the installed path so the quoted absolute-path `orchestrate.py build` still finds
 # the net.
 def _resolve_hooks_dir() -> Path:
     dev = _REPO_ROOT / "assets" / "claude" / "hooks"
