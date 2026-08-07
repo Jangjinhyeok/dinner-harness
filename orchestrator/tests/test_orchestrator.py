@@ -119,6 +119,16 @@ class TestVendorRunner(unittest.TestCase):
 
 
 class TestBuilderFirstGuard(unittest.TestCase):
+    def test_daily_launcher_enables_strict_builder_first_and_manifest_installs_it(self):
+        root = Path(__file__).resolve().parents[2] / "assets" / "claude"
+        daily = (root / "dh.cmd").read_text(encoding="utf-8")
+        manifest = (Path(__file__).resolve().parents[2] / "harness.toml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('set "DINNER_EXECUTION_MODE=builder-first"', daily)
+        self.assertIn("claude %*", daily)
+        self.assertIn('["assets/claude/dh.cmd",                "dh.cmd"]', manifest)
+
     def test_claude_template_wires_guard_for_structured_file_edits(self):
         # A correct handler that is absent from settings is indistinguishable
         # from no guard at all. Pin the installed Claude matcher and launcher.
@@ -154,6 +164,20 @@ class TestBuilderFirstGuard(unittest.TestCase):
             if old is None:
                 os.environ.pop("DINNER_EXECUTION_MODE", None)
             else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
+
+    def test_raw_claude_remains_an_explicit_direct_edit_escape(self):
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
+        try:
+            payload = {
+                "tool_name": "Edit",
+                "cwd": tempfile.gettempdir(),
+                "tool_input": {"file_path": "src/tiny_fix.py"},
+            }
+            self.assertEqual(builder_guard.guarded_paths(payload), [])
+        finally:
+            if old is not None:
                 os.environ["DINNER_EXECUTION_MODE"] = old
 
     def test_apply_patch_cannot_hide_a_code_edit_behind_an_allowed_handoff(self):
@@ -205,6 +229,27 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
 
 class TestDefaultSessionRouting(unittest.TestCase):
+    def test_strict_builder_first_nudge_routes_even_a_tiny_write_to_builder(self):
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ["DINNER_EXECUTION_MODE"] = "builder-first"
+        try:
+            route = route_nudge.message_for_prompt("Fix a typo in this document.")
+            self.assertIsNotNone(route)
+            message, domains = route
+            self.assertEqual(domains, ["default"])
+            self.assertIn(
+                "every structured Edit/Write implementation-file write must go through "
+                "Codex Builder",
+                message,
+            )
+            self.assertIn("delegate workflow now", message)
+            self.assertNotIn("may stay inline", message)
+        finally:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
+
     def test_clear_low_write_intent_injects_delegate_without_user_slash_command(self):
         # The desired UX starts from an ordinary request, not a ritual command.
         # If the generic path regresses to the former UE-only nudge, this becomes

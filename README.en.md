@@ -104,17 +104,28 @@ unauthenticated or fails, the dispatch below falls back to manual mode automatic
 
 ### 1) Default — orchestrated single-pane (no separate Codex terminal)
 
-In the project directory, start an interactive Claude session and:
+In the project directory, start Claude through the daily strict launcher:
 
-1. Declare **`architect mode`** → state your intent.
-2. Claude explores the codebase, proposes options, then writes **`HANDOFF.md`** (gates, scope, risk tier).
-3. **Approve the HANDOFF** (the start gate) → Claude auto-runs
+```
+%USERPROFILE%\.claude\dh.cmd
+```
+
+Claude still reads code, searches, uses MCP, designs, and reviews HANDOFF/RESULT/diffs
+in this session; every structured `Edit`/`Write` implementation-file write goes to the
+Codex Builder. Raw `claude`
+is the intentional direct-edit escape and does not provide the strict token boundary.
+
+Then state your intent in ordinary conversation:
+
+1. Claude explores the codebase, then writes **`HANDOFF_DELEGATE.md`** for a single-purpose LOW task or **`HANDOFF.md`** (gates, scope, risk tier) otherwise.
+2. The original LOW request is its start gate; a HIGH task waits for **HANDOFF approval**. Claude then auto-runs
    `py -3 ~/.claude/orchestrate.py build --repo . --backend real`, **dispatching the Codex Builder headless**.
-4. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
-5. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
-6. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
+3. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
+4. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
+5. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
 
-> Small tasks (a line or two, single file, a question) run without modes — Two-CLI is overhead there.
+> Questions, reading, and searching stay with Claude in the strict session. Even a tiny file
+> edit takes the Codex Builder route in that session.
 
 ### 2) Calling the orchestrator directly (optional)
 
@@ -231,4 +242,4 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
 - `learning_log` (PostToolUse) — capture Bash failure signals → promote via `learnings-review` (advisory)
 - `route_nudge` (UserPromptSubmit) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory)
-- `builder_guard` (PreToolUse) — in a Builder-first Claude session launched by `dh-architect.cmd`, reserve structured code edits for Codex Builder dispatch (conditional blocking)
+- `builder_guard` (PreToolUse) — in a Builder-first Claude session launched by the daily `dh.cmd`, reserve structured code edits for Codex Builder dispatch; inert in the raw `claude` escape (conditional blocking)

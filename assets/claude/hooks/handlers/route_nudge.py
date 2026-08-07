@@ -15,6 +15,7 @@ Registered under ``UserPromptSubmit`` in ``settings.json`` and ``settings.json.t
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -61,7 +62,21 @@ _WORK_INTENT = re.compile(
 
 
 def _default_route_message() -> str:
-    """Return the normal-session protocol injected before implementation work."""
+    """Return the routing protocol injected before implementation work."""
+    if os.environ.get("DINNER_EXECUTION_MODE") == "builder-first":
+        return (
+            "[execution-route] Apply CLAUDE.md strict Builder-first routing before source "
+            "edits: keep read-only analysis in Claude, but every structured Edit/Write "
+            "implementation-file write "
+            "must go through Codex Builder. A clear single-purpose LOW change must run the "
+            "delegate workflow now (write HANDOFF_DELEGATE.md, dispatch Codex Builder, then "
+            "review RESULT.md plus the diff) without asking the user to type /delegate; "
+            "multi-file, multi-gate, design, or HIGH-signal work must follow the architect "
+            "workflow (draft HANDOFF, obtain the required human start approval, then dispatch "
+            "Codex Builder). An explicit request for a small direct Claude edit cannot bypass "
+            "a HIGH route. Do not treat ! as an override; it is Claude Code's shell-output "
+            "fast path."
+        )
     return (
         "[execution-route] Apply CLAUDE.md default-session routing before source edits: "
         "read-only work or a truly trivial one- or two-line single-file change may stay "

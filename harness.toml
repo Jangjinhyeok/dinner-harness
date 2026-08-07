@@ -30,6 +30,7 @@ copy = [
   ["orchestrate.py",                      "orchestrate.py"],
   ["orchestrator",                        "orchestrator"],
   ["assets/claude/README.md",             "README.md"],
+  ["assets/claude/dh.cmd",                "dh.cmd"],
   ["assets/claude/dh-architect.cmd",      "dh-architect.cmd"],
   ["assets/claude/MCP-UNREAL-SETUP.md",   "MCP-UNREAL-SETUP.md"],
   ["assets/claude/settings.json.template", "settings.json.template"],

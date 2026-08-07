@@ -91,17 +91,26 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 
 ### 1) 기본 — orchestrated single-pane (별도 Codex 터미널 불필요)
 
-작업할 프로젝트 디렉터리에서 인터랙티브 Claude를 띄우고:
+작업할 프로젝트 디렉터리에서 일상용 strict launcher로 Claude를 띄운다:
 
-1. **`architect 모드`** 선언 → 작업 의도를 전달한다.
-2. Claude가 코드베이스를 탐색하고 옵션을 제시·합의한 뒤 **`HANDOFF.md`**(게이트·스코프·risk tier)를 작성한다.
-3. **HANDOFF를 승인**하면(= 시작 게이트), Claude가 자동으로
+```
+%USERPROFILE%\.claude\dh.cmd
+```
+
+이 세션에서 Claude는 코드 Read·검색·MCP 조사·설계·HANDOFF/RESULT/diff 검토를 직접
+수행하고, 모든 structured `Edit`/`Write` 구현 파일 수정은 Codex Builder에 맡긴다. raw `claude`는 의도적인 직접
+수정 escape이며 strict token boundary를 제공하지 않는다.
+
+그 뒤 일반 대화로 작업 의도를 전달한다:
+
+1. Claude가 코드베이스를 탐색하고, LOW 단일 목적이면 **`HANDOFF_DELEGATE.md`**, 그 외에는 **`HANDOFF.md`**(게이트·스코프·risk tier)를 작성한다.
+2. LOW 단일 목적은 원래 요청이 시작 게이트이므로 바로, HIGH는 **HANDOFF 승인** 뒤에 Claude가 자동으로
    `py -3 ~/.claude/orchestrate.py build --repo . --backend real`을 호출해 **Codex Builder를 headless dispatch**한다.
-4. Codex가 스코프 안에서 구현하고 `RESULT.md`를 쓴다. controller-side safety net(scope/secret)이 hard gate.
-5. Claude가 `RESULT.md` + `git diff`를 **같은 세션에서 리뷰**한다. HIGH 게이트면 merge/apply 전 **사람 종단 서명**을 받는다.
-6. `BLOCKED`/codex 에러면 자동 진행하지 않고 수동 fallback(아래 ③)을 안내한다.
+3. Codex가 스코프 안에서 구현하고 `RESULT.md`를 쓴다. controller-side safety net(scope/secret)이 hard gate.
+4. Claude가 `RESULT.md` + `git diff`를 **같은 세션에서 리뷰**한다. HIGH 게이트면 merge/apply 전 **사람 종단 서명**을 받는다.
+5. `BLOCKED`/codex 에러면 자동 진행하지 않고 수동 fallback(아래 ③)을 안내한다.
 
-> 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행한다 — Two-CLI는 오버헤드.
+> 질문·읽기·검색은 Claude가 strict 세션에서 직접 수행한다. 작은 파일 수정도 strict 세션에서는 Codex Builder 경로를 탄다.
 
 ### 2) orchestrator 직접 호출 (선택)
 
@@ -213,4 +222,4 @@ py -3 ~/.claude/orchestrate.py build --repo . --backend mock
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
 - `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
 - `route_nudge` (UserPromptSubmit) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory)
-- `builder_guard` (PreToolUse) — `dh-architect.cmd`의 Builder-first Claude 세션에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도 (conditional blocking)
+- `builder_guard` (PreToolUse) — 일상용 `dh.cmd`의 Builder-first Claude 세션에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도; raw `claude` escape에서는 inert (conditional blocking)
