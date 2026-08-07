@@ -104,11 +104,14 @@ unauthenticated or fails, the dispatch below falls back to manual mode automatic
 
 ### 1) Default — orchestrated single-pane (no separate Codex terminal)
 
-In the project directory, start Claude through the daily strict launcher:
+In PowerShell, start Claude through the daily strict launcher from the project
+directory:
 
+```powershell
+& "$env:USERPROFILE\.claude\dh.cmd"
 ```
-%USERPROFILE%\.claude\dh.cmd
-```
+
+`%USERPROFILE%` is `cmd.exe` syntax and does not run directly in PowerShell.
 
 Claude still reads code, searches, uses MCP, designs, and reviews HANDOFF/RESULT/diffs
 in this session; every structured `Edit`/`Write` implementation-file write goes to the

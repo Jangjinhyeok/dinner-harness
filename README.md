@@ -8,6 +8,70 @@
 
 이 repo의 canonical 트리를 손-편집한다. **`~/.claude`·`~/.codex`를 직접 편집하지 말 것** — 둘 다 생성된 출력이다. 타깃은 installer로 재생성한다.
 
+## 처음 사용하는 사람: 설치부터 첫 작업까지
+
+이 하네스는 **Claude를 평소 대화 창으로 유지하면서**, 실제 구현 변경의 토큰은
+Codex Builder에 쓰게 하는 Windows용 workflow다. 별도 Codex 터미널을 매번 열거나
+`/delegate`를 외울 필요가 없다.
+
+### 0. 준비물
+
+- Windows PowerShell, Git, Python Launcher (`py -3`)
+- Claude Code와 Codex CLI가 설치되어 있고 각각 로그인되어 있음
+- 작업 대상이 Git repository임 (`git status`가 동작해야 함)
+
+먼저 이 repository를 clone한 뒤, 그 폴더에서 다음을 실행한다. `refresh.py`는 Claude와
+Codex 설치본을 한 번에 갱신하는 권장 진입점이다.
+
+```powershell
+py -3 check.py --no-install       # canonical source 자체 검사
+py -3 refresh.py                  # 실제 쓰기 전 설치 계획 확인
+py -3 refresh.py --apply          # ~/.claude 와 ~/.codex 에 실제 설치
+py -3 check.py                    # 설치본까지 포함해 최종 대조
+```
+
+`--apply`는 실제 라이브 설치본을 바꾸며 backup을 만들지 않는다. 출력에서 오류가 나면
+그 상태로 사용하지 말고 해결한 뒤 다시 실행한다.
+
+### 1. 작업할 프로젝트에서 Claude 시작
+
+PowerShell에서 **작업할 프로젝트 폴더**로 이동한 뒤 아래 명령으로 시작한다.
+
+```powershell
+cd C:\path\to\your-project
+& "$env:USERPROFILE\.claude\dh.cmd"
+```
+
+`%USERPROFILE%`는 `cmd.exe` 문법이므로 PowerShell에서 그대로 쓰면 안 된다. launcher가
+없다고 나오면 설치 여부를 먼저 확인한다.
+
+```powershell
+Test-Path "$env:USERPROFILE\.claude\dh.cmd"
+```
+
+`True`가 아니면 dinner-harness repository에서 `py -3 refresh.py --apply`를 다시 실행한다.
+
+### 2. 평소처럼 요청한다
+
+새 Claude 세션에서 모드 선언이나 `/delegate` 없이 일반 대화로 요청한다.
+
+```text
+인벤토리 화면에서 선택된 아이템의 이름과 등급을 표시해줘. 기존 UMG 스타일을 따른다.
+```
+
+Claude가 코드·문서 읽기, 검색, MCP 조사, 설계, HANDOFF 작성과 결과 검토를 맡고,
+구현 파일의 structured `Edit`/`Write`는 Codex Builder가 맡는다. 즉 **Claude를 메인으로
+쓰되 구현 token sink를 Codex에 둔다**는 것이 기본 UX다.
+
+### 3. 사용자가 직접 결정하는 지점
+
+- **LOW 단일 목적 변경**: 원래 요청이 시작 intent다. Claude가 최소 HANDOFF를 만들고
+  Codex Builder를 자동 dispatch한 뒤 결과를 검토한다.
+- **다파일·구조 변경·HIGH 작업**: Claude가 HANDOFF(필요하면 ADR)를 보여 주고 시작 승인을
+  요청한다. 완료 후에도 merge/apply 전에 사람의 종단 승인을 받는다.
+- **Git integration**: Builder는 변경을 별도 worktree에 남기며 자동 commit·merge·push하지
+  않는다. Claude의 `RESULT.md`/diff 검토 뒤 어떤 변경을 가져올지는 사용자가 결정한다.
+
 ## Layout
 
 - `content/` — tool-neutral 하네스 콘텐츠 (instructions, rules, skills, agents, roles,
@@ -21,7 +85,7 @@
 - `install.py` — CLI entry: `install --target claude|codex [--dest PATH] [--dry-run] [--allow-live]`.
 - `refresh.py` — two-target refresh wrapper: preview by default; `--apply` is the explicit live-install signature.
 
-## Install
+## 설치/갱신 세부
 
 ```
 py -3 install.py --target claude --dest C:/Users/<you>/.claude
@@ -84,59 +148,83 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 파일 기반이라 Codex 0.111+에서 동작하며, Architect의 옵션 서브에이전트 위임만 0.140+를 쓴다. 상세 규약은
 `content/instructions/CLAUDE.md` §2 참조.
 
-## 사용법
+## 일상 사용법
 
-**전제**: `install.py`로 `~/.claude`(+`~/.codex`) 생성 완료. real backend로 Codex Builder를 돌리려면 `codex` CLI
-인증 + **codex 0.140+** 필요(미인증/실패 시 아래 dispatch는 자동으로 수동 fallback을 안내한다).
+### 1) 기본 세션에서 실제로 일어나는 일
 
-### 1) 기본 — orchestrated single-pane (별도 Codex 터미널 불필요)
+`dh.cmd`로 시작한 Claude 세션은 다음 표처럼 동작한다. **읽기 비용까지 Codex에 넘기는
+모드는 아직 의도적으로 넣지 않았다**. 먼저 이 흐름을 써 보고, 큰 코드 탐색의 Claude token
+비용이 실제 문제인지 확인한 뒤 별도 read-only Scout lane을 검토한다.
 
-작업할 프로젝트 디렉터리에서 일상용 strict launcher로 Claude를 띄운다:
+| 요청 유형 | Claude의 역할 | Codex Builder 사용 | 사용자 행동 |
+| --- | --- | --- | --- |
+| 질문, 코드 Read, 검색, MCP 조사, 설계, 리뷰 | 직접 수행 | 아니오 | 평소처럼 질문 |
+| 한 파일 한두 줄을 포함한 구현 파일 수정 | 범위 파악·HANDOFF·결과 리뷰 | 예, strict 경로 | 평소처럼 요청 |
+| 명확한 LOW 단일 목적 변경 | `HANDOFF_DELEGATE.md` 작성·리뷰 | 예, 같은 세션에서 자동 dispatch | 추가 명령 불필요 |
+| 다파일, build/test iterate, 구조 변경, HIGH 신호 | 설계·HANDOFF/ADR·리뷰 | 예, 승인 뒤 자동 dispatch | 시작/종단 승인 |
 
+`builder_guard`는 Claude의 structured `Edit`/`Write` 구현 변경을 막고 Builder 경로를
+안내한다. 이는 workflow guard이지 보안 sandbox가 아니다. Bash/PowerShell을 해석해서
+모든 쓰기를 막지는 않으므로, shell로 guard를 우회하는 사용은 이 UX의 범위 밖이다.
+
+### 2) 작업 결과를 확인하고 반영하기
+
+Builder는 linked git worktree에서 작업한다. primary project tree와 Builder의 변경이 섞이지
+않기 때문에, Claude가 다음 순서로 검토해야 한다.
+
+1. `RESULT.md`에서 완료 gate, 변경 파일, 검증 결과와 미해결 이슈를 읽는다.
+2. Builder worktree의 `git diff`와 실제 파일을 확인한다.
+3. 요구사항·스코프·검증이 맞는지 판단한다.
+4. 통과한 변경만 사용자가 자신의 Git 절차로 integration한다. harness는 commit, merge, push를
+   자동으로 하지 않는다.
+
+`BLOCKED`가 나오면 성공으로 취급하지 않는다. Claude가 제시한 reason, `RESULT.md`, Builder
+worktree의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 새 dispatch를 결정한다.
+
+### 3) 언제 raw `claude`를 쓰는가
+
+평소에는 `dh.cmd`를 쓴다. 아래처럼 일반 `claude`를 실행하면 strict Builder-first guard는
+동작하지 않는다.
+
+```powershell
+claude
 ```
-%USERPROFILE%\.claude\dh.cmd
-```
 
-이 세션에서 Claude는 코드 Read·검색·MCP 조사·설계·HANDOFF/RESULT/diff 검토를 직접
-수행하고, 모든 structured `Edit`/`Write` 구현 파일 수정은 Codex Builder에 맡긴다. raw `claude`는 의도적인 직접
-수정 escape이며 strict token boundary를 제공하지 않는다.
+이것은 긴급 디버깅이나 사용자가 의도적으로 Claude의 직접 수정이 필요할 때만 쓰는 escape다.
+작은 수정도 Codex token으로 보내려는 기본 목적에는 맞지 않는다. 호환성 launcher인
+`dh-architect.cmd`도 남아 있지만, 일상 진입점은 `dh.cmd`다.
 
-그 뒤 일반 대화로 작업 의도를 전달한다:
+### 4) orchestrator 직접 호출 (고급·선택)
 
-1. Claude가 코드베이스를 탐색하고, LOW 단일 목적이면 **`HANDOFF_DELEGATE.md`**, 그 외에는 **`HANDOFF.md`**(게이트·스코프·risk tier)를 작성한다.
-2. LOW 단일 목적은 원래 요청이 시작 게이트이므로 바로, HIGH는 **HANDOFF 승인** 뒤에 Claude가 자동으로
-   `py -3 ~/.claude/orchestrate.py build --repo . --backend real`을 호출해 **Codex Builder를 headless dispatch**한다.
-3. Codex가 스코프 안에서 구현하고 `RESULT.md`를 쓴다. controller-side safety net(scope/secret)이 hard gate.
-4. Claude가 `RESULT.md` + `git diff`를 **같은 세션에서 리뷰**한다. HIGH 게이트면 merge/apply 전 **사람 종단 서명**을 받는다.
-5. `BLOCKED`/codex 에러면 자동 진행하지 않고 수동 fallback(아래 ③)을 안내한다.
+일상 사용에서는 이 명령을 직접 실행하지 않는다. strict Claude 세션이 HANDOFF, linked
+worktree, dispatch, 결과 검토를 순서대로 처리한다. 아래는 이미 Builder worktree와 승인된
+HANDOFF를 준비한 경우의 진단·수동 fallback용이다.
 
-> 질문·읽기·검색은 Claude가 strict 세션에서 직접 수행한다. 작은 파일 수정도 strict 세션에서는 Codex Builder 경로를 탄다.
-
-### 2) orchestrator 직접 호출 (선택)
-
-```
-# 기존 HANDOFF.md로 Builder만 1회 (single-pane이 내부에서 쓰는 그 명령)
-py -3 ~/.claude/orchestrate.py build --repo . --backend real
+```powershell
+# Builder worktree에서 Builder만 1회 실행
+py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo ..\my-project-build --backend real
 
 # Architect·Builder 양쪽 완전 headless (사람은 경계에만)
-py -3 ~/.claude/orchestrate.py run --goal "..." --backend real --repo .
+py -3 "$env:USERPROFILE\.claude\orchestrate.py" run --goal "..." --backend real --repo .
 
 # CLI 없이 오프라인 스모크
-py -3 ~/.claude/orchestrate.py build --repo . --backend mock
+py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo ..\my-project-build --backend mock
 ```
 
-### 3) 수동 dual-session (fallback·역방향 페어링)
+### 5) 수동 dual-session (fallback·역방향 페어링)
 
 한 세션에서 `architect 모드`로 `HANDOFF.md`를 쓰고, **다른 세션(예: Codex 터미널)**에서 `builder 모드`로
 그 HANDOFF를 실행한 뒤 `RESULT.md`로 돌려준다. 통신은 프로젝트 루트의 버스 파일.
 
-### 4) 하네스 자체를 수정할 때
+### 6) 하네스 자체를 수정하거나 다른 PC에서 갱신할 때
 
 `~/.claude`·`~/.codex`를 직접 고치지 말고 — repo의 canonical 트리(`content/`·`assets/`)를 편집 →
 `py -3 refresh.py`로 plan을 확인 → 사람이 `py -3 refresh.py --apply`로 Claude·Codex를 함께 재생성한다.
 
-`check.py`는 재생성 **뒤에도** 한 번 돌린다 — install drift 축이 repo와 라이브 설치본을 대조해서 "고쳤는데
-설치를 안 했다"를 잡아준다(이게 실제로 두 번 물렸다). 설치본을 안 보려면 `--no-install`.
+Git 변경을 받은 뒤에는 `py -3 refresh.py`로 plan을 확인하고 `py -3 refresh.py --apply`로
+두 설치본을 함께 갱신한다. 끝난 뒤 `py -3 check.py`를 실행한다. 이 검사는 repo와 라이브
+설치본의 drift까지 잡아 "고쳤는데 설치를 안 했다"를 알려 준다. 설치본을 안 보려면
+`--no-install`을 붙인다.
 
 > **되돌리기는 install 전에 준비해라.** `install.py`는 제자리에 덮어쓰고 **백업을 남기지 않는다** — 유일한
 > undo는 이전 커밋에서 다시 설치하는 것이다:
