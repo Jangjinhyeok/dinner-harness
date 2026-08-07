@@ -1,5 +1,7 @@
 # Cross-Vendor Two-CLI Orchestrator
 
+[한국어](README.ko.md) | **English**
+
 The external, cross-process sibling of the `autonomous-loop` skill. It drives an
 **Architect** vendor and a **Builder** vendor (Codex / Claude, either direction)
 through the `HANDOFF.md` / `RESULT.md` file bus, **replacing the human relay**.
