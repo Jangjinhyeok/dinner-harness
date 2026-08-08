@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 import sys
 from pathlib import Path
 
@@ -48,6 +49,21 @@ def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
     return [path] if path else []
 
 
+def _in_session_scratchpad(path: Path) -> bool:
+    """True for the per-session scratchpad the harness itself designates for temp files.
+
+    Layout: <tempdir>/claude/<project-slug>/<session-id>/scratchpad/...
+    Throwaway analysis scripts there are not implementation files, so dispatching
+    them to the Builder is meaningless; blocking them only forces a shell workaround.
+    """
+    try:
+        relative = path.relative_to(Path(tempfile.gettempdir()).resolve(strict=False))
+    except (OSError, ValueError):
+        return False
+    parts = relative.parts
+    return len(parts) >= 5 and parts[0] == "claude" and parts[3] == "scratchpad"
+
+
 def _allowed_path(raw_path: str, cwd: Path) -> bool:
     """True only for Architect artifacts and Claude persistent-memory Markdown."""
     try:
@@ -67,6 +83,9 @@ def _allowed_path(raw_path: str, cwd: Path) -> bool:
             return True
         if relative.startswith("docs/architecture/") and relative.endswith(".md"):
             return True
+
+    if _in_session_scratchpad(path):
+        return True
 
     try:
         claude_home = Path(
