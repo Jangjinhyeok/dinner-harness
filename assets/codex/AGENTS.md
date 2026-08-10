@@ -156,10 +156,10 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 - `HANDOFF.md`를 **읽기 전용 명세**로 받아 충실히 구현한다(명세를 수정하지 않는다).
 - 시작: HANDOFF.md 전 섹션 이해 자체 점검 → 모호하면 시작 전 질문 → Gate 1부터 순차.
 - 진입 응답: HANDOFF.md 있으면 "[요약] Gate 1부터 진행할까요?", 없으면 위치를 묻거나(단순 구현 요청이면 그대로 진행).
-- 게이트마다: 목표·검증기준 재확인 → 관련 파일 read → "수정 금지" 영역 침범 안 함 확인 → 구현 → 빌드/검증 → self-review(빌드·스코프·컨벤션·사이드이펙트) → 보고. **Codex degraded 모델**: agent jury가 없으므로 **LOW 게이트**는 deterministic 검증 PASS 시 진행하되 결과를 사람이 종단 검토, **HIGH 게이트와 전체 종료**는 **매번 사람 승인까지 대기**(전환-전 보수 동작 유지 — 자율화의 안전 전제인 패널·hook이 Codex엔 없기 때문).
+- 게이트마다: 목표·검증기준 재확인 → 관련 파일 read → "수정 금지" 영역 침범 안 함 확인 → 구현 → 빌드/검증 → self-review(빌드·스코프·컨벤션·사이드이펙트) → 보고. **Codex degraded 모델**: agent jury가 없으므로 **LOW 게이트**는 deterministic 검증 PASS 시 진행하되 결과를 사람이 종단 검토, **인터랙티브 Codex 세션의 HIGH 게이트와 전체 종료**는 **매번 사람 승인까지 대기**(전환-전 보수 동작 유지 — 자율화의 안전 전제인 패널·hook이 Codex엔 없기 때문).
 - 보고 형식: `[Gate N] Status: completed/blocked/questions` + 변경 파일(라인) + 검증(빌드/스코프/컨벤션 ✅❌) + "다음 게이트 진행할까요?".
 - RESULT.md에는 게이트 상태·변경 파일 외에 **구조 브리핑을 필수 포함**: 새/변경 클래스·모듈과 책임 한 줄, 데이터/호출 흐름 다이어그램, 왜 이 구조인가(버린 대안 하나), 직접 열어볼 파일 3개.
-- **헤드리스 orchestration 모드**(`codex exec`로 `orchestrate.py build`가 dispatch한 경우 — 인터랙티브 Claude Architect의 auto-dispatch): "Gate 1부터/다음 게이트 진행할까요?"라고 **묻지 말고** 전 게이트를 한 턴에 자율 실행한다. 그리고 최종 메시지에 머신 파싱용 fence를 **반드시** 포함한다(없으면 orchestrator가 fail-closed로 BLOCK):
+- **헤드리스 orchestration 모드**(`codex exec`로 `orchestrate.py build`가 dispatch한 경우 — 인터랙티브 Claude Architect의 auto-dispatch): "Gate 1부터/다음 게이트 진행할까요?"라고 **묻지 말고** 게이트를 한 턴에 자율 실행하되, 완료한 HIGH 게이트 뒤에는 종료한다. **HIGH 게이트도 구현을 기다리지 않고 수행해 working tree에 남기되, merge·commit·deploy는 하지 않고 다음 게이트로 자동 진행하지 않으며 종단 서명은 dispatch한 Claude Architect 세션이 받는다.** 그리고 최종 메시지에 머신 파싱용 fence를 **반드시** 포함한다(없으면 orchestrator가 fail-closed로 BLOCK):
   ```verdicts
   gate 1: status=completed tier=LOW panel=PASS
   ```

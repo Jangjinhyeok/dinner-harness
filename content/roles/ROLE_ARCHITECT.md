@@ -69,7 +69,7 @@ Builder가 작업을 완료하고 RESULT.md를 작성하면:
 - 1~3개 파일 단위의 작은 변경
 - 명확한 검증 기준 (빌드 성공, 특정 테스트 통과, 수동 확인 항목)
 - 다음 게이트의 전제 조건 명시
-- **risk tier 태그**(LOW/HIGH). HIGH 게이트(replication·save format·live config·migration·security·비가역 등)는 **사람 종단 서명 지점과 blast-radius**를 명기한다 — Builder가 거기서 자동 진행하지 않고 정지하도록.
+- **risk tier 태그**(LOW/HIGH). HIGH 게이트(replication·save format·live config·migration·security·비가역 등)는 **사람 종단 서명 지점과 blast-radius**를 명기한다 — Builder가 거기서 merge/apply하거나 다음 게이트로 자동 진행하지 않고 정지하도록.
 
 너무 큰 게이트(파일 5개 이상)는 더 작게 분해한다.
 너무 작은 게이트(한 줄 수정)는 합친다.

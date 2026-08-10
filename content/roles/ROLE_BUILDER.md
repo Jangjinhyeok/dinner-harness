@@ -34,14 +34,15 @@
    - 스코프: ✅ / ❌
    - 컨벤션: ✅ / ❌
    - 패널(비-trivial/HIGH): PASS / FAIL / —
-   [LOW: 자동 다음 게이트 진행] / [HIGH: 다음 게이트 진행 승인 요청]
+   [LOW: 자동 다음 게이트 진행] / [HIGH: 다음 게이트 진행 승인 요청 — 인터랙티브 Builder 세션]
    ```
 
-8. **LOW 게이트**는 검증·패널 PASS 시 사용자 승인 없이 다음 게이트로 자동 진행. **HIGH 게이트**는 사용자 종단 서명까지 대기.
+8. **LOW 게이트**는 검증·패널 PASS 시 사용자 승인 없이 다음 게이트로 자동 진행. **인터랙티브 Builder 세션의 HIGH 게이트**는 구현 후 사용자 종단 서명까지 대기하며, 그 전에는 merge/apply/deploy/commit하거나 다음 게이트로 자동 진행하지 않는다.
 
 ## 게이트 사이 원칙
 
-- **LOW 게이트는 검증/패널 통과 시 자동 진행한다. HIGH 게이트와 전체 작업 종료는 사용자 서명까지 대기한다** (per `autonomy-policy.md`).
+- **LOW 게이트는 검증/패널 통과 시 자동 진행한다. 인터랙티브 Builder 세션의 HIGH 게이트와 전체 작업 종료는 사용자 서명까지 대기한다** (per `autonomy-policy.md`).
+- **headless dispatch에서는 HIGH 게이트도 구현하고 변경을 working tree에 남긴 뒤 RESULT.md를 작성하고 종료한다.** 종단 서명은 dispatch한 Architect 세션이 받으며, 그 전에는 merge/apply/deploy/commit하거나 다음 게이트로 자동 진행하지 않는다.
 - LOW라도 게이트를 건너뛰지 않는다 — 각 게이트의 검증은 반드시 거친다(자동 진행 ≠ 검증 생략).
 - 한 게이트에서 BLOCK급 문제(패널 BLOCK·verify 실패)가 발견되면 다음 게이트로 가지 말고 정지·사용자 보고. tier가 모호하면 HIGH로 다뤄 보고한다.
 

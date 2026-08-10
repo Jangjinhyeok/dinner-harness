@@ -161,6 +161,20 @@ class TestVendorRunner(unittest.TestCase):
 
 
 class TestBuildPrompt(unittest.TestCase):
+    def test_high_gate_clause_requires_implementation_before_later_sign_off(self):
+        prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
+
+        self.assertIn(
+            "A `HIGH` tier gate does not mean stop and ask before implementing — "
+            "implement it now and leave it unmerged; the human sign-off happens "
+            "later in the dispatching session.",
+            prompt,
+        )
+        self.assertIn(
+            "after a completed HIGH gate, stop rather than progressing to the next gate.",
+            prompt,
+        )
+
     def test_names_the_dispatched_handoff_and_ignores_stale_bus_artifacts(self):
         prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
 
