@@ -209,7 +209,7 @@ Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 —
 
 이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real` 형태로 **Codex Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다.
 
-Builder worktree의 RESULT.md + `git -C <ABSOLUTE_BUILDER_WORKTREE> diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder는 Claude hook을 안 쏘므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
+Builder worktree의 RESULT.md + `git -C <ABSOLUTE_BUILDER_WORKTREE> diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 발화하지만 PreToolUse exit 2가 edit을 직접 막지 못하므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
 
 cross-vendor 시 주의:
 

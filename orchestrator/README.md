@@ -143,8 +143,9 @@ wired into the controller — and every ambiguity fails **closed**:
 - **Controller-side deterministic net** — after the Builder turn, the controller
   reruns the harness `scope_check` + `secret_scan` handlers **verbatim** (as
   subprocesses, fed a synthesized payload per changed file) in `enforce`. This
-  holds **regardless of which vendor built** — it compensates for a Codex 0.111
-  Builder having no native hooks. A hook block (exit 2) fails the cycle; in
+  holds **regardless of which vendor built** — Codex 0.147.0 native hooks are
+  advisory, so their PreToolUse exit 2 cannot veto an edit. A hook block (exit
+  2) fails the cycle; in
   `enforce` a handler that is **missing or cannot launch also fails the cycle**
   (a net you cannot run is not a pass), and a changeset that cannot be
   determined fails closed too — which means **git answering non-zero**, not only

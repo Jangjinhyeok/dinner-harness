@@ -136,7 +136,7 @@ relay 자동화는 사람의 우연한 확인을 제거하므로 tier gate는 co
 
 - **Controller-side deterministic net** — Builder turn 뒤 controller가 harness의
   `scope_check`와 `secret_scan` handler를 변경 없이 subprocess로 다시 실행합니다.
-  vendor와 무관하게 적용되며, native Claude hook이 없는 Codex Builder를 보완합니다.
+  vendor와 무관하게 적용되며, Codex 0.147.0의 native hook이 발화해도 PreToolUse exit 2로 edit을 직접 막지 못하는 advisory 동작을 보완합니다.
   handler block(exit 2), handler 누락·실행 실패, changeset 판별 실패는 모두 cycle을
   block합니다. non-repository에서 `git status`가 128로 끝나 빈 output을 내는 경우도
   clean tree가 아니라 failure입니다. fence는 hardcoded `HANDOFF.md`가 아니라 실제

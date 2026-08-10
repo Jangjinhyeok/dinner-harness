@@ -170,7 +170,7 @@ ADR-0005 이후 모든 cycle의 HANDOFF.md는 첫 ` ```scope ` 펜스에 그 cyc
 - glob은 **끝까지 앵커**된다. `src/*.py`는 `src/secrets.py.bak`을 허용하지 않는다.
 - glob이 `/`로 끝나면 "그 아래 전부"로 확장된다 — `**/__pycache__/`는 `**/__pycache__/**`와 같다. 빌드 산출물 화이트리스트에 쓰는 형태다.
 
-**controller-side net(orchestrate.py)에서 달라지는 점**: 헤드리스 Codex Builder는 Claude hook을 안 쏘므로 controller가 이 핸들러를 직접 subprocess로 돌린다. 그때 fence는 파일이 아니라 **환경변수 `CLAUDE_SCOPE_FENCE`로 고정**되어 전달된다(TOCTOU 차단 — Builder가 스캔 도중 handoff를 고쳐도 판정 기준은 안 바뀐다). 관련 변수는 `CLAUDE_SCOPE_HANDOFF_NAME`(fence를 담은 handoff 파일명, 미설정 시 `HANDOFF.md`), `CLAUDE_HOOK_TIMEOUT_MS`·`CLAUDE_HOOK_FAILS_CLOSED`(핸들러가 판정에 이르지 못한 경우 — 타임아웃·크래시 — 를 allow가 아니라 block으로 뒤집는다). **인터랙티브 세션은 이 넷 중 어느 것도 설정하지 않으므로 동작이 종전과 동일**하다.
+**controller-side net(orchestrate.py)에서 달라지는 점**: 헤드리스 Codex Builder에서도 hook은 발화하지만 PreToolUse exit 2가 edit을 직접 막지 못하므로 controller가 이 핸들러를 직접 subprocess로 돌린다. 그때 fence는 파일이 아니라 **환경변수 `CLAUDE_SCOPE_FENCE`로 고정**되어 전달된다(TOCTOU 차단 — Builder가 스캔 도중 handoff를 고쳐도 판정 기준은 안 바뀐다). 관련 변수는 `CLAUDE_SCOPE_HANDOFF_NAME`(fence를 담은 handoff 파일명, 미설정 시 `HANDOFF.md`), `CLAUDE_HOOK_TIMEOUT_MS`·`CLAUDE_HOOK_FAILS_CLOSED`(핸들러가 판정에 이르지 못한 경우 — 타임아웃·크래시 — 를 allow가 아니라 block으로 뒤집는다). **인터랙티브 세션은 이 넷 중 어느 것도 설정하지 않으므로 동작이 종전과 동일**하다.
 
 > **저자(Architect) 주의**: 핸들러는 HANDOFF.md의 **첫 번째** ` ```scope ` 펜스를 operative 블록으로 잡는다. 본문에서 scope 형식을 *설명*하려고 ` ```scope ` 펜스를 다시 쓰면 그 설명용 예시가 operative로 오인된다. 설명용 예시는 4-space indent code block으로 쓰고, 진짜 operative 블록은 문서 끝(관례상 Section A)에 펜스 하나만 둔다.
 

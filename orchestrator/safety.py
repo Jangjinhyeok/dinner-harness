@@ -1,10 +1,11 @@
 """Controller-side deterministic safety net.
 
-The cross-vendor asymmetry: a Claude Builder fires the scope_check / secret_scan
-hooks; a Codex 0.111 Builder does not. So the net lives in the *controller* and
-runs regardless of which vendor built — by invoking the existing harness hook
-handlers verbatim as subprocesses, fed a synthesized PreToolUse payload per
-changed file. No handler code is modified or reimplemented.
+The cross-vendor asymmetry: Claude Builder hooks are directly mediated, but a
+Codex 0.147.0 Builder's native hooks are advisory: PreToolUse exit 2 cannot
+veto an edit or deliver its block reason to the agent. So the net lives in the
+*controller* and runs regardless of which vendor built — by invoking the
+existing harness hook handlers verbatim as subprocesses, fed a synthesized
+PreToolUse payload per changed file. No handler code is modified or reimplemented.
 
 A block (hook exit code 2) on any changed file fails the cycle.
 Stdlib only.
@@ -134,8 +135,9 @@ def scan(changes: list[Change], cfg: Config, *,
     # The handlers' 200ms watchdog is sized for an interactive Claude hook, and
     # it answers "allow" when it fires — as does an unhandled crash. Neither
     # fits here: we pass whole file contents, and this net is the only automatic
-    # defense against a Builder that fires no hooks. Give the handler a budget
-    # it can actually meet (inside the 30s subprocess timeout below), and make
+    # defense against a Builder whose own hooks cannot veto the edit. Give the
+    # handler a budget it can actually meet (inside the 30s subprocess timeout
+    # below), and make
     # reaching no verdict mean BLOCK — a change the net could not read is not a
     # change it approved, and exit 0 here is recorded with no reason at all.
     base_env["CLAUDE_HOOK_TIMEOUT_MS"] = "20000"

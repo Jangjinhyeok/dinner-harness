@@ -6,8 +6,9 @@ unexpected exception in a hook should ultimately fall through to
 
 That contract is the INTERACTIVE one, and it inverts under the controller-side
 net (``CLAUDE_HOOK_FAILS_CLOSED``), which is the only automatic defense against
-a Builder that fires no hooks: there, exit 0 is recorded as a clean pass with no
-reason at all, so "I could not vet this" must not spell itself the same way as
+a Builder whose own hooks cannot veto the edit: there, exit 0 is recorded as a
+clean pass with no reason at all, so "I could not vet this" must not spell
+itself the same way as
 "I vetted this and it was clean". Use :func:`exit_no_verdict` for the former —
 :func:`exit_allow` means the check ran.
 """
@@ -288,7 +289,8 @@ def run_handler(main_callable: Callable[[], None], *, hook_name: str) -> NoRetur
         # An interactive session fails OPEN here on purpose: a handler bug must
         # not stop the user from editing their own files. The controller-side
         # net has the opposite duty — it is the only thing vetting a Builder
-        # that fires no hooks, and exit 0 there is recorded as a clean pass with
+        # whose own hooks cannot veto the edit, and exit 0 there is recorded as a
+        # clean pass with
         # NO reason at all, so a crash reads as approval.
         crashed_closed = _FAILS_CLOSED
         label = "block" if crashed_closed else "internal_error"

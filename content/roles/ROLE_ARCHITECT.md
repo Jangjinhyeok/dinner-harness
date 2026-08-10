@@ -42,7 +42,7 @@
    - `<CLAUDE_HOME>`은 설치된 Claude home의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, pipe, redirection을 붙이지 않는다. 이 정확한 command shape만 Claude permission allowlist가 허용한다.
    - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경과 RESULT.md를 **Builder worktree**에 남긴다. primary Architect tree의 동시 변경은 Builder `git status`/safety-net snapshot에 들어가지 않는다. (orchestrator는 `git add`를 하지 않는다 — 변경은 untracked/unstaged 상태로 남는다.)
    - linked worktree는 Git common directory를 공유한다. Builder 실행 중 primary tree에서 `git stash`, `core.excludesFile`, `.git/info/exclude`를 바꾸지 않는다. 이들은 witness fingerprint의 공유 입력이라 변경 시 net은 의도적으로 fail-closed 한다.
-   - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex는 Claude hook을 안 쏘므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.
+   - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex hook은 발화하지만 PreToolUse exit 2로 edit을 직접 막지 못하므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.
    - tier-gate(verdict)는 advisory다 — 판정은 아래 in-session 리뷰가 한다.
 3. 결과 처리:
    - `[outcome] BUILT` → Builder worktree의 RESULT.md + `git -C ../<repo>-build diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정. 수용된 출력의 primary branch 반영은 별도의 repository change-integration 절차다.

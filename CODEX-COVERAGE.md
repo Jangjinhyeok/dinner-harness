@@ -106,3 +106,8 @@ enforcement 무음 상실 방지를 위해 두 곳에 명시:
 4. **PermissionRequest 출력 스키마** — object `{"decision":"decline"}`는 invalid로 거부되고, bare JSON 문자열 `"decline"`은 수용된다. (단 테스트 app-server 경로는 downstream file-change 승인을 auto-accept해 user-visible deny는 미실증.)
 5. **subagent depth** — depth-1 spawn 동작(`spawn_agent`→`wait`→child reply), depth-2 grandchild spawn은 차단(`agents.max_depth=1` 기본).
 6. **skill path discovery** — 런타임이 `~/.codex/skills`와 `~/.agents/skills`를 **둘 다** 발견 → 현 `~/.codex/skills` 유효(매뉴얼의 `~/.agents/skills`-only 서술보다 최신).
+
+### 6.3 0.147.0 재검증 (2026-08-10)
+
+- `apply_patch` 2회에서 PreToolUse handler가 `decision=block`과 exit 2를 기록해도 edit은 모두 적용됐고, 같은 turn의 차단 사유 probe 응답은 `NONE`이었다.
+- `codex features list`에서 `exec_permission_approvals`와 `request_permissions_tool`은 `under development`/`false`여서 headless `codex exec`에는 approval layer가 없다.
