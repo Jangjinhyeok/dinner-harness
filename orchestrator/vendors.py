@@ -112,7 +112,13 @@ class MockBackend(Backend):
 # --------------------------------------------------------------------------- #
 # Real backends (scaffold — verify flags on your machine)                     #
 # --------------------------------------------------------------------------- #
-def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None) -> Turn:
+def _run(
+    argv: list[str],
+    cfg: Config,
+    last_message_file: Optional[Path] = None,
+    *,
+    stdin_text: Optional[str] = None,
+) -> Turn:
     # shell=False with a list argv: the prompt (which carries the user goal and
     # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
     # injection via prompt content is the residual surface and is CLI-specific —
@@ -134,10 +140,9 @@ def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None)
             cwd=str(cfg.repo),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            # Headless: give the CLI an immediate stdin EOF. Without this codex
-            # exec waits to read "additional input from stdin" (it appends piped
-            # stdin to the prompt), which stalls or perturbs a subprocess turn.
-            stdin=subprocess.DEVNULL,
+            # Headless: give the CLI an immediate stdin EOF unless the caller
+            # explicitly supplies prompt text through stdin.
+            stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
             # Force UTF-8: the CLIs emit UTF-8 (Korean/emoji), but text=True would
             # otherwise decode with the locale codepage (cp949 on Korean Windows)
             # and crash the reader thread. errors=replace so a stray byte never
@@ -159,6 +164,12 @@ def _run(argv: list[str], cfg: Config, last_message_file: Optional[Path] = None)
         err_pump = threading.Thread(target=pump, args=(proc.stderr, stderr, sys.stderr), daemon=True)
         out_pump.start()
         err_pump.start()
+        if stdin_text is not None:
+            try:
+                proc.stdin.write(stdin_text)
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
         try:
             proc.wait(timeout=cfg.timeout_s)
         except subprocess.TimeoutExpired:
@@ -205,6 +216,9 @@ class ClaudeBackend(Backend):
 class CodexBackend(Backend):
     """`codex exec` non-interactive mode. Verified against codex-cli 0.141.
 
+    Prompts are sent through stdin instead of argv because the Windows `.CMD`
+    shim invokes cmd.exe, whose command-line limit is 8191 characters.
+
     Sandbox model (0.140+): `-s/--sandbox {read-only|workspace-write|
     danger-full-access}` replaced the old `--full-auto`. A Builder gets
     `workspace-write` (may edit files under `--cd`, cannot escape the workspace);
@@ -219,7 +233,7 @@ class CodexBackend(Backend):
         sandbox = "workspace-write" if role == ROLE_BUILDER else "read-only"
         last_msg = Path(tempfile.gettempdir()) / f"codex_last_{os.getpid()}_{id(prompt)}.txt"
         argv = [
-            "codex", "exec", prompt,
+            "codex", "exec",
             "--cd", str(cfg.repo),
             "--sandbox", sandbox,
             "--skip-git-repo-check",
@@ -229,7 +243,7 @@ class CodexBackend(Backend):
         if model:
             argv += ["--model", model]
         try:
-            return _run(argv, cfg, last_message_file=last_msg)
+            return _run(argv, cfg, last_message_file=last_msg, stdin_text=prompt)
         finally:
             try:
                 last_msg.unlink()

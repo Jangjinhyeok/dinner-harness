@@ -85,6 +85,28 @@ def tearDownModule():
 
 
 class TestVendorRunner(unittest.TestCase):
+    def test_stdin_text_reaches_the_child_and_is_captured(self):
+        stdin_text = "prompt delivered through stdin\n"
+        with mock.patch("sys.stdout", new_callable=io.StringIO):
+            turn = vendors._run(
+                [sys.executable, "-c", "import sys; sys.stdout.write(sys.stdin.read())"],
+                Config(),
+                stdin_text=stdin_text,
+            )
+        self.assertEqual(turn.error, "")
+        self.assertEqual(turn.text, stdin_text)
+
+    def test_stdin_text_bypasses_the_windows_command_line_limit(self):
+        stdin_text = "x" * 20_000 + "\nSTDIN_BYPASS_OK\n"
+        with mock.patch("sys.stdout", new_callable=io.StringIO):
+            turn = vendors._run(
+                [sys.executable, "-c", "import sys; sys.stdout.write(sys.stdin.read())"],
+                Config(),
+                stdin_text=stdin_text,
+            )
+        self.assertEqual(turn.error, "")
+        self.assertEqual(turn.text, stdin_text)
+
     def test_child_output_is_streamed_and_captured(self):
         # The old subprocess.run(capture_output=True) held every progress line
         # until the CLI exited. Keep stdout for Claude RESULT parsing while also
