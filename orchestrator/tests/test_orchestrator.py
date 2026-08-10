@@ -85,6 +85,19 @@ def tearDownModule():
 
 
 class TestVendorRunner(unittest.TestCase):
+    @mock.patch("orchestrator.vendors._run")
+    def test_claude_backend_passes_prompt_via_stdin(self, run_mock: mock.Mock):
+        prompt = "prompt must not be passed as argv"
+
+        vendors.ClaudeBackend().invoke(ROLE_BUILDER, prompt, Config())
+
+        argv, _ = run_mock.call_args.args
+        self.assertNotIn(prompt, argv)
+        self.assertEqual(run_mock.call_args.kwargs["stdin_text"], prompt)
+        self.assertIn("-p", argv)
+        self.assertIn("--output-format", argv)
+        self.assertEqual(argv[argv.index("--output-format") + 1], "text")
+
     def test_stdin_text_reaches_the_child_and_is_captured(self):
         stdin_text = "prompt delivered through stdin\n"
         with mock.patch("sys.stdout", new_callable=io.StringIO):

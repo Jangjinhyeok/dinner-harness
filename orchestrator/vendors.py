@@ -140,8 +140,9 @@ def _run(
             cwd=str(cfg.repo),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            # Headless: give the CLI an immediate stdin EOF unless the caller
-            # explicitly supplies prompt text through stdin.
+            # Headless: without prompt text, give the CLI an immediate EOF so
+            # it cannot wait for extra stdin and stall or be disturbed. With
+            # prompt text, the pipe is the prompt-delivery path.
             stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
             # Force UTF-8: the CLIs emit UTF-8 (Korean/emoji), but text=True would
             # otherwise decode with the locale codepage (cp949 on Korean Windows)
@@ -196,12 +197,15 @@ def _run(
 
 
 class ClaudeBackend(Backend):
-    """`claude -p` print mode. Hooks fire in this mode (scope/secret net)."""
+    """`claude -p` print mode. Hooks fire in this mode (scope/secret net).
+
+    Prompts use stdin because the `.CMD` shim passes through cmd.exe's 8191-char limit.
+    """
 
     name = "claude"
 
     def invoke(self, role: str, prompt: str, cfg: Config) -> Turn:
-        argv = ["claude", "-p", prompt, "--output-format", "text"]
+        argv = ["claude", "-p", "--output-format", "text"]
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
@@ -210,7 +214,7 @@ class ClaudeBackend(Backend):
         # VERIFY this flag name/behaviour on your CLI version.
         if role == ROLE_BUILDER:
             argv += ["--permission-mode", "acceptEdits"]
-        return _run(argv, cfg)
+        return _run(argv, cfg, stdin_text=prompt)
 
 
 class CodexBackend(Backend):
