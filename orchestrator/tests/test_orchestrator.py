@@ -27,6 +27,9 @@ from orchestrator.config import Config
 from orchestrator.controller import (
     AutoApprove,
     Orchestrator,
+    build_prompt,
+    review_prompt,
+    verdict_recovery_prompt,
     collect_changeset,
     compute_has_high,
     enforce_tier_gates,
@@ -120,6 +123,61 @@ class TestVendorRunner(unittest.TestCase):
             ])
         self.assertEqual(status, 2)
         self.assertIn("timeout_s must be > 0", stderr.getvalue())
+
+
+class TestBuildPrompt(unittest.TestCase):
+    def test_names_the_dispatched_handoff_and_ignores_stale_bus_artifacts(self):
+        prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
+
+        self.assertIn("--- HANDOFF_DELEGATE.md ---", prompt)
+        self.assertNotIn("--- HANDOFF.md ---", prompt)
+        self.assertIn("other `HANDOFF*` and `RESULT` files are stale artifacts", prompt)
+
+    def test_clears_stale_result_before_the_builder_turn(self):
+        class _ResultBus:
+            def __init__(self):
+                self.result_text = "stale report\n"
+
+            def write_result(self, text):
+                self.result_text = text
+
+        result_bus = _ResultBus()
+
+        class _ReadsResult(Backend):
+            name = "reads-result"
+
+            def __init__(self):
+                self.before_turn = None
+
+            def invoke(self, role, prompt, cfg):
+                self.before_turn = result_bus.result_text
+                return Turn(text=_CLEAN_VERDICT)
+
+        backend = _ReadsResult()
+        controller = Orchestrator(_cfg(Path.cwd()), backend, backend, AutoApprove(),
+                                  log=lambda m: None)
+        handoff = "# H\n```tiers\ngate 1: LOW\n```\n```scope\nfeat.py\n```\n"
+        with mock.patch.object(controller, "_pre_turn_checks", return_value=({}, None)), \
+             mock.patch.object(controller, "_builder_changes", return_value=([], None)):
+            _, _, _, blocked, _ = controller._build_and_gate(
+                result_bus, handoff, {"1": bus.TIER_LOW}, cycle=1,
+                handoff_name=bus.HANDOFF,
+            )
+
+        self.assertIsNone(blocked)
+        self.assertEqual(backend.before_turn, "")
+
+    def test_recovery_prompt_names_the_dispatched_handoff(self):
+        prompt = verdict_recovery_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
+
+        self.assertIn("--- HANDOFF_DELEGATE.md ---", prompt)
+        self.assertNotIn("--- HANDOFF.md ---", prompt)
+
+    def test_review_prompt_uses_bus_module_labels(self):
+        prompt = review_prompt("# spec\n", "# result\n")
+
+        self.assertIn("--- HANDOFF.md ---", prompt)
+        self.assertIn("--- RESULT.md ---", prompt)
 
 
 class TestBuilderFirstGuard(unittest.TestCase):

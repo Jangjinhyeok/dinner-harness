@@ -103,7 +103,7 @@ def design_prompt(goal: str, prior_result: str, cycle: int) -> str:
     )
 
 
-def build_prompt(handoff_text: str) -> str:
+def build_prompt(handoff_text: str, handoff_name: str) -> str:
     return (
         "You are the BUILDER in a Two-CLI workflow. Implement the HANDOFF below.\n"
         "YOUR VERY FIRST ACTION IS TO WRITE THE FILE EDITS the HANDOFF requires — "
@@ -134,7 +134,10 @@ def build_prompt(handoff_text: str) -> str:
         "Do NOT merge/deploy HIGH gates. Leave your edits in the working tree: "
         "do NOT stage, commit, merge, or deploy — the Architect reviews them with "
         "plain `git diff`, which shows nothing once changes are staged.\n\n"
-        f"--- HANDOFF.md ---\n{handoff_text}\n--- end ---\n\n"
+        "The following block is this turn's only specification; other `HANDOFF*` "
+        "and `RESULT` files are stale artifacts from other turns, so do not read "
+        "or act on them.\n\n"
+        f"--- {handoff_name} ---\n{handoff_text}\n--- end ---\n\n"
         "After doing the work, write RESULT.md content as your final message.\n"
         "CRITICAL OUTPUT CONTRACT: regardless of any report format your role "
         "protocol normally uses, your final message MUST contain a fenced block "
@@ -146,7 +149,7 @@ def build_prompt(handoff_text: str) -> str:
     )
 
 
-def verdict_recovery_prompt(handoff_text: str) -> str:
+def verdict_recovery_prompt(handoff_text: str, handoff_name: str) -> str:
     """Ask for the machine-readable artifact a completed turn omitted."""
     return (
         "VERDICT-ONLY RECOVERY. The implementation turn has already completed, "
@@ -155,7 +158,7 @@ def verdict_recovery_prompt(handoff_text: str) -> str:
         "repeat the report. Return ONLY the fenced ```verdicts``` block, with one "
         "line for every gate declared in this HANDOFF. If you cannot honestly "
         "report a completed gate, use status=blocked and panel=BLOCK.\n\n"
-        f"--- HANDOFF.md ---\n{handoff_text}\n--- end ---\n\n"
+        f"--- {handoff_name} ---\n{handoff_text}\n--- end ---\n\n"
         "Required shape:\n"
         "```verdicts\n"
         "gate 1: status=completed tier=LOW panel=PASS\n"
@@ -168,7 +171,7 @@ def review_prompt(handoff_text: str, result_text: str) -> str:
     return (
         "REVIEW. You are the ARCHITECT. Compare the HANDOFF intent against the "
         "actual implementation (inspect the real diff in the repo).\n\n"
-        f"--- HANDOFF.md ---\n{handoff_text}\n--- RESULT.md ---\n{result_text}\n--- end ---\n\n"
+        f"--- {busmod.HANDOFF} ---\n{handoff_text}\n--- {busmod.RESULT} ---\n{result_text}\n--- end ---\n\n"
         "Decide the cycle outcome. End your output with a fence:\n"
         "```control``` — `verdict: DONE|NEXT_CYCLE|BLOCKED` and `reason: <one line>`"
     )
@@ -1004,12 +1007,17 @@ class Orchestrator:
         """
         cfg = self.cfg
 
+        # A normal Builder turn must not inherit a previous turn's report. Recovery
+        # deliberately keeps it because its prompt directs the Builder to use it.
+        if prompt is None:
+            bus.write_result("")
         ev, stop = self._pre_turn_checks(cycle, handoff_text, handoff_name)
         if stop:
             return None, [], False, self._outcome(BLOCKED, cycle, stop), False
 
         self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
-        bd = self.builder.invoke(ROLE_BUILDER, prompt or build_prompt(handoff_text), cfg)
+        bd = self.builder.invoke(
+            ROLE_BUILDER, prompt or build_prompt(handoff_text, handoff_name), cfg)
         if bd.error:
             return bd, [], False, self._outcome(BLOCKED, cycle, f"builder error: {bd.error}"), False
         if result_prefix:
@@ -1151,7 +1159,7 @@ class Orchestrator:
                 _recovery, verdicts, has_high, blocked, recovery_implementation_observed = self._build_and_gate(
                     bus, handoff_text, tiers, cycle=recovery_attempt,
                     handoff_name=handoff_name, tier_gate_hard=False,
-                    prompt=verdict_recovery_prompt(handoff_text), result_prefix=bd.text,
+                    prompt=verdict_recovery_prompt(handoff_text, handoff_name), result_prefix=bd.text,
                 )
                 if blocked is not None:
                     return blocked
