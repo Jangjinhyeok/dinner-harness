@@ -34,19 +34,16 @@
 
 기본 페어링(Claude=Architect, Codex=Builder)에서, HANDOFF.md가 in-session 사람 승인을 받은 직후 — 사용자에게 Codex 터미널 수동 전환을 시키지 말고 **자동으로 Builder를 dispatch**한다:
 
-1. 승인된 HANDOFF.md를 Builder 전용 linked worktree로 격리한다:
-   - `git worktree add -b builder/<task> ../<repo>-build HEAD`
-   - `Copy-Item -LiteralPath .\HANDOFF.md -Destination ..\<repo>-build\HANDOFF.md`
-   - HANDOFF.md는 uncommitted bus artifact라 worktree에 자동으로 생기지 않는다. 복사한 승인본만 dispatch하며 Builder가 바꾼 handoff를 primary tree로 되돌려 복사하지 않는다.
-2. Bash로 호출: `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real`
-   - `<CLAUDE_HOME>`은 설치된 Claude home의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, pipe, redirection을 붙이지 않는다. 이 정확한 command shape만 Claude permission allowlist가 허용한다.
-   - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경과 RESULT.md를 **Builder worktree**에 남긴다. primary Architect tree의 동시 변경은 Builder `git status`/safety-net snapshot에 들어가지 않는다. (orchestrator는 `git add`를 하지 않는다 — 변경은 untracked/unstaged 상태로 남는다.)
-   - linked worktree는 Git common directory를 공유한다. Builder 실행 중 primary tree에서 `git stash`, `core.excludesFile`, `.git/info/exclude`를 바꾸지 않는다. 이들은 witness fingerprint의 공유 입력이라 변경 시 net은 의도적으로 fail-closed 한다.
+1. 승인된 HANDOFF.md가 있는 원본 repository를 dispatch 전에 baseline commit으로 clean하게 둔다. HANDOFF.md는 같은 repository의 bus artifact이므로 복사하지 않는다.
+2. Bash로 호출: `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`
+   - `<CLAUDE_HOME>`은 설치된 Claude home의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, pipe, redirection을 붙이지 않는다. 이 정확한 command shape만 Claude permission allowlist가 허용한다.
+   - Codex가 Builder로 HANDOFF.md를 실행(headless), 변경과 RESULT.md를 원본 repository에 남긴다. (orchestrator는 `git add`를 하지 않는다 — 변경은 untracked/unstaged 상태로 남는다.)
+   - Builder 실행 중에는 해당 repository를 편집하지 않는다. ADR-0007의 before/after snapshot delta가 Builder turn의 변경만 판정한다.
    - **deterministic safety net(scope_check·secret_scan)은 hard gate** — Codex hook은 발화하지만 PreToolUse exit 2로 edit을 직접 막지 못하므로 이 controller-side net이 유일한 자동 방어선이다. net 위반 시 `BLOCKED`로 멈춘다.
    - tier-gate(verdict)는 advisory다 — 판정은 아래 in-session 리뷰가 한다.
 3. 결과 처리:
-   - `[outcome] BUILT` → Builder worktree의 RESULT.md + `git -C ../<repo>-build diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정. 수용된 출력의 primary branch 반영은 별도의 repository change-integration 절차다.
-   - **Delivery branch**: Architect가 시작 시 확인한 사용자의 current non-detached branch만 delivery 대상이다. `builder/<task>`는 격리용이고 push하지 않는다. 사용자가 현재 대화에서 `commit` 또는 `commit and push`를 명시 승인한 경우에만, 수용된 delta를 그 primary branch에 integration한 뒤 정확한 파일만 stage·commit한다. push 전에 current branch·upstream·remote를 재확인하고, 다르면 중단한다. agent는 delivery branch를 새로 만들거나 switch·merge·force-push하지 않는다.
+   - `[outcome] BUILT` → 원본 repository의 RESULT.md + `git diff`를 직접 읽어 **ARCHITECT_REVIEW를 in-session 수행**("## RESULT.md 검토 시"). HANDOFF 의도 대비 실제 구현을 검수하고 수용/재작업/블록 판정.
+   - **Delivery branch**: Architect가 시작 시 확인한 사용자의 current non-detached branch만 delivery 대상이다. 사용자가 현재 대화에서 `commit` 또는 `commit and push`를 명시 승인한 경우에만, 수용된 delta를 그 branch에 stage·commit한다. push 전에 current branch·upstream·remote를 재확인하고, 다르면 중단한다. agent는 delivery branch를 새로 만들거나 switch·merge·force-push하지 않는다.
    - **HIGH 게이트 포함 시** merge/apply/commit 전 **사람 종단 서명**을 in-session에서 받는다(orchestrator는 파일만 남기고 stage·commit·merge·deploy 어느 것도 하지 않음).
    - 재작업 필요 → 새 HANDOFF.md 작성 후 1번부터 재-dispatch.
    - `[outcome] BLOCKED` 또는 명령 에러(codex 미인증/플래그 불일치 등) → **자동 진행하지 말고** 사용자에게 보고하고, 수동 fallback 안내: Codex 터미널에서 `builder 모드`로 HANDOFF.md 진행.

@@ -116,8 +116,8 @@ Edit/Write는 할 수 없다**. `builder_guard`는 기본으로 root bus artifac
   guard가 동작하지 않으므로 strict token boundary를 보장하지 않는다.
 
 이 guard는 structured file-edit 도구만 다루는 honest-session workflow guard이며 Bash/
-PowerShell implementation을 sandbox처럼 해석·차단하지 않는다. Builder worktree와 controller
-safety net이 실제 containment 및 deterministic decision boundary다.
+PowerShell implementation을 sandbox처럼 해석·차단하지 않는다. controller safety net이
+deterministic decision boundary이며, containment는 sandbox가 제공한다.
 
 ### Direct-edit escape routing
 
@@ -163,8 +163,8 @@ daily workflow. `~/.claude/claude-direct.cmd` is the only direct-edit escape;
 it sets `DINNER_EXECUTION_MODE=direct` for that one Claude process.
 
 This is a workflow guard, not a sandbox. It deliberately does not parse or
-block arbitrary Bash/PowerShell commands: the Builder worktree and controller
-safety net remain the containment and deterministic decision boundaries.
+block arbitrary Bash/PowerShell commands: the controller safety net remains the
+deterministic decision boundary, and containment remains the sandbox's responsibility.
 
 Each `build` appends content-free `attempted` then terminal (`built`, `blocked`,
 `timeout`, or `builder_bailed`) JSONL events under the harness runtime `logs/`
@@ -203,13 +203,13 @@ Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 —
 - **Codex = Architect, Claude = Builder** (역방향 — Claude quota가 충분하거나 특정 작업에서 Codex 설계가 더 나을 때)
 - 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
 
-통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본은 같은 프로젝트 디렉터리지만, 실제 Builder dispatch는 아래처럼 별도 git worktree를 사용해 Architect와 Builder의 변경을 격리한다. 런타임 IPC나 MCP는 필요 없다.
+통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본 dispatch는 원본 repository에서 실행한다. 런타임 IPC나 MCP는 필요 없다.
 
-**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, 우선 `git worktree add -b builder/<task> ../<repo>-build HEAD`로 Builder worktree를 만들고 승인된 HANDOFF.md를 그 루트로 복사한다.
+**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, dispatch 전에 baseline commit으로 원본 repository를 clean하게 둔다.
 
-이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real` 형태로 **Codex Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_BUILDER_WORKTREE>`는 방금 만든 Builder worktree의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다.
+이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real` 형태로 **Codex Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다.
 
-Builder worktree의 RESULT.md + `git -C <ABSOLUTE_BUILDER_WORKTREE> diff`를 **같은 세션이 직접 리뷰**한다. Architect의 동시 변경은 Builder의 `git status`/safety net에 섞이지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 발화하지만 PreToolUse exit 2가 edit을 직접 막지 못하므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. linked worktree는 `.git/info/exclude`·`core.excludesFile`·stash ref를 공유하므로 Builder 실행 중 primary tree에서 이를 바꾸지 않는다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 worktree 절. (역방향·동일 vendor 2세션은 수동.)
+원본 repository의 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로, dispatch 중에는 해당 repository를 편집하지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 발화하지만 PreToolUse exit 2가 edit을 직접 막지 못하므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 in-place dispatch 절. (역방향·동일 vendor 2세션은 수동.)
 
 cross-vendor 시 주의:
 
@@ -270,9 +270,6 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 않는다. 작업 시작 시 `git branch --show-current`으로 branch를 확인하고, 비어 있거나 detached면
 사용자에게 먼저 branch를 준비해 달라고 요청한다.
 
-- Builder의 `builder/<task>` linked worktree branch는 safety net을 위한 **임시 격리 경계**이며
-  delivery branch가 아니다. 그 branch에서 remote push하지 않으며, 수용한 delta의 integration은
-  사용자가 열어 둔 primary branch로만 한다.
 - 사용자가 현재 대화에서 명시적으로 `commit` 또는 `commit and push`를 요청/승인한 경우에만,
   수용된 정확한 파일을 그 현재 branch에 stage·commit한다. `push`도 같은 명시 권한이 있어야 하며,
   upstream/remote가 없거나 대상이 예상과 다르면 추측하지 말고 중단·질문한다.
@@ -280,7 +277,7 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
   merge는 별도의 명시 지시가 필요하다.
 
 이 규약의 목적은 사용자 branch를 delivery의 단일 기준으로 유지하는 것이다. agent가 새 branch를
-만들어 작업을 숨기거나, Builder isolation branch를 사용자의 공개 history로 밀어 넣어서는 안 된다.
+만들어 작업을 숨기거나, 명시 승인 없이 사용자의 공개 history에 변경을 밀어 넣어서는 안 된다.
 
 ---
 

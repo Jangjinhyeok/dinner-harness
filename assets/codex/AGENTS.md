@@ -96,9 +96,6 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 않는다. 작업 시작 시 `git branch --show-current`으로 branch를 확인하고, 비어 있거나 detached면
 사용자에게 먼저 branch를 준비해 달라고 요청한다.
 
-- Builder의 `builder/<task>` linked worktree branch는 safety net을 위한 **임시 격리 경계**이며
-  delivery branch가 아니다. 그 branch에서 remote push하지 않으며, 수용한 delta의 integration은
-  사용자가 열어 둔 primary branch로만 한다.
 - 사용자가 현재 대화에서 명시적으로 `commit` 또는 `commit and push`를 요청/승인한 경우에만,
   수용된 정확한 파일을 그 현재 branch에 stage·commit한다. `push`도 같은 명시 권한이 있어야 하며,
   upstream/remote가 없거나 대상이 예상과 다르면 추측하지 말고 중단·질문한다.
@@ -106,7 +103,7 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
   merge는 별도의 명시 지시가 필요하다.
 
 이 규약의 목적은 사용자 branch를 delivery의 단일 기준으로 유지하는 것이다. agent가 새 branch를
-만들어 작업을 숨기거나, Builder isolation branch를 사용자의 공개 history로 밀어 넣어서는 안 된다.
+만들어 작업을 숨기거나, 명시 승인 없이 사용자의 공개 history에 변경을 밀어 넣어서는 안 된다.
 
 ---
 
@@ -139,7 +136,7 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 
 큰 작업은 설계·검토(**Architect**)와 구현(**Builder**) 두 역할로 나눈다. "Two-CLI"는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**을 뜻한다. 두 역할은 vendor-neutral하며 Codex가 어느 쪽이든 맡을 수 있다. **기본 페어링은 Claude=Architect, Codex=Builder**다(역방향도 가능) — Builder가 token sink라 quota 여유가 큰 plan(Codex)에 두고, 저volume Architect를 quota 빠듯한 plan(Claude Pro)에 두는 배치. **즉 Codex가 기본 Builder다.** 그리고 기본 모드에서 **Codex Builder는 사람이 여는 세션이 아니라 인터랙티브 Claude(Architect)가 `orchestrate.py build`로 dispatch하는 headless `codex exec` 호출**(single-pane)이다 — 이때 아래 "헤드리스 orchestration 모드" 규약을 따른다. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다.
 
-기본 auto-dispatch는 Builder를 별도 linked git worktree로 격리한다. Architect는 승인된 HANDOFF를 그 worktree에 명시적으로 복사한 뒤 `orchestrate.py build --repo <builder-worktree>`를 실행하고, RESULT·diff도 그 worktree에서 검토한다. 따라서 Architect의 primary-tree 변경은 Builder 변화량과 섞이지 않는다. 단 linked worktree는 Git common directory를 공유하므로 Builder 실행 중 `git stash`, `core.excludesFile`, `.git/info/exclude` 변경은 witness fingerprint를 움직여 fail-closed 된다.
+기본 auto-dispatch는 원본 repository에서 실행한다. Architect는 dispatch 전에 baseline commit으로 tree를 clean하게 두고 `orchestrate.py build --repo <absolute-repo-path>`를 실행한 뒤, 같은 repository의 RESULT·diff를 검토한다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로 Builder 실행 중 해당 tree를 편집하지 않는다.
 
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 

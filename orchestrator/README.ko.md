@@ -58,14 +58,14 @@ py -3 orchestrate.py build --repo /path/to/work-repo --backend real
 `--net-dryrun`, `--timeout-s N`입니다. `--timeout-s`의 기본값은 headless vendor
 turn당 1800초입니다. vendor stdout/stderr는 실행 중 stream되고 parsing용으로
 capture됩니다. timeout은 child를 종료하고 `BLOCKED`로 남습니다. 재시도나 수동
-fallback 전에 남아 있는 Builder worktree를 먼저 확인하세요.
+fallback 전에 dispatch repository에 남아 있는 Builder 출력을 먼저 확인하세요.
 
 ### Dispatch receipt와 audit
 
 `build`는 기본으로 harness 측 `logs/build-audit.jsonl`에 content-free JSONL event
 두 개를 기록합니다. Builder 실행 전의 `attempted`와 controller 판단 뒤의
 `built`, `blocked`, `timeout`, `builder_bailed` 중 하나입니다. `--audit-dir <path>`로
-runtime log 위치를 바꿀 수 있지만, safety net이 판단하는 worktree delta를 오염시키므로
+runtime log 위치를 바꿀 수 있지만, safety net이 판단하는 repository delta를 오염시키므로
 `--repo` 아래에는 두지 마세요.
 
 terminal event는 dispatch id, UTC timestamp, vendor/backend, attempt 수, duration,
@@ -74,37 +74,27 @@ prompt, HANDOFF/RESULT 본문, 변경 파일 경로·내용은 기록하지 않�
 `[receipt]` 출력은 audit 증거일 뿐이며 Architect의 RESULT/diff review나 HIGH human
 end sign-off를 대체하지 않습니다.
 
-## linked worktree로 Builder 격리
+## Builder를 원본 repository에서 dispatch
 
-실제 Builder dispatch는 전용 linked worktree를 권장합니다. 이것은 process-level
-boundary입니다. primary worktree의 Architect 수정은 Builder의 `git status` snapshot과
-controller-side net에 섞이지 않습니다.
+Builder는 원본 repository에서 dispatch합니다. dispatch 전에 승인된 baseline을 commit해
+tree를 clean하게 둡니다. `HANDOFF.md`는 같은 repository의 local bus artifact이므로 복사할
+필요가 없습니다. ADR-0007의 before/after snapshot은 Builder turn의 delta만 판정합니다.
+Builder 실행 중에는 해당 repository를 편집하지 마세요.
 
 ```powershell
-# HANDOFF.md 승인 후 Architect primary worktree에서 실행한다.
-$builderWorktree = "../repo-build"
-git worktree add -b builder/my-task $builderWorktree HEAD
-Copy-Item -LiteralPath .\HANDOFF.md -Destination "$builderWorktree\HANDOFF.md"
-
+# HANDOFF.md 승인과 baseline commit 뒤 원본 repository에서 실행한다.
 $claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
-$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path -replace '\\', '/'
-py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real
+$repoPath = (Get-Location).Path -replace '\\', '/'
+py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real
 
-# primary가 아니라 Builder worktree에서 bus와 diff를 검토한다.
-Get-Content -Raw "$builderWorktree\RESULT.md"
-git -C $builderWorktree diff
+# 원본 repository에서 bus와 diff를 검토한다.
+Get-Content -Raw .\RESULT.md
+git diff
 ```
 
-`HANDOFF.md`와 `RESULT.md`는 local bus artifact이므로 linked worktree에 Architect의
-uncommitted handoff가 자동으로 들어가지 않습니다. 승인된 handoff만 복사하고,
-Builder가 수정한 handoff를 primary로 되돌려 복사하지 마세요. Builder output은 review와
-일반적인 repository integration 절차를 위해 Builder worktree에 그대로 둡니다.
-
-linked worktree는 Git common directory를 공유합니다. Builder가 실행 중일 때 primary
-worktree에서 `git stash`, `core.excludesFile` 변경, `.git/info/exclude` 편집을 하지
-마세요. 이 shared witness input의 변경은 net을 의도적으로 fail-closed 시킬 수 있습니다.
-linked worktree의 per-worktree git dir에는 `info/exclude`가 없으므로 net은 의도적으로
-`--git-dir` 대신 `rev-parse --git-common-dir`를 읽습니다.
+clean baseline이면 기존 `/delegate` 규율처럼 실패한 run의 delta도 저비용으로 폐기할 수
+있습니다. snapshot delta는 동시성 경계가 아니므로 Architect는 Builder가 끝날 때까지
+repository를 건드리지 않아야 합니다.
 
 ## Machine-readable bus
 
@@ -183,8 +173,8 @@ hard gate로 막습니다. 이는 headless agent에서 실제로 자주 발생�
 반대로 shell을 통해 같은 tree에 접근하는 **evading Builder**를 containment하지는 못합니다.
 ignore rule과 index-bit fingerprint는 가장 싼 우회 둘을 막을 뿐 전체 class를 막지는
 않습니다. `BUILT`는 "net이 볼 수 있는 범위에서 문제가 없었다"는 뜻이지 다른 일이 전혀
-없었다는 증명은 아닙니다. containment가 필요하면 Builder가 벗어날 수 없는 worktree나
-sandbox 같은 process-level boundary가 필요합니다.
+없었다는 증명은 아닙니다. containment가 필요하면 sandbox 같은 process-level boundary가
+필요합니다.
 
 정직한 Builder에게도 net이 보지 못하는 영역이 있습니다. global `core.excludesFile`을
 포함해 `.gitignore`에 match된 file은 `git status`에 나타나지 않습니다. `--ignored`는
@@ -212,7 +202,7 @@ mechanism 설명이지 두 layer가 항상 동시에 active라는 뜻은 아닙�
 > **이 영역을 바꾸면 반드시 install합니다.** `assets/claude/hooks/`, `orchestrator/`,
 > `orchestrate.py` 아래를 바꾼 뒤에는
 > `py -3 install.py --target claude --allow-live`(필요하면 `--target codex`)를 다시
-> 실행하세요. live dispatch는 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>"`로 **설치본**을
+> 실행하세요. live dispatch는 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`로 **설치본**을
 > 실행하므로 repo에만 있는 수정은 runtime에 적용되지 않습니다. `py -3 check.py`의
 > install-drift axis가 repo와 설치본의 차이를 보고합니다. 이것은 report일 뿐 install하지는
 > 않습니다.

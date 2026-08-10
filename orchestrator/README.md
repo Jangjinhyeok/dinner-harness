@@ -60,7 +60,7 @@ Flags: `--architect/--builder {codex,claude}`, `--architect-model/--builder-mode
 `--net-dryrun` (safety net warns instead of blocks), and `--timeout-s N` (per
 headless vendor turn; default 1800). Vendor stdout/stderr is streamed while the
 turn runs and captured for parsing. A timeout kills the child and remains
-`BLOCKED`; inspect the Builder worktree for surviving output before retrying or
+`BLOCKED`; inspect the dispatch repository for surviving output before retrying or
 starting a manual fallback.
 
 ### Dispatch receipt and audit
@@ -69,7 +69,7 @@ starting a manual fallback.
 `logs/build-audit.jsonl` by default: `attempted` before the Builder work and a
 terminal `built`, `blocked`, `timeout`, or `builder_bailed` event after the
 controller decides the outcome. Pass `--audit-dir <path>` to move that runtime
-log; do not place it inside `--repo`, because it would pollute the worktree
+log; do not place it inside `--repo`, because it would pollute the repository
 delta the safety net judges. A terminal event records dispatch id, UTC timestamp,
 vendor/backend, attempt count, duration, a fixed reason code, and SHA-256 hashes of
 the repo path, handoff name, and handoff text. It never records prompts,
@@ -77,39 +77,27 @@ HANDOFF/RESULT bodies, changed-file paths, or changed-file contents. The CLI pri
 event is written; its presence is audit evidence, not a substitute for the
 Architect's RESULT + diff review or HIGH human end sign-off.
 
-## Isolate the Builder in a linked worktree
+## Dispatch the Builder in place
 
-For a real Builder dispatch, prefer a dedicated linked worktree. It is a
-process-level boundary: Architect edits in the primary worktree cannot be
-included in the Builder's `git status` snapshots or its controller-side net.
+Dispatch from the original repository. Before dispatch, commit the approved
+baseline so the tree is clean; `HANDOFF.md` is already available as the local
+bus artifact and does not need copying. ADR-0007's before/after snapshots judge
+the Builder turn's delta. Do not edit that repository while the Builder runs.
 
 ```powershell
-# Run from the Architect's primary worktree after HANDOFF.md is approved.
-$builderWorktree = "../repo-build"
-git worktree add -b builder/my-task $builderWorktree HEAD
-Copy-Item -LiteralPath .\HANDOFF.md -Destination "$builderWorktree\HANDOFF.md"
-
+# Run from the original repository after HANDOFF.md is approved and the baseline is committed.
 $claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
-$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path -replace '\\', '/'
-py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real
+$repoPath = (Get-Location).Path -replace '\\', '/'
+py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real
 
-# Review the Builder's bus and diff in the Builder worktree, not the primary one.
-Get-Content -Raw "$builderWorktree\RESULT.md"
-git -C $builderWorktree diff
+# Review the Builder's bus and diff in the original repository.
+Get-Content -Raw .\RESULT.md
+git diff
 ```
 
-`HANDOFF.md` and `RESULT.md` are local bus artifacts, so a linked worktree does
-not receive the Architect's uncommitted handoff automatically. Copy the approved
-handoff before dispatch; do not copy a Builder-modified handoff back. Builder
-output remains in the Builder worktree for review and subsequent acceptance by
-the repository's normal change-integration workflow.
-
-Linked worktrees share the Git common directory. While the Builder is running,
-do not `git stash`, change `core.excludesFile`, or edit `.git/info/exclude` in
-the primary worktree: those shared witness inputs can correctly make the Builder
-net fail closed. The net deliberately reads `rev-parse --git-common-dir`, rather
-than `--git-dir`, because a linked worktree's per-worktree git dir has no
-`info/exclude`.
+The clean baseline also makes an unsuccessful run cheap to discard under the
+existing `/delegate` rule. The snapshot delta is not a concurrency boundary, so
+the Architect must leave the repository untouched until the Builder finishes.
 
 ## The machine-readable bus
 
@@ -220,7 +208,7 @@ first. The `.git/info/exclude` and index-bit fingerprints above close the two
 cheapest evasions, not the class. Do not read a `BUILT` as proof that nothing
 else happened — read it as "nothing the net can see went wrong". If you need a
 containment boundary rather than a review aid, that belongs at the process
-level (a worktree the Builder cannot escape, a sandbox), not here.
+level (a sandbox), not here.
 
 **What the net does not see**, even from an honest Builder: files matched by
 `.gitignore` (including a global `core.excludesFile`) never appear in
@@ -261,7 +249,7 @@ verbatim" above describes the *mechanism*, not two live layers.
 > `assets/claude/hooks/`, `orchestrator/`, or `orchestrate.py`, re-run
 > `py -3 install.py --target claude --allow-live` (and `--target codex`). All
 > three are installed, and the live dispatch
-> (`py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>"`) runs the **installed** copy — so a fix
+> (`py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`) runs the **installed** copy — so a fix
 > that stays in the repo is a fix that is not in force. `py -3 check.py` will
 > tell you: its install-drift axis lists every file whose live copy differs from
 > the repo. It reports, it does not install.

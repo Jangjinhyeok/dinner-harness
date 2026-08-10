@@ -129,16 +129,15 @@ Then state your intent in ordinary conversation:
 
 1. Claude explores the codebase, then writes **`HANDOFF_DELEGATE.md`** for a single-purpose LOW task or **`HANDOFF.md`** (gates, scope, risk tier) otherwise.
 2. The original LOW request is its start gate; a HIGH task waits for **HANDOFF approval**. Claude then auto-runs
-   `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real`,
+   `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`,
    **dispatching the Codex Builder headless**. The paths are resolved before the Bash call;
    it must not add `cd`, a pipe, or redirection.
 3. Codex implements within scope and writes `RESULT.md`. The controller-side safety net (scope/secret) is the hard gate.
 4. Claude **reviews `RESULT.md` + `git diff` in the same session**. For a HIGH gate it takes your **end sign-off** before merge/apply.
 5. On `BLOCKED`/codex error it stops and points you to the manual fallback (③ below).
 
-The branch you checked out before the session is the only delivery branch. A Builder
-worktree branch is isolation only and is never pushed. Claude creates no delivery
-branch; it stages and commits the accepted delta on your current branch only when you
+The branch you checked out before the session is the only delivery branch. Claude creates
+no delivery branch; it stages and commits the accepted delta on your current branch only when you
 explicitly authorize `commit` or `commit and push` in that conversation. Push likewise
 requires that explicit authorization; task completion alone never authorizes it.
 
@@ -152,16 +151,16 @@ calling the command. This is copyable; do not add `cd`, a pipe, or redirection.
 
 ```
 $claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
-$builderWorktree = (Resolve-Path '..\your-repo-build').Path -replace '\\', '/'
+$repoPath = (Get-Location).Path -replace '\\', '/'
 
 # Builder-only, once, from an existing HANDOFF.md (the command single-pane uses internally)
-py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree" --backend real
+py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real
 
 # Both Architect and Builder fully headless (human only at the boundaries)
 py -3 ~/.claude/orchestrate.py run --goal "..." --backend real --repo .
 
 # Offline smoke, no CLIs needed
-py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree" --backend mock
+py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend mock
 ```
 
 ### 3) Manual dual-session (fallback / reverse pairing)

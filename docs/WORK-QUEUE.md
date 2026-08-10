@@ -127,6 +127,8 @@ Not taken: the `SessionStart`-hook alternative — note the harness still uses o
 
 ### B — isolate the Builder in a git worktree (tip §5.2) — completed 2026-08-06
 
+**2026-08-10 ADR-0009로 폐지됨.**
+
 Architect and Builder currently share one working tree, so anything the
 Architect touches while the Builder runs is swept into the same `git status` the
 safety net judges. `git worktree add ../repo-build <branch>`, then
@@ -180,7 +182,7 @@ G (plugin marketplace), H (thinking budget).
   successful build reported `BLOCKED`. `orchestrate.py run|build --timeout-s N`
   now exposes the per-turn budget and `vendors._run` streams + captures child
   stdout/stderr. Timeout still kills the child and reports `BLOCKED` rather than
-  guessing success; inspect the Builder worktree with `git status`/`git diff`
+  guessing success; inspect the dispatch repository with `git status`/`git diff`
   for surviving output before retrying or manually falling back. The previous
   attempted automatic salvage was deliberately not revived: a non-exiting child
   cannot prove its RESULT/verdict is complete.

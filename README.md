@@ -63,10 +63,9 @@ Claude가 코드·문서 읽기, 검색, MCP 조사, 설계, HANDOFF 작성과 �
   Codex Builder를 자동 dispatch한 뒤 결과를 검토한다.
 - **다파일·구조 변경·HIGH 작업**: Claude가 HANDOFF(필요하면 ADR)를 보여 주고 시작 승인을
   요청한다. 완료 후에도 merge/apply 전에 사람의 종단 승인을 받는다.
-- **Git integration**: Builder는 변경을 별도 worktree에 남긴다. 사용자가 session 시작 전에
-  checkout해 둔 현재 branch가 delivery branch이며, `commit` 또는 `commit and push`를 현재
-  대화에서 명시 승인한 경우에만 Claude가 그 branch에 반영한다. 새 delivery branch를 만들지
-  않으며 `builder/<task>` worktree branch를 push하지 않는다.
+- **Git integration**: Builder는 사용자가 session 시작 전에 checkout해 둔 현재 branch의
+  repository에서 변경한다. `commit` 또는 `commit and push`를 현재 대화에서 명시 승인한
+  경우에만 Claude가 그 branch에 반영한다. 새 delivery branch를 만들지 않는다.
 
 ## Layout
 
@@ -166,11 +165,12 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 
 ### 2) 작업 결과를 확인하고 반영하기
 
-Builder는 linked git worktree에서 작업한다. primary project tree와 Builder의 변경이 섞이지
-않기 때문에, Claude가 다음 순서로 검토해야 한다.
+Builder는 원본 project tree에서 작업한다. dispatch 전 baseline commit으로 tree를 clean하게
+두고, ADR-0007의 snapshot delta가 Builder turn의 변경만 판정한다. Claude는 다음 순서로
+검토해야 한다.
 
 1. `RESULT.md`에서 완료 gate, 변경 파일, 검증 결과와 미해결 이슈를 읽는다.
-2. Builder worktree의 `git diff`와 실제 파일을 확인한다.
+2. 원본 repository의 `git diff`와 실제 파일을 확인한다.
 3. 요구사항·스코프·검증이 맞는지 판단한다.
 4. 통과한 변경을 사용자가 선택한 primary branch로 integration한다. 사용자가 이 대화에서
    `commit` 또는 `commit and push`를 명시 승인한 경우에만 agent가 정확한 파일을 그 branch에
@@ -178,7 +178,7 @@ Builder는 linked git worktree에서 작업한다. primary project tree와 Build
    별도 지시가 필요하다.
 
 `BLOCKED`가 나오면 성공으로 취급하지 않는다. Claude가 제시한 reason, `RESULT.md`, Builder
-worktree의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 새 dispatch를 결정한다.
+repository의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 새 dispatch를 결정한다.
 
 ### 3) 언제 Claude 직접 수정을 쓰는가
 
@@ -194,19 +194,19 @@ worktree의 diff를 보고 범위·HANDOFF·인증·검증 오류를 고친 뒤 
 
 ### 4) orchestrator 직접 호출 (고급·선택)
 
-일상 사용에서는 이 명령을 직접 실행하지 않는다. strict Claude 세션이 HANDOFF, linked
-worktree, dispatch, 결과 검토를 순서대로 처리한다. 아래는 이미 Builder worktree와 승인된
-HANDOFF를 준비한 경우의 진단·수동 fallback용이다.
+일상 사용에서는 이 명령을 직접 실행하지 않는다. strict Claude 세션이 HANDOFF, baseline
+commit, dispatch, 결과 검토를 순서대로 처리한다. 아래는 승인된 HANDOFF가 있는 원본
+repository에서 쓰는 진단·수동 fallback용이다.
 
 ```powershell
-# Builder worktree에서 Builder만 1회 실행
-py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo ..\my-project-build --backend real
+# 원본 repository에서 Builder만 1회 실행
+py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo . --backend real
 
 # Architect·Builder 양쪽 완전 headless (사람은 경계에만)
 py -3 "$env:USERPROFILE\.claude\orchestrate.py" run --goal "..." --backend real --repo .
 
 # CLI 없이 오프라인 스모크
-py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo ..\my-project-build --backend mock
+py -3 "$env:USERPROFILE\.claude\orchestrate.py" build --repo . --backend mock
 ```
 
 ### 5) 수동 dual-session (fallback·역방향 페어링)
