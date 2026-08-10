@@ -94,9 +94,9 @@ LOW-only by construction.
    intent at the start, which is the user's request itself), so dispatch right
    after showing the compact spec:
    ```
-   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_BUILDER_WORKTREE>" --backend real --handoff HANDOFF_DELEGATE.md
+   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --handoff HANDOFF_DELEGATE.md
    ```
-   Replace `<CLAUDE_HOME>` and `<ABSOLUTE_BUILDER_WORKTREE>` with their absolute
+   Replace `<CLAUDE_HOME>` and `<ABSOLUTE_REPO_PATH>` with their absolute
    runtime paths. Do not prepend `cd` or append a pipe/redirection: the exact
    direct invocation is the narrow permission-allowlisted dispatch path.
    `--handoff HANDOFF_DELEGATE.md` keeps a persistent `HANDOFF.md` (if any)

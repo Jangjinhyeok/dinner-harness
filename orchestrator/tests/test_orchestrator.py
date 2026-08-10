@@ -252,7 +252,7 @@ class TestBuilderFirstGuard(unittest.TestCase):
         delegate = (root / "content" / "skills" / "delegate" / "SKILL.md").read_text(encoding="utf-8")
         architect_cmd = (
             'py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
-            '"<ABSOLUTE_BUILDER_WORKTREE>" --backend real'
+            '"<ABSOLUTE_REPO_PATH>" --backend real'
         )
         delegate_cmd = architect_cmd + " --handoff HANDOFF_DELEGATE.md"
         self.assertIn(architect_cmd, architect)
@@ -273,15 +273,15 @@ class TestBuilderFirstGuard(unittest.TestCase):
         readme = (root / "README.en.md").read_text(encoding="utf-8")
         direct_section = readme.split("### 2) Calling the orchestrator directly (optional)", 1)[1]
         direct_section = direct_section.split("### 3)", 1)[0]
-        self.assertIn('py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktree"', direct_section)
+        self.assertIn('py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath"', direct_section)
         self.assertNotIn("<CLAUDE_HOME>", direct_section)
-        self.assertNotIn("<ABSOLUTE_BUILDER_WORKTREE>", direct_section)
+        self.assertNotIn("<ABSOLUTE_REPO_PATH>", direct_section)
 
         for rel in ("orchestrator/README.md", "orchestrator/README.ko.md"):
             text = (root / rel).read_text(encoding="utf-8")
-            self.assertIn('$builderWorktreeAbs = (Resolve-Path $builderWorktree).Path', text, rel)
+            self.assertIn("$repoPath = (Get-Location).Path -replace '\\\\', '/'", text, rel)
             self.assertIn(
-                'py -3 "$claudeHome/orchestrate.py" build --repo "$builderWorktreeAbs" --backend real',
+                'py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real',
                 text,
                 rel,
             )
