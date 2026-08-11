@@ -159,6 +159,8 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 | 명확한 LOW 단일 목적 변경 | `HANDOFF_DELEGATE.md` 작성·리뷰 | 예, 같은 세션에서 자동 dispatch | 추가 명령 불필요 |
 | 다파일, build/test iterate, 구조 변경, HIGH 신호 | 설계·HANDOFF/ADR·리뷰 | 예, 승인 뒤 자동 dispatch | 시작/종단 승인 |
 
+엔진(Unreal/Unity) 신호가 있는 구현 요청은 위 표의 HANDOFF 작성 전에 해당 엔진 허브(`unreal-specialist`/`unity-specialist` 또는 `/ue`·`/umg`·`/gas`·`/repl`·`/bp`) consult가 필수다. read-only 질문과 실제 1~2줄 변경은 면제되며, 상세는 ADR-0010에 정리되어 있다.
+
 `builder_guard`는 Claude의 structured `Edit`/`Write` 구현 변경을 막고 Builder 경로를
 안내한다. 이는 workflow guard이지 보안 sandbox가 아니다. Bash/PowerShell을 해석해서
 모든 쓰기를 막지는 않으므로, shell로 guard를 우회하는 사용은 이 UX의 범위 밖이다.
@@ -307,5 +309,5 @@ Git 변경을 받은 뒤에는 `py -3 refresh.py`로 plan을 확인하고 `py -3
 - `scope_check` (PreToolUse) — cycle 스코프 밖 수정 + hook 인프라 보호 (dryrun, always-block 즉시 차단)
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
 - `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
-- `route_nudge` (Claude UserPromptSubmit 전용) — 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge 주입: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory). standalone Codex가 self-dispatch할 수 없으므로 Codex `hooks.json`에서는 의도적으로 제외한다.
+- `route_nudge` (Claude UserPromptSubmit 전용) — 구현 작업은 HANDOFF 작성 전 허브 consult가 필수임을 안내(read-only 질문과 실제 1~2줄 변경은 면제). 프롬프트의 UE 도메인 신호를 검출해 라우팅 nudge를 주입한다: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory). standalone Codex가 self-dispatch할 수 없으므로 Codex `hooks.json`에서는 의도적으로 제외한다.
 - `builder_guard` (PreToolUse) — 일반 `claude`에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도; `claude-direct.cmd` escape에서만 inert
