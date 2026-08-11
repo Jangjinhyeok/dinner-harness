@@ -34,6 +34,8 @@ class Change:
 class NetResult:
     blocked: bool = False
     reasons: list[str] = field(default_factory=list)
+    scope_blocked_paths: list[str] = field(default_factory=list)
+    secret_blocked_paths: list[str] = field(default_factory=list)
 
     def add_block(self, reason: str) -> None:
         self.blocked = True
@@ -191,6 +193,10 @@ def scan(changes: list[Change], cfg: Config, *,
             code, err = _run_handler(handler, payload, base_env)
             if code == 2:
                 res.add_block(f"{name} blocked {ch.path}: {err or 'exit 2'}")
+                if name == "scope_check":
+                    res.scope_blocked_paths.append(ch.path)
+                elif name == "secret_scan":
+                    res.secret_blocked_paths.append(ch.path)
             elif code == 0:
                 pass  # the only "allow" there is
             else:

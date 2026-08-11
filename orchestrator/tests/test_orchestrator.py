@@ -98,6 +98,57 @@ class TestVendorRunner(unittest.TestCase):
         self.assertIn("--output-format", argv)
         self.assertEqual(argv[argv.index("--output-format") + 1], "text")
 
+    @mock.patch("orchestrator.vendors._run")
+    def test_codex_builder_enables_windows_workspace_sandbox(self, run_mock: mock.Mock):
+        with mock.patch.object(vendors.sys, "platform", "win32"):
+            vendors.CodexBackend().invoke(ROLE_BUILDER, "prompt", Config())
+
+        argv, _ = run_mock.call_args.args
+        self.assertEqual(
+            argv[argv.index("--enable") + 1], "experimental_windows_sandbox")
+
+    def test_sandbox_degraded_only_reports_mismatched_headers(self):
+        cases = (
+            ("sandbox: workspace-write\n", "workspace-write", None),
+            ("sandbox: read-only\n", "workspace-write", "experimental_windows_sandbox"),
+            ("sandbox: workspace-write [workdir, /tmp, $TMPDIR]\n", "workspace-write", None),
+            ("working on the requested files\n", "workspace-write", None),
+        )
+
+        for line, requested, expected in cases:
+            with self.subTest(line=line):
+                result = vendors.sandbox_degraded(line, requested)
+                if expected is None:
+                    self.assertIsNone(result)
+                else:
+                    self.assertIn(expected, result)
+
+    def test_sandbox_degraded_aborts_inside_the_session_header(self):
+        checker = vendors._HeaderAbortCheck(
+            lambda line: vendors.sandbox_degraded(line, "workspace-write")
+        )
+
+        self.assertIsNone(checker("OpenAI Codex v0.147.0\n"))
+        self.assertIsNone(checker("--------\n"))
+        message = checker("sandbox: read-only\n")
+
+        self.assertIsNotNone(message)
+        self.assertIn("Codex sandbox degraded", message)
+
+    def test_sandbox_degraded_ignores_prompt_echo_after_the_session_header(self):
+        checker = vendors._HeaderAbortCheck(
+            lambda line: vendors.sandbox_degraded(line, "workspace-write")
+        )
+
+        for line in (
+            "Reading prompt from stdin...\n",
+            "--------\n",
+            "sandbox: workspace-write [workdir, /tmp, $TMPDIR]\n",
+            "--------\n",
+        ):
+            self.assertIsNone(checker(line))
+        self.assertIsNone(checker("sandbox: read-only\n"))
+
     def test_stdin_text_reaches_the_child_and_is_captured(self):
         stdin_text = "prompt delivered through stdin\n"
         with mock.patch("sys.stdout", new_callable=io.StringIO):
@@ -446,6 +497,39 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertEqual(builder_guard.guarded_paths(code), ["src/feature.py"])
             self.assertEqual(builder_guard.guarded_paths(handoff), [])
             self.assertEqual(builder_guard.guarded_paths(adr), [])
+        finally:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
+                os.environ["DINNER_EXECUTION_MODE"] = old
+
+    def test_repo_root_allows_root_handoff_from_nested_cwd_but_not_code(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        old = os.environ.get("DINNER_EXECUTION_MODE")
+        os.environ.pop("DINNER_EXECUTION_MODE", None)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                repo = Path(d)
+                _git_init(repo)
+                nested = repo / "nested"
+                nested.mkdir()
+                handoff = {
+                    "tool_name": "Write",
+                    "cwd": str(nested),
+                    "tool_input": {"file_path": str(repo / "HANDOFF.md")},
+                }
+                code = {
+                    "tool_name": "Write",
+                    "cwd": str(nested),
+                    "tool_input": {"file_path": str(repo / "orchestrator" / "vendors.py")},
+                }
+
+                self.assertEqual(builder_guard.guarded_paths(handoff), [])
+                self.assertEqual(
+                    builder_guard.guarded_paths(code),
+                    [str(repo / "orchestrator" / "vendors.py")],
+                )
         finally:
             if old is None:
                 os.environ.pop("DINNER_EXECUTION_MODE", None)
@@ -1573,6 +1657,24 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertTrue((repo / bus.RESULT).is_file())
 
+    def test_stale_handoff_warns_without_blocking_the_build(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            sc = default_low_scenario("demo")
+            (repo / bus.HANDOFF).write_text(sc.handoffs[0], encoding="utf-8")
+            (repo / "HANDOFF_OTHER.md").write_text("# old specification\n", encoding="utf-8")
+            log: list[str] = []
+            mock = MockBackend(sc)
+            out = Orchestrator(
+                _cfg(repo), mock, mock, AutoApprove(), log=log.append
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertTrue(any("HANDOFF_OTHER.md" in message for message in log))
+
     def test_receipt_records_only_metadata_after_a_real_git_build(self):
         # Receipt output must live outside the target repo and must not copy the
         # handoff's text. The Builder uses the real git delta path, not an
@@ -1607,6 +1709,9 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertNotIn(nonce, serialized)
             self.assertNotIn(str(repo), serialized)
             self.assertIn("handoff_sha256", serialized)
+            fingerprints = [record["orchestrator_sha256"] for record in records]
+            self.assertEqual(fingerprints[0], fingerprints[1])
+            self.assertRegex(fingerprints[0], r"^[0-9a-f]{64}$")
 
     def test_vendor_error_text_never_enters_the_receipt(self):
         # Backend stderr is vendor-controlled and can echo task content. The
@@ -1722,10 +1827,170 @@ class TestBuildFromHandoff(unittest.TestCase):
                 log=lambda m: None,
             ).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
-            self.assertEqual(out.reason, "safety net blocked the changeset")
+            self.assertTrue(out.reason.startswith("safety net blocked the changeset"))
             records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
             self.assertEqual(records[-1]["status"], "blocked")
             self.assertNotEqual(records[-1]["status"], "built")
+            self.assertEqual(records[-1]["reason_code"], "safety_net")
+
+    def test_scope_block_restores_a_tracked_file_to_its_pre_turn_content(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            outside = repo / "outside.py"
+            outside.write_text("VALUE = 'before'\n", encoding="utf-8")
+            _git_commit_all(repo)
+
+            backend = _TamperingBackend(repo, "outside.py", "VALUE = 'builder'\n")
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(
+                out.reason,
+                "safety net blocked the changeset (rolled back 1 file(s), 0 left in place)",
+            )
+            self.assertEqual(outside.read_text(encoding="utf-8"), "VALUE = 'before'\n")
+
+    def test_scope_block_restores_a_dirty_tracked_file_to_the_manual_edit(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            outside = repo / "outside.py"
+            outside.write_text("VALUE = 'committed'\n", encoding="utf-8")
+            _git_commit_all(repo)
+            outside.write_text("VALUE = 'manual'\n", encoding="utf-8")
+
+            backend = _TamperingBackend(repo, "outside.py", "VALUE = 'builder'\n")
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(outside.read_text(encoding="utf-8"), "VALUE = 'manual'\n")
+
+    def test_scope_block_leaves_a_new_out_of_scope_file_in_place(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            _git_commit_all(repo)
+
+            created = repo / "created.py"
+            backend = _TamperingBackend(repo, "created.py", "VALUE = 'builder'\n")
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("rolled back 0 file(s), 1 left in place", out.reason)
+            self.assertEqual(created.read_text(encoding="utf-8"), "VALUE = 'builder'\n")
+
+    def test_secret_block_does_not_restore_an_in_scope_file(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            allowed = repo / "allowed.py"
+            allowed.write_text("VALUE = 'before'\n", encoding="utf-8")
+            _git_commit_all(repo)
+            secret = "AKIA" + "IOSFODNN7EXAMPLE"
+            changed = f"aws_key = '{secret}'\n"
+
+            backend = _TamperingBackend(repo, "allowed.py", changed)
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.reason, "safety net blocked the changeset")
+            self.assertEqual(allowed.read_text(encoding="utf-8"), changed)
+
+    def test_secret_and_scope_block_does_not_restore_the_file(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            forbidden = repo / "forbidden.py"
+            forbidden.write_text("VALUE = 'before'\n", encoding="utf-8")
+            _git_commit_all(repo)
+            secret = "AKIA" + "IOSFODNN7EXAMPLE"
+            changed = f"aws_key = '{secret}'\n"
+
+            backend = _TamperingBackend(repo, "forbidden.py", changed)
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("rolled back 0 file(s), 1 left in place", out.reason)
+            self.assertEqual(forbidden.read_text(encoding="utf-8"), changed)
+
+    def test_scope_block_restore_does_not_stage_the_file(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\nRESULT.md\n```\n",
+                encoding="utf-8",
+            )
+            (repo / "outside.py").write_text("VALUE = 'before'\n", encoding="utf-8")
+            _git_commit_all(repo)
+
+            backend = _TamperingBackend(repo, "outside.py", "VALUE = 'builder'\n")
+            out = Orchestrator(
+                _cfg(repo, net_enforce=True), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            cached = subprocess.run(
+                ["git", "-C", str(repo), "diff", "--cached", "--quiet"],
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(cached.returncode, 0, cached.stderr)
 
     def test_timeout_receipt_is_not_a_generic_block(self):
         # Timeout has a distinct operational remedy (inspect the preserved
@@ -1904,7 +2169,7 @@ class TestBuildFromHandoff(unittest.TestCase):
                 log=lambda m: None,
             ).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
-            self.assertEqual(out.reason, "safety net blocked the changeset")
+            self.assertTrue(out.reason.startswith("safety net blocked the changeset"))
             self.assertEqual(backend.calls, 1)
 
     def test_verdict_recovery_cannot_make_an_in_scope_implementation_change(self):

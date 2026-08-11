@@ -19,6 +19,7 @@ from typing import Optional
 
 _SCHEMA = "dinner-harness.build-audit.v1"
 _AUDIT_FILENAME = "build-audit.jsonl"
+_ORCHESTRATOR_SHA256: Optional[str] = None
 
 
 def _now_iso_z() -> str:
@@ -27,6 +28,25 @@ def _now_iso_z() -> str:
 
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _orchestrator_sha256() -> str:
+    """Fingerprint the installed orchestrator code without affecting dispatches."""
+    global _ORCHESTRATOR_SHA256
+    if _ORCHESTRATOR_SHA256 is not None:
+        return _ORCHESTRATOR_SHA256
+    try:
+        directory = Path(__file__).resolve().parent
+        digest = hashlib.sha256()
+        for path in sorted(directory.glob("*.py"), key=lambda item: item.name):
+            digest.update(path.name.encode("utf-8"))
+            digest.update(b"\n")
+            digest.update(hashlib.sha256(path.read_bytes()).hexdigest().encode("ascii"))
+            digest.update(b"\n")
+        _ORCHESTRATOR_SHA256 = digest.hexdigest()
+    except OSError:
+        _ORCHESTRATOR_SHA256 = "unknown"
+    return _ORCHESTRATOR_SHA256
 
 
 @dataclass
@@ -81,6 +101,7 @@ class BuildAudit:
             "handoff_name_sha256": _digest(self.handoff_name),
             "builder_vendor": self.builder_vendor,
             "backend": self.backend,
+            "orchestrator_sha256": _orchestrator_sha256(),
         }
         if self._handoff_digest:
             record["handoff_sha256"] = self._handoff_digest

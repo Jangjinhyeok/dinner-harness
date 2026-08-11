@@ -277,16 +277,18 @@ _ABSENT = object()
 class _Evidence:
     """What the net knows about the tree at the instant before the builder turn.
 
-    Both fields carry an explicit UNKNOWN state, and that is the point of the
-    type: ``before=None`` means "git did not answer", which is not ``{}`` ("the
-    tree is clean"), and ``witness=None`` means "the fingerprint could not be
-    read", which is not "nothing moved". Collapsing either distinction is the
+    The first two fields carry an explicit UNKNOWN state, and that is the point
+    of the type: ``before=None`` means "git did not answer", which is not ``{}``
+    ("the tree is clean"), and ``witness=None`` means "the fingerprint could
+    not be read", which is not "nothing moved". ``snapshot=None`` separately
+    means there is no safe rollback ref. Collapsing these distinctions is the
     exact shape of two round-10 findings — one of them a silent fail-open that
     survived nine review rounds because ``None != None`` is False.
     """
 
     before: Optional[dict]
     witness: Optional[str]
+    snapshot: Optional[str] = None
 
 
 def _changeset_index(changes) -> Optional[dict]:
@@ -794,11 +796,35 @@ class Orchestrator:
         ``stop`` is a non-empty reason string when the cycle must be refused.
         Every check here exists because ``cfg.timeout_s`` is 1800s: answering a
         question we already hold the answer to, thirty minutes late, is the
-        difference between a refusal and a refusal that also wasted the turn —
-        and a block is a refusal, not a rollback, so whatever got written stays.
+        difference between a refusal and a refusal that also wasted the turn.
+        A scope block can restore only paths proven to exist in the pre-turn
+        snapshot; every other write remains in place for the operator to review.
         """
         cfg = self.cfg
         repo = Path(cfg.repo)
+
+        # The prompt names the exact dispatch specification, but stale bus files
+        # remain an easy way for a Builder to follow an older task by mistake.
+        # They are legitimate project artifacts, so this is diagnostic only:
+        # list names without reading them and never turn the warning into a gate.
+        try:
+            stale_handoffs = sorted(
+                path.name
+                for path in repo.iterdir()
+                if (
+                    path.is_file()
+                    and path.name.startswith("HANDOFF")
+                    and path.suffix == ".md"
+                    and path.name != handoff_name
+                )
+            )
+        except OSError:
+            stale_handoffs = []
+        if stale_handoffs:
+            self._emit(
+                f"[cycle {cycle}] warning: stale handoff file(s): "
+                f"{', '.join(stale_handoffs)}"
+            )
 
         # scope_check itself fails OPEN on an absent fence, deliberately, so an
         # interactive session predating ADR-0005 is not frozen. The controller
@@ -857,7 +883,48 @@ class Orchestrator:
             if self._gate(cycle, msg):
                 return _Evidence(None, None), msg
 
-        return _Evidence(before=_changeset_index(before_raw), witness=witness), None
+        snapshot = _git_out(repo, "stash", "create")
+        if snapshot is None:
+            self._emit(f"[cycle {cycle}] warning: rollback unavailable; could not snapshot pre-turn tree")
+        else:
+            snapshot = snapshot.strip() or "HEAD"
+
+        return _Evidence(
+            before=_changeset_index(before_raw), witness=witness, snapshot=snapshot
+        ), None
+
+    def _restore_scope_blocked_paths(
+        self, cycle: int, snapshot: Optional[str], paths: list[str]
+    ) -> tuple[int, int]:
+        """Restore scope-blocked tracked paths from the pre-turn snapshot only."""
+        unique_paths = list(dict.fromkeys(paths))
+        if not unique_paths:
+            return 0, 0
+
+        if snapshot is None:
+            for path in unique_paths:
+                self._emit(
+                    f"[cycle {cycle}] net: rollback unavailable (no pre-turn snapshot): {path}"
+                )
+            return 0, len(unique_paths)
+
+        repo = Path(self.cfg.repo)
+        restored = 0
+        left_in_place = 0
+        for path in unique_paths:
+            if _git_out(repo, "cat-file", "-e", f"{snapshot}:{path}") is None:
+                left_in_place += 1
+                self._emit(
+                    f"[cycle {cycle}] net: rollback unavailable (snapshot has no path): {path}"
+                )
+                continue
+            if _git_out(repo, "restore", f"--source={snapshot}", "--worktree", "--", path) is None:
+                left_in_place += 1
+                self._emit(f"[cycle {cycle}] net: rollback failed: {path}")
+                continue
+            restored += 1
+            self._emit(f"[cycle {cycle}] net: rolled back: {path}")
+        return restored, left_in_place
 
     def _builder_changes(self, cycle: int, bus: Bus, bd, ev: "_Evidence",
                          handoff_name: str, handoff_text: str):
@@ -1058,7 +1125,25 @@ class Orchestrator:
         for r in net.reasons:
             self._emit(f"[cycle {cycle}] net: {r}")
         if net.blocked:
-            return bd, verdicts, False, self._outcome(BLOCKED, cycle, "safety net blocked the changeset"), False
+            secret_blocked = set(net.secret_blocked_paths)
+            rollback_paths = [
+                path for path in net.scope_blocked_paths if path not in secret_blocked
+            ]
+            skipped_secrets = list(dict.fromkeys(
+                path for path in net.scope_blocked_paths if path in secret_blocked
+            ))
+            for path in skipped_secrets:
+                self._emit(f"[cycle {cycle}] net: rollback skipped (secret blocked): {path}")
+            restored, left_in_place = self._restore_scope_blocked_paths(
+                cycle, ev.snapshot, rollback_paths
+            )
+            left_in_place += len(skipped_secrets)
+            reason = "safety net blocked the changeset"
+            if net.scope_blocked_paths:
+                reason += (
+                    f" (rolled back {restored} file(s), {left_in_place} left in place)"
+                )
+            return bd, verdicts, False, self._outcome(BLOCKED, cycle, reason), False
 
         # tier-gate enforcement
         gate_reasons = enforce_tier_gates(tiers, verdicts)
@@ -1219,7 +1304,7 @@ def _receipt_reason_code(outcome: Outcome) -> str:
         return "timeout"
     if outcome.reason.startswith("builder bailed with no implementation"):
         return "builder_bailed"
-    if outcome.reason == "safety net blocked the changeset":
+    if outcome.reason.startswith("safety net blocked the changeset"):
         return "safety_net"
     if outcome.reason.startswith("cannot read "):
         return "handoff_unreadable"

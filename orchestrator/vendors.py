@@ -17,6 +17,7 @@ Stdlib only.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,13 +25,46 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .config import Config
 from .safety import Change
 
 ROLE_ARCHITECT = "architect"
 ROLE_BUILDER = "builder"
+
+_SANDBOX_HEADER_RE = re.compile(r"^\s*sandbox:\s*([a-z-]+)")
+_SESSION_HEADER_DIVIDER_RE = re.compile(r"^-{4,}\s*$")
+
+
+def sandbox_degraded(line: str, requested: str) -> Optional[str]:
+    """Inspect one Codex session-header line for a sandbox downgrade."""
+    match = _SANDBOX_HEADER_RE.match(line)
+    if match is None or match.group(1) == requested:
+        return None
+    actual = match.group(1)
+    return (
+        f"Codex sandbox degraded: requested {requested}, but session reports {actual}. "
+        "Enable [features] experimental_windows_sandbox = true in ~/.codex/config.toml "
+        "or upgrade codex-cli. This is a sandbox configuration failure, not "
+        "'builder bailed'."
+    )
+
+
+class _HeaderAbortCheck:
+    """Apply a Codex abort check only inside its session header."""
+
+    def __init__(self, abort_check: Callable[[str], Optional[str]]):
+        self._abort_check = abort_check
+        self._divider_count = 0
+
+    def __call__(self, line: str) -> Optional[str]:
+        if _SESSION_HEADER_DIVIDER_RE.match(line):
+            self._divider_count += 1
+            return None
+        if self._divider_count != 1:
+            return None
+        return self._abort_check(line)
 
 
 @dataclass
@@ -118,6 +152,7 @@ def _run(
     last_message_file: Optional[Path] = None,
     *,
     stdin_text: Optional[str] = None,
+    abort_check: Optional[Callable[[str], Optional[str]]] = None,
 ) -> Turn:
     # shell=False with a list argv: the prompt (which carries the user goal and
     # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
@@ -154,14 +189,30 @@ def _run(
         )
         stdout: list[str] = []
         stderr: list[str] = []
+        abort_error: Optional[str] = None
 
-        def pump(stream, captured: list[str], destination) -> None:
+        def pump(stream, captured: list[str], destination, check_abort: bool = False) -> None:
+            nonlocal abort_error
+            header_abort_check = (
+                _HeaderAbortCheck(abort_check)
+                if check_abort and abort_check is not None
+                else None
+            )
             for line in iter(stream.readline, ""):
                 captured.append(line)
                 print(line, end="", file=destination, flush=True)
+                if header_abort_check is not None and abort_error is None:
+                    message = header_abort_check(line)
+                    if message is not None:
+                        abort_error = message
+                        try:
+                            proc.kill()
+                        except OSError:
+                            pass
             stream.close()
 
-        out_pump = threading.Thread(target=pump, args=(proc.stdout, stdout, sys.stdout), daemon=True)
+        out_pump = threading.Thread(
+            target=pump, args=(proc.stdout, stdout, sys.stdout, True), daemon=True)
         err_pump = threading.Thread(target=pump, args=(proc.stderr, stderr, sys.stderr), daemon=True)
         out_pump.start()
         err_pump.start()
@@ -183,6 +234,8 @@ def _run(
         err_pump.join()
         output = "".join(stdout)
         errors = "".join(stderr)
+        if abort_error is not None:
+            return Turn(text=output, error=abort_error)
         if proc.returncode != 0:
             return Turn(text=output, error=f"exit {proc.returncode}: {errors.strip()}")
         text = output
@@ -229,6 +282,12 @@ class CodexBackend(Backend):
     an Architect gets `read-only`. `-o` captures the agent's clean final message
     for RESULT/verdict parsing; `--skip-git-repo-check` lets a non-repo scratch
     dir run.
+
+    Native Windows has no workspace-write sandbox without the experimental
+    feature: otherwise Codex silently falls back to read-only, which was the
+    actual cause of a Builder reporting that it bailed. Passing
+    `--enable experimental_windows_sandbox` makes the session header report
+    workspace-write instead of read-only.
     """
 
     name = "codex"
@@ -243,11 +302,19 @@ class CodexBackend(Backend):
             "--skip-git-repo-check",
             "-o", str(last_msg),
         ]
+        if role == ROLE_BUILDER and sys.platform == "win32":
+            argv += ["--enable", "experimental_windows_sandbox"]
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
         try:
-            return _run(argv, cfg, last_message_file=last_msg, stdin_text=prompt)
+            return _run(
+                argv,
+                cfg,
+                last_message_file=last_msg,
+                stdin_text=prompt,
+                abort_check=lambda line: sandbox_degraded(line, sandbox),
+            )
         finally:
             try:
                 last_msg.unlink()

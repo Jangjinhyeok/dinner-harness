@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 import tempfile
 import sys
 from pathlib import Path
@@ -64,7 +65,28 @@ def _in_session_scratchpad(path: Path) -> bool:
     return len(parts) >= 5 and parts[0] == "claude" and parts[3] == "scratchpad"
 
 
-def _allowed_path(raw_path: str, cwd: Path) -> bool:
+def _repo_root(cwd: Path) -> Path:
+    """Return the git worktree root, falling back to the hook's cwd."""
+    try:
+        fallback = cwd.resolve(strict=False)
+    except Exception:  # noqa: BLE001 - a hook failure must not become a block
+        fallback = cwd
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=2,
+        )
+        root = result.stdout.strip()
+        return Path(root).resolve(strict=False) if root else fallback
+    except Exception:  # noqa: BLE001 - git is only a best-effort base lookup
+        return fallback
+
+
+def _allowed_path(raw_path: str, cwd: Path, base: Path) -> bool:
     """True only for Architect artifacts and Claude persistent-memory Markdown."""
     try:
         path = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
@@ -73,7 +95,7 @@ def _allowed_path(raw_path: str, cwd: Path) -> bool:
     except OSError:
         return False
     try:
-        relative = path.relative_to(cwd.resolve()).as_posix()
+        relative = path.relative_to(base).as_posix()
     except (OSError, ValueError):
         relative = None
     if relative is not None:
@@ -117,7 +139,8 @@ def guarded_paths(payload: dict) -> list[str]:
         # escape, where this guard is intentionally disabled.
         return ["<unparseable file edit>"]
     cwd = get_cwd(payload)
-    return [path for path in paths if not _allowed_path(path, cwd)]
+    base = _repo_root(cwd)
+    return [path for path in paths if not _allowed_path(path, cwd, base)]
 
 
 def main() -> None:
