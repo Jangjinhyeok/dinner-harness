@@ -11,7 +11,17 @@ CLAUDE.md §2의 단일 세션 원칙을 따른다. 다음은 **메인 세션에
 
 위임은 **엔진 특화 구현·아키텍처·최적화가 실질적 분량**일 때만 한다.
 
-**Two-CLI Builder 모드 예외**: Builder 세션(`builder 모드`/HANDOFF.md 실행 중)에서는 specialist 재위임을 생략한다 — Architect가 이미 분해·설계한 spec을 실행하는 단계라 엔진 specialist 재호출이 구조적으로 잉여다. 엔진 라우팅이 가치를 갖는 지점은 **Architect의 설계 단계**(HANDOFF 작성 전 triage)이지 Builder의 실행 단계가 아니다. (근거: 2026-06-16 conformance 감사 — 실 UE5.6 작업의 ~89%가 메인 인라인 처리, hub-fan-out 0회. 2026-07-02 양 머신 재감사에서 leaf 실사용 6주 1세션이 재확인되어 **leaf specialist는 agent에서 `docs/specialists/` 참조 문서로 축소**됐다 — 허브 2개만 agent로 유지.)
+**Two-CLI Builder 모드 예외**: Builder 세션(`builder 모드`/HANDOFF.md 실행 중)에서는 specialist 재위임을 생략한다 — Architect가 이미 분해·설계한 spec을 실행하는 단계라 엔진 specialist 재호출이 구조적으로 잉여다. 엔진 라우팅이 가치를 갖는 지점은 **Architect의 설계 단계**(HANDOFF 작성 전 triage)이지 Builder의 실행 단계가 아니다. (근거: 2026-06-16 conformance 감사 — 실 UE5.6 작업의 ~89%가 메인 인라인 처리, hub-fan-out 0회. 2026-07-02 양 머신 재감사에서 leaf 실사용 6주 1세션이 재확인되어 **leaf specialist는 agent에서 `docs/specialists/` 참조 문서로 축소**됐다 — 허브 2개만 agent로 유지.) 이 절의 consult는 Architect 단계에서 한 번 수행하는 의무이며, Builder 단계에서 specialist를 다시 위임하지 않는 규칙은 그대로다.
+
+## 엔진 허브 consult (HANDOFF 전 필수)
+
+아래 `엔진 판별`에 따라 Unreal 또는 Unity 신호가 있는 **구현 작업**은 Architect가 HANDOFF를 쓰기 전에 해당 엔진 허브를 한 번 consult해야 한다. Claude Architect는 `unreal-specialist`/`unity-specialist` agent 또는 `/ue`·`/umg`·`/gas`·`/repl`·`/bp` router skill을 사용하고, Codex Architect는 자기 install root의 `~/.codex/docs/specialists/*.md` 중 해당 문서를 직접 Read한다.
+
+consult의 설계 판단·anti-pattern·verification point는 HANDOFF의 제약·gate·검증 기준에 반영한다. consult를 읽고 HANDOFF에 반영하지 않으면 이 의무를 충족하지 않는다.
+
+read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다. 엔진 신호 판별은 아래 `엔진 판별` 절을 그대로 사용하며 별도 판별 규칙을 추가하지 않는다.
+
+근거: `docs/architecture/ADR-0010-engine-hub-required-before-handoff.md`.
 
 ## 엔진 판별
 

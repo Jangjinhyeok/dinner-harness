@@ -20,6 +20,7 @@
 4. 가능한 옵션을 제시 (보통 2~3가지, 각 옵션의 장단점 포함)
 5. 사용자와 토론하여 방향 결정
 6. 필요한 추가 정보를 사용자에게 질문 (스코프, 제약, 검증 기준 등)
+6.5. 엔진 신호가 있는 구현이면 HANDOFF 작성 전에 해당 엔진 허브를 1회 consult한다. Claude Architect는 `unreal-specialist`/`unity-specialist` agent 또는 `/ue`·`/umg`·`/gas`·`/repl`·`/bp` router skill을 사용하고, Codex Architect는 `~/.codex/docs/specialists/*.md` 중 해당 문서를 직접 Read한다. read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다. consult의 설계 판단·anti-pattern·verification point를 7번 HANDOFF의 제약·gate·검증 기준에 반영하며, 엔진 신호 판별은 `~/.claude/rules/agent-routing.md`의 "엔진 판별" 절을 따른다.
 7. HANDOFF.md를 작성:
    - 목표
    - 제약

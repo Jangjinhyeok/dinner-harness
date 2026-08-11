@@ -137,6 +137,8 @@ request에 대해서는 대체한다.
    approval**을 사용자에게 받고, 그 후에만 Codex Builder를 dispatch한다. HIGH의
    terminal approval도 그대로 사용자에게 남는다.
 
+엔진 신호가 있는 구현은 HANDOFF 작성 전에 엔진 허브 consult를 선행하며, 상세 규칙은 `~/.claude/rules/agent-routing.md`의 "엔진 허브 consult (HANDOFF 전 필수)"을 따른다.
+
 사용자가 "이번 작은 수정은 Claude가 직접"이라고 명시할 수는 있지만, 이는 inline
 조건을 만족할 때만 적용된다. HIGH를 LOW/inline으로 낮추거나 사람 게이트를 우회하지
 않는다. `!`는 이 policy의 escape hatch가 아니다. Claude Code의 shell-output fast

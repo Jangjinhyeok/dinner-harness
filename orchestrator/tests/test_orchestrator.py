@@ -644,6 +644,39 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIn("additional architect-route signal", message)
         self.assertNotIn("orchestrate.py build --repo", message)
 
+    def test_single_subsystem_ue_work_requires_consult_before_handoff(self):
+        route = route_nudge.message_for_prompt("Implement a UMG inventory widget.")
+
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["umg"])
+        self.assertIn("MUST consult `/umg`", message)
+        self.assertIn("before writing the HANDOFF", message)
+        self.assertIn("incorporate the consult's design decisions", message)
+        self.assertIn("genuine 1-2-line changes are exceptions", message)
+
+    def test_multi_subsystem_ue_work_requires_consult_before_handoff(self):
+        route = route_nudge.message_for_prompt(
+            "Implement UMG replication support for the multiplayer HUD."
+        )
+
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["umg", "repl"])
+        self.assertIn("MUST consult it before writing the HANDOFF", message)
+        self.assertIn("incorporate the consult's design decisions", message)
+        self.assertIn("genuine 1-2-line changes are exceptions", message)
+
+    def test_generic_ue_work_requires_consult_before_handoff(self):
+        route = route_nudge.message_for_prompt("Implement UE5 packaging support.")
+
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["hub_generic"])
+        self.assertIn("MUST consult it before writing the HANDOFF", message)
+        self.assertIn("incorporate the consult's design decisions", message)
+        self.assertIn("genuine 1-2-line changes are exceptions", message)
+
     def test_read_only_or_meta_prompt_does_not_inject_a_write_route(self):
         self.assertIsNone(route_nudge.message_for_prompt("Explain this function."))
         self.assertIsNone(route_nudge.message_for_prompt("Audit the route_nudge hook."))

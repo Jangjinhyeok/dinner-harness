@@ -1,4 +1,4 @@
 # curation drift manifest — read by check.py. Re-bless: `py -3 check.py --update`.
 # claude_md_blessed_hash = content/instructions/CLAUDE.md at the last AGENTS.md curation.
-claude_md_blessed_hash = "5919a2ab817a9e3a1ab3b6a1768fa80cb628edc552de580daaa9e70ee53e4ba9"
+claude_md_blessed_hash = "43f2f073a6a1a321772008f76fba03dfad75e710b881b82875e314291e53d62b"
 blessed_at = "2026-06-17"

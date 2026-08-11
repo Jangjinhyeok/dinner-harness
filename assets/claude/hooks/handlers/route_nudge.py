@@ -106,8 +106,11 @@ def message_for_prompt(prompt: str) -> tuple[str, list[str]] | None:
         key, agent = matched[0]
         return (
             f"{prefix} [route-nudge] This also looks like UE {key.upper()} work. "
-            f"Use `/{key}` (unreal-specialist + docs/specialists/{agent}) only for "
-            "focused Architect analysis before the selected execution route.",
+            f"For implementation work, you MUST consult `/{key}` "
+            f"(unreal-specialist + docs/specialists/{agent}) before writing the HANDOFF "
+            "and incorporate the consult's design decisions, anti-patterns, and "
+            "verification points into it. Read-only questions and genuine 1-2-line "
+            "changes are exceptions.",
             [key],
         )
     if len(matched) >= 2:
@@ -116,13 +119,19 @@ def message_for_prompt(prompt: str) -> tuple[str, list[str]] | None:
         return (
             f"{prefix} [route-nudge] This prompt spans multiple UE subsystems "
             f"[{aliases}], an additional architect-route signal. Use `/ue` only for "
-            "focused Architect analysis before the HANDOFF.",
+            "implementation work: you MUST consult it before writing the HANDOFF and "
+            "incorporate the consult's design decisions, anti-patterns, and "
+            "verification points into it. Read-only questions and genuine 1-2-line "
+            "changes are exceptions.",
             domains,
         )
     if _UE_GENERIC.search(prompt):
         return (
             f"{prefix} [route-nudge] This also has a generic Unreal signal; use `/ue` "
-            "only for focused Architect analysis when the selected route needs it.",
+            "for implementation work: you MUST consult it before writing the HANDOFF "
+            "and incorporate the consult's design decisions, anti-patterns, and "
+            "verification points into it. Read-only questions and genuine 1-2-line "
+            "changes are exceptions.",
             ["hub_generic"],
         )
     return prefix, ["default"]

@@ -145,6 +145,7 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 ### Architect 규약
 - 코드 파일에 직접 Edit/Write 하지 않는다(설계·분석·핸드오프 작성·결과 검토 담당). `HANDOFF.md`/`RESULT.md`는 작성 가능.
 - 흐름: 요청 청취 → 코드베이스 탐색(read) → 영향 범위 분석·보고 → 옵션 2~3개 제시 → 사용자와 방향 결정 → `HANDOFF.md` 작성 → "Builder 세션에서 HANDOFF.md 진행" 안내.
+- **엔진 허브 consult (HANDOFF 전 필수)**: 기존 `agent-routing.md`의 엔진 판별을 그대로 따른다 — `*.uproject` 또는 `Source/*/*.Build.cs` 존재는 Unreal, `ProjectSettings/ProjectVersion.txt` 또는 `Assets/` + `Packages/manifest.json`은 Unity, 프로젝트 `CLAUDE.md`의 엔진 명시는 우선한다. Unreal 또는 Unity 신호가 있는 구현이면 HANDOFF 작성 전에 해당 `~/.codex/docs/specialists/*.md`를 직접 Read한다 (`ue-gas.md`, `ue-blueprint.md`, `ue-replication.md`, `ue-umg.md`, `unity-dots.md`, `unity-shader.md`, `unity-addressables.md`, `unity-ui.md`). consult의 설계 판단·anti-pattern·verification point를 HANDOFF의 제약·gate·검증 기준에 반영한다. read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다.
 - `HANDOFF.md` 구성: 목표 / 제약 / 영향 파일(수정·수정금지) / **게이트 단위 분해**(독립 검증 가능, 1~3 파일, 명확한 검증 기준, **risk tier 태그 LOW/HIGH**) / 비기능 요건. HIGH 게이트(replication·save format·live config·migration·security·비가역)는 사람 종단 서명 지점·blast-radius를 명기. tier 모호하면 HIGH.
 - **게이트 크기**: 5파일 이상이면 더 작게 분해, 한 줄 수정이면 합친다. 각 게이트는 다음 게이트의 전제 조건을 명시한다.
 - **self-contained로 작성**: Builder가 다른 vendor일 수 있으니 상대에게 없는 skill·subagent·`/명령`을 전제하지 말고, 빌드·검증은 표준 CLI 명령으로 기술한다.

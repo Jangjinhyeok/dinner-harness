@@ -173,7 +173,7 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 |---|---|---|---|
 | 메타 원칙 skills | `simplicity-first`, `surgical-changes`, `think-before-coding`, `goal-driven-execution`, `search-first` | 모델이 과설계·범위이탈·추측·research 생략을 기본값으로 함 | base 모델이 prompting 없이도 최소·외과적·research-first를 기본으로 행동 → preload(`skills:` frontmatter) 먼저 해제, 그 다음 skill 본문 축소 |
 | 컨텍스트·검증 skills | `verification-loop`, `eval-harness`, `strategic-compact`, `iterative-retrieval`, `scope-check`, `perf-profile`, `tech-debt` | 유한 context window + 내장 검증/압축 부재 | context가 사실상 무한 + 하네스가 검증·압축을 자동 수행 → 해당 skill 우선 일몰 |
-| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: 허브 자체도 미사용 지속 시 허브 축소 검토 |
+| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: **필수 규칙 하에서도** 허브 자체가 미사용이면 허브 축소 검토 |
 | Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소 |
 | Two-CLI workflow infra (cross-vendor) | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` (+ Codex `AGENTS.md` §7) | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함; 협업은 vendor를 가로질러 양방향(Codex/Claude × Architect/Builder) | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
@@ -182,6 +182,8 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 ### 주요 변경 이력
 
 세부 변경은 git log에 있다. 아래는 milestone 수준 요약이다.
+
+**2026-08-11 — 엔진 허브 consult를 HANDOFF 전 필수 단계로 승격.** parent 32세션 + subagent 8세션(2026-06-16~08-11)의 전체 transcript 스크립트 감사에서 엔진 신호 13세션 중 허브 호출 0회, 라우터 skill 호출 0회가 측정됐다. 그러나 GAS 설계 질문을 문서 위치 힌트 없이 던진 live probe에서는 첫 번째이자 유일한 tool call이 install root의 `ue-gas.md` Read여서 배선은 정상이었다. 원인은 도달 불가가 아니라 Builder-first 경로 앞에 놓인 "선택 단계" 포지셔닝으로 판정했다. 따라서 엔진 신호 구현은 HANDOFF 작성 전에 vendor-aware 허브 consult를 1회 수행하고 그 산출을 HANDOFF에 반영하게 했다. 다음 감사 지표는 엔진 신호 세션당 허브 호출률이며, 필수 규칙 하에서도 0이면 일몰한다. (출처: `docs/architecture/ADR-0010-engine-hub-required-before-handoff.md`.)
 
 **2026-07-02 (후속) — comprehension debt 대응 3종.** "코드를 AI에 맡기니 구조가 내 머리에 안 남는다"는 사용자 문제 제기에 대한 장치: ① **구조 브리핑 의무화**(푸시) — RESULT.md·구현 완료 보고에 새/변경 모듈+책임 한 줄·호출/데이터 흐름·왜 이 구조(버린 대안)·직접 열어볼 파일 3개를 필수 포함(`ROLE_BUILDER`·`RESULT.template`·`CLAUDE.md §5`·codex `AGENTS.md §4/§7`). ② **휴면 ADR 인프라 활성화**(누적) — 구조적 결정이 걸린 HANDOFF엔 프로젝트 `docs/architecture/` ADR 1장을 의무화(`ROLE_ARCHITECT`, Write 예외에 ADR 추가). ③ **`walkthrough` skill 신설**(풀, 27번째) — 최근 diff/지정 범위를 진입점→데이터 흐름 순 코드 투어로 안내하고 능동 인출 질문으로 마무리. vendor-neutral(git+Read)이라 codex clean native(9번째). (출처: 사용자 문제 제기 — AI 위임 확대에 따른 구조 이해 상실.)
 
