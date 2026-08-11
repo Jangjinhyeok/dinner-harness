@@ -23,6 +23,16 @@ read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된
 
 근거: `docs/architecture/ADR-0010-engine-hub-required-before-handoff.md`.
 
+## _core/_gamedev consult (구조적 HANDOFF 전 필수)
+
+작업이 이미 Architect의 triage에서 architect 경로(다파일·구조 결정·HIGH)로 판정되고, 아래 "라우팅 규칙" 표의 `_core`/`_gamedev` 도메인과 매칭되면 Architect는 HANDOFF를 쓰기 전에 해당 agent를 한 번 consult해야 한다. Unreal/Unity 작업은 이미 위 엔진 허브 consult에서 다루므로 이 절에서 다시 트리거하지 않는다.
+
+consult의 설계 판단·anti-pattern·verification point는 HANDOFF의 제약·gate·검증 기준에 반영한다. consult를 읽고 HANDOFF에 반영하지 않으면 이 의무를 충족하지 않는다.
+
+read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다. 구조적으로 LOW/`/delegate` 레인에 머무는 작업은 architect 경로 판정에 도달하지 않으므로 이 트리거에서 제외된다.
+
+근거: `docs/architecture/ADR-0011-core-gamedev-consult-required-for-large-scope-work.md`.
+
 ## 엔진 판별
 
 - `*.uproject` 또는 `Source/*/*.Build.cs` 존재 → **Unreal**

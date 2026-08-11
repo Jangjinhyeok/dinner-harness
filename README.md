@@ -161,6 +161,8 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 
 엔진(Unreal/Unity) 신호가 있는 구현 요청은 위 표의 HANDOFF 작성 전에 해당 엔진 허브(`unreal-specialist`/`unity-specialist` 또는 `/ue`·`/umg`·`/gas`·`/repl`·`/bp`) consult가 필수다. read-only 질문과 실제 1~2줄 변경은 면제되며, 상세는 ADR-0010에 정리되어 있다.
 
+architect 경로로 판정된 도메인 작업(코드 리뷰·설계·C++ 빌드·게임플레이/네트워크/UI/툴/성능 구현 등, 표의 세 번째·네 번째 행에 해당하는 규모)도 `_core`/`_gamedev` agent consult가 필요하며, 이 규칙은 ADR-0011에 정리되어 있다.
+
 `builder_guard`는 Claude의 structured `Edit`/`Write` 구현 변경을 막고 Builder 경로를
 안내한다. 이는 workflow guard이지 보안 sandbox가 아니다. Bash/PowerShell을 해석해서
 모든 쓰기를 막지는 않으므로, shell로 guard를 우회하는 사용은 이 UX의 범위 밖이다.
