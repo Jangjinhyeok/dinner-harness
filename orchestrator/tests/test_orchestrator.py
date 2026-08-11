@@ -2956,6 +2956,302 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BLOCKED, out.reason)
             self.assertIn("safety net", out.reason)
 
+    def test_ignored_fence_file_reaches_secret_scan(self):
+        # This must use the production git collector, not an injected Change:
+        # `*.md` hid the Builder's in-fence output completely, so a real key in
+        # it used to report BUILT because secret_scan received no file at all.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        key = "AKIA" + "IOSFODNN7EXAMPLE"
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\noutput.md\n```\n",
+                encoding="utf-8")
+            backend = _TamperingBackend(repo, "output.md", f"aws_key = {key}\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertIn("safety net", out.reason)
+
+    def test_ignored_directory_fence_collects_files_not_opaque_directory(self):
+        # `--ignored=matching` collapses a fully ignored ancestor to `build/`.
+        # Traditional mode must keep the declared file flat so the net does
+        # not invent a nested-repo explanation for an ordinary ignored output.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("build/\n", encoding="utf-8")
+            output = repo / "build" / "output.md"
+            output.parent.mkdir()
+            output.write_text("output\n", encoding="utf-8")
+
+            changes = collect_changeset(repo, fence=["build/output.md"])
+
+            paths = [change.path for change in changes]
+            self.assertIn("build/output.md", paths)
+            self.assertNotIn("build/", paths)
+
+    def test_out_of_repo_fence_entries_are_ignored_before_git_query(self):
+        # Absolute and parent-escaping entries are valid scope-handler input
+        # only as out-of-repo patterns; the Git observation query must omit them
+        # instead of passing a fatal pathspec to git and refusing the dispatch.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            outside = repo.parent / "outside.md"
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\nallowed.py\n"
+                f"{repo / 'allowed.py'}\n../outside.md\n"
+                f"{outside}\n```\n",
+                encoding="utf-8")
+            backend = _TamperingBackend(repo, "allowed.py", "ok = True\n")
+
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+
+            self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_ignored_query_failure_keeps_main_changeset_and_reports_exact_query(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        from orchestrator import controller as ctrl
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / "allowed.py").write_text("ok = True\n", encoding="utf-8")
+            real_git_out = ctrl._git_out
+
+            def fail_ignored(repo_arg, *args):
+                if "--ignored=traditional" in args:
+                    return None
+                return real_git_out(repo_arg, *args)
+
+            warnings: list[str] = []
+            with mock.patch.object(ctrl, "_git_out", side_effect=fail_ignored), \
+                 mock.patch.object(ctrl, "_git_why",
+                                   return_value="fatal: simulated pathspec failure") as why:
+                changes = collect_changeset(repo, fence=["allowed.py"], warnings=warnings)
+
+            self.assertIsNotNone(changes)
+            self.assertIn("allowed.py", [change.path for change in changes])
+            self.assertIn("ignored fence query failed", warnings[0])
+            self.assertIn("fatal: simulated pathspec failure", warnings[0])
+            self.assertIn("--ignored=traditional", why.call_args.args)
+
+    def test_ignored_glob_warning_names_collected_paths(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            output = repo / "src" / "output.md"
+            output.parent.mkdir()
+            output.write_text("output\n", encoding="utf-8")
+            warnings: list[str] = []
+
+            changes = collect_changeset(repo, fence=["src/*.md"], warnings=warnings)
+
+            self.assertIn("src/output.md", [change.path for change in changes])
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("src/output.md", warnings[0])
+            self.assertNotIn("src/*.md", warnings[0])
+
+    def test_ignored_fence_rename_is_in_delta(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\noriginal.md\nrenamed.md\n```\n",
+                encoding="utf-8")
+            (repo / "original.md").write_text("source\n", encoding="utf-8")
+
+            class _RenameIgnored(Backend):
+                name = "rename-ignored"
+
+                def invoke(self, role, prompt, cfg):
+                    (repo / "original.md").rename(repo / "renamed.md")
+                    return Turn(text=_CLEAN_VERDICT)
+
+            backend = _RenameIgnored()
+            seen = _ScanSpy()
+            with seen.patch():
+                out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                                   AutoApprove(), log=lambda m: None).run_from_handoff()
+
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertIn(("scope_check", "original.md"), seen.calls)
+            self.assertIn(("scope_check", "renamed.md"), seen.calls)
+
+    def test_ignored_fence_deletion_is_in_delta(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\noriginal.md\n```\n",
+                encoding="utf-8")
+            (repo / "original.md").write_text("source\n", encoding="utf-8")
+            backend = _TamperingBackend(repo, "original.md", None)
+            seen = _ScanSpy()
+            with seen.patch():
+                out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                                   AutoApprove(), log=lambda m: None).run_from_handoff()
+
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertIn(("scope_check", "original.md"), seen.calls)
+
+    def test_bracketed_ignored_fence_entry_is_literal(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            literal = repo / "[2026]resume.md"
+            literal.write_text("resume\n", encoding="utf-8")
+            (repo / "2resume.md").write_text("decoy\n", encoding="utf-8")
+
+            changes = collect_changeset(repo, fence=["[2026]resume.md"])
+
+            paths = [change.path for change in changes]
+            self.assertIn("[2026]resume.md", paths)
+            self.assertNotIn("2resume.md", paths)
+
+    def test_ignored_tree_outside_fence_does_not_expand_changeset(self):
+        # Whole-tree --ignored made this 300-file directory trip OVERSIZED. The
+        # pathspec query must collect only `allowed.py`, while preserving -uall
+        # on the original status call for ordinary untracked files.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\nIntermediate/\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\n```\n",
+                encoding="utf-8")
+            (repo / "Intermediate").mkdir()
+            _write_n_files(repo / "Intermediate", 300)
+            backend = _TamperingBackend(repo, "allowed.py", "ok = True\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_ignored_glob_fence_does_not_cross_path_segments(self):
+        # Git's ordinary pathspec `src/*.md` also reaches `src/deep/*.md`, but
+        # scope_check deliberately does not. A large pre-existing ignored deep
+        # tree therefore must not make this legal one-level glob OVERSIZED.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nsrc/*.md\n```\n",
+                encoding="utf-8")
+            nested = repo / "src" / "deep"
+            nested.mkdir(parents=True)
+            for i in range(300):
+                (nested / f"ignored-{i}.md").write_text("ignored\n", encoding="utf-8")
+            backend = _TamperingBackend(repo, "src/output.md", "allowed output\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_preexisting_ignored_fence_file_is_not_builder_delta(self):
+        # Both snapshots must receive the same fence. Passing it only after the
+        # turn would turn this untouched pre-existing ignored file into a false
+        # "Builder changed it" delta and block every document dispatch.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n"
+                "```scope\noutput.md\nallowed.py\n```\n",
+                encoding="utf-8")
+            (repo / "output.md").write_text("already present\n", encoding="utf-8")
+            backend = _TamperingBackend(repo, "allowed.py", "ok = True\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_empty_fence_skips_ignored_status_query(self):
+        # An absent/empty fence must never accidentally issue pathspec-less
+        # --ignored: that is the measured 303-entry whole-tree path.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        from orchestrator import controller as ctrl
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / "ordinary.py").write_text("ok = True\n", encoding="utf-8")
+            with mock.patch.object(ctrl, "_git_out", wraps=ctrl._git_out) as git_out:
+                changes = collect_changeset(repo, fence=[])
+            self.assertEqual([c.path for c in changes], ["ordinary.py"])
+            status_calls = [call.args[1:] for call in git_out.call_args_list
+                            if call.args[1] == "status"]
+            self.assertEqual(len(status_calls), 1)
+            self.assertFalse(any(arg.startswith("--ignored") for arg in status_calls[0]))
+
+    def test_ignored_fence_path_warns_without_blocking(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\noutput.md\n```\n",
+                encoding="utf-8")
+            log: list[str] = []
+            backend = _TamperingBackend(repo, "output.md", "clean output\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=log.append).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            warning = "\n".join(log)
+            self.assertIn("output.md", warning)
+            self.assertIn("ignored fence paths collected and scanned: output.md", warning)
+
+    def test_ignored_write_outside_fence_remains_outside_delta(self):
+        # Documentary limit: fence-limited collection intentionally does NOT
+        # claim whole-tree ignored coverage. A write outside the fence remains
+        # invisible (and therefore is not rollbackable from git stash create).
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (repo / bus.HANDOFF).write_text(
+                "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\n```\n",
+                encoding="utf-8")
+            backend = _TamperingBackend(repo, "outside.md", "still invisible\n")
+            out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                               AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            paths = [change.path for change in collect_changeset(repo, fence=["allowed.py"])]
+            self.assertNotIn("outside.md", paths)
+
     def test_dryrun_warns_on_handoff_tamper_instead_of_blocking(self):
         # Round 10: the tamper stop returned BLOCKED unconditionally while every
         # other check in _build_and_gate degrades, so --net-dryrun ("run the
@@ -3631,6 +3927,50 @@ class TestBuildFromHandoff(unittest.TestCase):
             finally:
                 os.environ.pop("CLAUDE_SCOPE_FENCE", None)
             self.assertTrue(res.blocked, res.reasons)
+
+    def test_ignored_fence_pathspec_is_relative_to_work_repo(self):
+        # cfg.repo may sit below the Git root. The ignored query must collect
+        # work/OUT.md, not the decoy Git-root OUT.md selected by a git-root
+        # pathspec.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _git_init(root)
+            repo = root / "work"
+            repo.mkdir()
+            (root / ".gitignore").write_text("*.md\n", encoding="utf-8")
+            (root / "OUT.md").write_text("git-root decoy\n", encoding="utf-8")
+            (repo / "OUT.md").write_text("fenced output\n", encoding="utf-8")
+
+            changes = collect_changeset(repo, fence=["OUT.md"])
+
+            self.assertIsNotNone(changes)
+            by_path = {change.path: change.content for change in changes}
+            self.assertEqual(by_path["OUT.md"], "fenced output\n")
+            self.assertNotIn("../OUT.md", by_path)
+
+    def test_fence_directory_ignored_query_keeps_untracked_files_flat(self):
+        # The fence query must retain -uall, matching the main status query.
+        # Otherwise Git folds pad/ into a directory entry that dedupes poorly
+        # and is rejected later as opaque.
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            _write_n_files(repo, 3)
+
+            baseline = collect_changeset(repo)
+            fenced = collect_changeset(repo, fence=["pad/"])
+
+            self.assertIsNotNone(baseline)
+            self.assertIsNotNone(fenced)
+            baseline_paths = [change.path for change in baseline]
+            fenced_paths = [change.path for change in fenced]
+            self.assertEqual(fenced_paths, baseline_paths)
+            self.assertNotIn("pad/", fenced_paths)
+            self.assertEqual(fenced_paths, ["pad/f0.txt", "pad/f1.txt", "pad/f2.txt"])
 
     def test_changeset_exactly_at_the_ceiling_is_scanned(self):
         # `>` vs `>=`: the boundary was never pinned, so an off-by-one either

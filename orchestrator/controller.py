@@ -289,6 +289,7 @@ class _Evidence:
     before: Optional[dict]
     witness: Optional[str]
     snapshot: Optional[str] = None
+    fence: Optional[list[str]] = None
 
 
 def _changeset_index(changes) -> Optional[dict]:
@@ -314,8 +315,8 @@ def _git_env() -> dict:
     return env
 
 
-def _git_why(repo: Path) -> str:
-    """git's own words for why it will not answer, for the operator's message.
+def _git_why(repo: Path, *args: str) -> str:
+    """git's own words for why the failed command will not answer.
 
     "git unavailable" is the one thing that is *not* true in most of these
     cases — git ran fine and refused. `detected dubious ownership` (routine on
@@ -323,10 +324,14 @@ def _git_why(repo: Path) -> str:
     `git config --global --add safe.directory <path>` away; a corrupt .git and
     an index.lock conflict are each fixed differently. Collapsing them all into
     one string leaves the operator nothing to act on.
+
+    When ``args`` are supplied, rerun that exact command shape. This matters for
+    the fence-limited ignored query: a pathspec failure must not be diagnosed by
+    a fresh pathspec-free ``git status`` that succeeds.
     """
+    command = ["git", "-C", str(repo), *(args or ("status", "--porcelain"))]
     try:
-        proc = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
-                              capture_output=True, timeout=30, env=_git_env())
+        proc = subprocess.run(command, capture_output=True, timeout=30, env=_git_env())
     except Exception as exc:  # noqa: BLE001 - git not on PATH, etc.
         return f"{type(exc).__name__}: {exc}"
     lines = [ln.strip() for ln in
@@ -511,7 +516,53 @@ def _same_text(a: Optional[str], b: Optional[str]) -> bool:
     return a.replace("\r\n", "\n").strip() == b.replace("\r\n", "\n").strip()
 
 
-def collect_changeset(repo: Path, max_files: Optional[int] = None):
+def _fence_pathspecs(repo: Path, fence: list[str]) -> list[str]:
+    """Return valid repo-relative Git pathspecs for fence entries.
+
+    Git's default pathspec lets ``*`` and ``?`` cross ``/``; scope_check does
+    not, because ``src/*.py`` must not admit ``src/deep/leak.py``. Its ``glob``
+    magic supplies the same segment boundary, while ``literal`` keeps brackets
+    literal unless the fence author explicitly opted into a glob with ``*`` or
+    ``?``. Git already treats a trailing-slash pathspec recursively, so no
+    synthetic ``**`` is needed.
+
+    Fence entries are relative to ``repo`` even when ``repo`` is below the Git
+    root. Absolute entries are accepted only when they resolve inside ``repo``;
+    outside paths, drive-qualified paths, and ``..`` escapes are omitted before
+    Git sees them. This keeps a formal absolute scope entry from producing a
+    Git fatal while preserving the scope handler's own absolute-path support.
+    """
+    work_repo = repo.resolve()
+    specs: list[str] = []
+    for entry in fence:
+        raw = entry.strip()
+        if not raw:
+            continue
+        path = raw.replace("\\", "/")
+        if len(path) >= 2 and path[1] == ":":
+            if len(path) < 3 or path[2] != "/":
+                continue
+        is_drive_absolute = len(path) >= 3 and path[1] == ":" and path[2] == "/"
+        is_absolute = Path(raw).is_absolute() or path.startswith("/") or is_drive_absolute
+        candidate = Path(raw) if is_absolute else work_repo / raw
+        try:
+            relative = candidate.resolve(strict=False).relative_to(work_repo)
+        except (OSError, ValueError):
+            continue
+        normalized = relative.as_posix()
+        if path.endswith("/") and normalized != ".":
+            normalized += "/"
+        path = normalized
+        if "*" in path or "?" in path:
+            specs.append(f":(glob){path}")
+        else:
+            specs.append(f":(literal){path}")
+    return list(dict.fromkeys(specs))
+
+
+def collect_changeset(repo: Path, max_files: Optional[int] = None,
+                      fence: Optional[list[str]] = None,
+                      warnings: Optional[list[str]] = None):
     """git status --porcelain -> [Change(path, content)] for the work repo.
 
     Three return shapes, and the caller must tell them apart:
@@ -559,23 +610,69 @@ def collect_changeset(repo: Path, max_files: Optional[int] = None):
     if out is None:
         return None
 
-    entries = [e for e in out.split("\0") if e]
+    outputs = [(out, False)]
+    if fence:
+        # Do NOT add --ignored to the main status call. Measured in a UE-style
+        # tree, its whole-tree expansion reported 303 paths (and made every
+        # dispatch OVERSIZED); removing -uall instead folded untracked work into
+        # directories that _opaque_dirs refuses. Keep -uall on this query: without
+        # it an untracked fence directory folds to one entry, evades file-path
+        # deduplication, pushes the ceiling (see the ceiling regression), and
+        # makes _opaque_dirs reject dispatch. Restrict this second query to the
+        # dispatched fence, so -uall does not enumerate the whole tree; a large
+        # declared directory is still bounded by the existing max_files ceiling.
+        #
+        # This closes only the fence lane. An ignored write outside the fence is
+        # still invisible, and ignored files are absent from `git stash create`,
+        # so they can be detected and blocked but cannot be rolled back.
+        specs = _fence_pathspecs(repo, fence)
+        ignored_args = (
+            "status", "--porcelain", "-z", "-uall", "--ignored=traditional", "--",
+            *specs,
+        )
+        ignored = _git_out(repo, *ignored_args) if specs else ""
+        if ignored is None:
+            if warnings is not None:
+                warnings.append(
+                    "ignored fence query failed; ignored fence paths were not "
+                    f"collected ({_git_why(repo, *ignored_args)})"
+                )
+        else:
+            outputs.append((ignored, True))
+
     paths: list[str] = []
-    i = 0
-    while i < len(entries):
-        code, path = entries[i][:2], entries[i][3:]
-        i += 1
-        raw = [path]
-        if "R" in code or "C" in code:
-            # Under -z the source path is the NEXT field rather than an " -> "
-            # suffix. A rename is a delete of the source plus a write of the
-            # target, so both ends are the Builder's work and both are judged;
-            # taking only the target let a Builder move an out-of-fence file
-            # away unseen.
-            if i < len(entries):
-                raw.append(entries[i])
-                i += 1
-        paths.extend(_repo_relative(root / p, repo) for p in raw)
+    ignored_paths: list[str] = []
+    for status, is_ignored_query in outputs:
+        entries = [e for e in status.split("\0") if e]
+        i = 0
+        while i < len(entries):
+            code, path = entries[i][:2], entries[i][3:]
+            i += 1
+            raw = [path]
+            if "R" in code or "C" in code:
+                # Under -z the source path is the NEXT field rather than an " -> "
+                # suffix. A rename is a delete of the source plus a write of the
+                # target, so both ends are the Builder's work and both are judged;
+                # taking only the target let a Builder move an out-of-fence file
+                # away unseen.
+                if i < len(entries):
+                    raw.append(entries[i])
+                    i += 1
+            normalized = [_repo_relative(root / p, repo) for p in raw]
+            paths.extend(normalized)
+            if is_ignored_query and code == "!!":
+                ignored_paths.extend(normalized)
+
+    # The fence-restricted query deliberately overlaps the ordinary status
+    # result for non-ignored paths. One file must reach each handler once, not
+    # twice, and the ceiling must bound that merged set before any content read.
+    paths = list(dict.fromkeys(paths))
+    ignored_paths = list(dict.fromkeys(ignored_paths))
+    if warnings is not None and ignored_paths:
+        warnings.append(
+            "ignored fence paths collected and scanned: "
+            + ", ".join(ignored_paths)
+        )
 
     if max_files is not None and len(paths) > max_files:
         return OVERSIZED
@@ -706,7 +803,11 @@ class Orchestrator:
         next cycle's baseline and dropped out there too. A key pasted into an
         ADR shipped with the run reporting DONE. The handoff and ``RESULT.md``
         were already re-added by name for exactly this reason; this is the same
-        argument applied to the rest of what the Architect touches.
+        argument applied to the rest of what the Architect touches. The
+        protection still covers only paths visible to the unfenced collector:
+        an ignored Architect output, including an ignored ADR, remains outside
+        this layer because the fence-limited ignored query belongs to the
+        Builder turn.
         """
         cfg = self.cfg
         repo = Path(cfg.repo)
@@ -790,7 +891,8 @@ class Orchestrator:
         self._emit(f"[cycle {cycle}] net: {warn_tail or 'WARN dryrun — ' + block_msg}")
         return False
 
-    def _pre_turn_checks(self, cycle: int, handoff_text: str, handoff_name: str):
+    def _pre_turn_checks(self, cycle: int, handoff_text: str, handoff_name: str,
+                         fence: list[str]):
         """Everything knowable BEFORE the builder turn. Returns ``(evidence, stop)``.
 
         ``stop`` is a non-empty reason string when the cycle must be refused.
@@ -830,7 +932,7 @@ class Orchestrator:
         # interactive session predating ADR-0005 is not frozen. The controller
         # has no such excuse: here a changeset is admitted on the strength of the
         # fence, so no fence is a net that cannot run, not a pass.
-        if not busmod.scope_entries(handoff_text):
+        if not fence:
             msg = f"no ```scope``` fence in {handoff_name}: cannot bound the changeset"
             if self._gate(cycle, msg):
                 return _Evidence(None, None), msg
@@ -842,7 +944,12 @@ class Orchestrator:
         # never touched, and the only workaround is widening the fence, which
         # hands the Builder writes it should not have. The delta is the honest
         # changeset.
-        before_raw = collect_changeset(repo, max_files=_MAX_CHANGESET)
+        collection_warnings: list[str] = []
+        before_raw = collect_changeset(
+            repo, max_files=_MAX_CHANGESET, fence=fence, warnings=collection_warnings
+        )
+        for warning in collection_warnings:
+            self._emit(f"[cycle {cycle}] warning: {warning}")
         if before_raw is OVERSIZED:
             # The tree is already past what the net can vet, so a turn would only
             # add to it.
@@ -890,7 +997,8 @@ class Orchestrator:
             snapshot = snapshot.strip() or "HEAD"
 
         return _Evidence(
-            before=_changeset_index(before_raw), witness=witness, snapshot=snapshot
+            before=_changeset_index(before_raw), witness=witness, snapshot=snapshot,
+            fence=list(fence),
         ), None
 
     def _restore_scope_blocked_paths(
@@ -927,7 +1035,7 @@ class Orchestrator:
         return restored, left_in_place
 
     def _builder_changes(self, cycle: int, bus: Bus, bd, ev: "_Evidence",
-                         handoff_name: str, handoff_text: str):
+                         handoff_name: str, handoff_text: str, fence: list[str]):
         """What the Builder's turn changed, vetted for trustworthiness.
 
         Returns ``(changes, stop)``; ``stop`` is a non-empty reason when the
@@ -988,7 +1096,16 @@ class Orchestrator:
                     return [], msg
                 changes = []
         else:
-            after = collect_changeset(repo, max_files=_MAX_CHANGESET)
+            after_fence = ev.fence if ev.fence is not None else fence
+            collection_warnings: list[str] = []
+            after = collect_changeset(
+                repo,
+                max_files=_MAX_CHANGESET,
+                fence=after_fence,
+                warnings=collection_warnings,
+            )
+            for warning in collection_warnings:
+                self._emit(f"[cycle {cycle}] warning: {warning}")
             if after is OVERSIZED:
                 msg = self._oversized_msg("working tree")
                 if self._gate(cycle, msg, f"WARN dryrun — {msg}; skipping the scan"):
@@ -1082,7 +1199,8 @@ class Orchestrator:
         # deliberately keeps it because its prompt directs the Builder to use it.
         if prompt is None:
             bus.write_result("")
-        ev, stop = self._pre_turn_checks(cycle, handoff_text, handoff_name)
+        fence = busmod.scope_entries(handoff_text)
+        ev, stop = self._pre_turn_checks(cycle, handoff_text, handoff_name, fence)
         if stop:
             return None, [], False, self._outcome(BLOCKED, cycle, stop), False
 
@@ -1100,7 +1218,7 @@ class Orchestrator:
         verdicts = parse_verdicts(bd.text)
 
         changes, stop = self._builder_changes(
-            cycle, bus, bd, ev, handoff_name, handoff_text)
+            cycle, bus, bd, ev, handoff_name, handoff_text, fence)
         if stop:
             return bd, verdicts, False, self._outcome(BLOCKED, cycle, stop), False
 
@@ -1119,8 +1237,7 @@ class Orchestrator:
             self._emit(f"[cycle {cycle}] net: scanning {len(changes)} file(s)")
         # Pin the fence we DISPATCHED, so the handler judges against that text
         # rather than re-reading a file the Builder can still be writing to.
-        net = safety.scan(changes, cfg, scope_exempt=scope_exempt,
-                          fence=busmod.scope_entries(handoff_text),
+        net = safety.scan(changes, cfg, scope_exempt=scope_exempt, fence=fence,
                           handoff_name=handoff_name)
         for r in net.reasons:
             self._emit(f"[cycle {cycle}] net: {r}")

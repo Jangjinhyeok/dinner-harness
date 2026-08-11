@@ -177,10 +177,17 @@ ignore rule과 index-bit fingerprint는 가장 싼 우회 둘을 막을 뿐 전�
 필요합니다.
 
 정직한 Builder에게도 net이 보지 못하는 영역이 있습니다. global `core.excludesFile`을
-포함해 `.gitignore`에 match된 file은 `git status`에 나타나지 않습니다. `--ignored`는
-`node_modules`까지 보고해 dispatch를 매번 거부할 수 있어 채택하지 않았습니다. 따라서
-target repo의 ignore rule도 safety boundary의 일부입니다. 또한 block은 rollback이 아니라
-**거부**입니다. out-of-fence deletion은 보고되지만 되돌려지지 않습니다.
+포함해 `.gitignore`에 match된 file은 main whole-tree `git status` query에 나타나지
+않습니다. 대신 controller는 선언된 fence에 한해서만 `--ignored=traditional -uall`
+두 번째 query를 실행하고, path를 merge·dedupe한 뒤 changeset ceiling을 적용합니다. 이
+보완은 fence **안** ignored write의 **secret·관측 축**을 닫지만, fence **밖** ignored
+write는 여전히 보이지 않으므로 **scope 축**은 닫지 않습니다. whole-tree `--ignored`는
+여전히 채택하지 않습니다. ceiling이 있는 repo에서는 `node_modules`까지 보고 dispatch를
+매번 거부할 수 있기 때문입니다. 따라서 target repo의 ignore rule도 safety boundary의
+일부입니다. ignored file은 `git stash create`에도 들어가지 않으므로 탐지·차단은 가능하지만
+그 snapshot으로 rollback할 수 없고, fence가 큰 ignored directory를 명시하면 기존
+`max_files` ceiling에 걸릴 수 있습니다. 또한 block은 rollback이 아니라 **거부**입니다.
+out-of-fence deletion은 보고되지만 되돌려지지 않습니다.
 
 - **Tier-gate enforcement** — effective tier는 Architect 선언과 Builder self-report 중 더
   높은 값입니다. ` ```tiers ` fence가 누락되거나 깨지면 모든 gate가 HIGH입니다. 모든

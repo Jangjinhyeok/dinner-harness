@@ -210,12 +210,20 @@ else happened — read it as "nothing the net can see went wrong". If you need a
 containment boundary rather than a review aid, that belongs at the process
 level (a sandbox), not here.
 
-**What the net does not see**, even from an honest Builder: files matched by
-`.gitignore` (including a global `core.excludesFile`) never appear in
-`git status`. Widening to `--ignored` was rejected — on the repos the ceiling
-exists for it would report `node_modules` and refuse every dispatch — so treat
-the target repo's ignore rules as part of the safety boundary. And a block is a
-**refusal, not a rollback**: an out-of-fence deletion is reported, not undone.
+**What the net does not see**, even from an honest Builder: the main whole-tree
+`git status` query omits files matched by `.gitignore` (including a global
+`core.excludesFile`). For the declared fence only, the controller adds a second
+`--ignored=traditional -uall` query, merges and deduplicates its paths, and
+then applies the changeset ceiling. This closes the **secret and observation
+axes** for ignored writes inside the fence; it does not close the **scope axis**,
+because ignored writes outside the fence remain invisible. Whole-tree
+`--ignored` is still rejected — on repos where the ceiling exists it would
+report `node_modules` and refuse every dispatch — so ignore rules remain part
+of the safety boundary. Ignored files are not included by `git stash create`:
+they can be detected and blocked, but cannot be rolled back by that snapshot.
+A fence that names a large ignored directory can also hit the existing
+`max_files` ceiling. And a block is a **refusal, not a rollback**: an
+out-of-fence deletion is reported, not undone.
 
 - **Tier-gate enforcement** — effective tier = the higher of the Architect's
   declared tier and the Builder's self-reported tier; a **missing/garbled

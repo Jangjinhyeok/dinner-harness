@@ -308,11 +308,18 @@ made the gap read as a lie rather than a limit.
   deleted, empty, and unreadable-as-UTF-8 all collapse to it, so a Builder that
   modifies an already-dirty *binary* file out of fence is not seen; distinguishing
   them means a status marker on `safety.Change`, which was judged not worth the
-  reach here. **Files the target repo ignores are invisible to the net** — they
-  never appear in `git status`, so a Builder writing there is unseen by both
-  layers; widening to `--ignored` was rejected because on the repos the ceiling
-  exists for it would report `node_modules` and refuse every dispatch, so the
-  ignore rules are part of the safety boundary and are documented as such.
+  reach here. **The main whole-tree status query still omits files the target repo
+  ignores.** A second query now uses `--ignored=traditional -uall` with only
+  the dispatched fence's pathspecs, then merges and deduplicates those paths
+  before applying the ceiling. This closes the **secret and observation axes**
+  for ignored writes inside the fence; it does not close the **scope axis**,
+  because ignored writes outside the fence remain invisible. Whole-tree
+  `--ignored` is still rejected: on repos where the ceiling exists it reports
+  `node_modules` and refuses every dispatch. Ignored files are not included by
+  `git stash create`, so they can be detected and blocked but cannot be
+  rolled back by that snapshot. A fence that explicitly names a large ignored
+  directory can also hit the existing `max_files` ceiling; that is an
+  in-scope change set being bounded, not a reason to hide it.
   **A nested git repository is refused** rather than vetted blindly — `-uall`
   stops at the boundary, so its files would arrive as one directory entry with
   empty content. The check runs over the **snapshots**, not the delta, and once
