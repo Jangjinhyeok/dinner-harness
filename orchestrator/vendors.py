@@ -271,7 +271,7 @@ class ClaudeBackend(Backend):
 
 
 class CodexBackend(Backend):
-    """`codex exec` non-interactive mode. Verified against codex-cli 0.141.
+    """`codex exec` non-interactive mode. Verified against codex-cli 0.147.0 (re-verified 2026-08-10 — see CODEX-COVERAGE.md §6.3).
 
     Prompts are sent through stdin instead of argv because the Windows `.CMD`
     shim invokes cmd.exe, whose command-line limit is 8191 characters.
