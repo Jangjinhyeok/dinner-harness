@@ -114,11 +114,50 @@ In that case, after the Phase 5 summary, add:
   trusting Codex Builder dispatch or a fresh `install.py --target codex` again.
 ```
 
-Do not edit `orchestrator/vendors.py`, `assets/claude/hooks/lib/common.py`,
-`assets/claude/hooks/handlers/scope_check.py`, `assets/claude/hooks/handlers/secret_scan.py`,
-`adapters/codex.py`, or `CODEX-COVERAGE.md` automatically — this is a warning
-only. Updating the verified-version record or the parsing logic is a human
-decision, not something this skill does.
+Phase 7 performs a narrow, mechanical version-label swap in five of these
+locations (not `CODEX-COVERAGE.md` — its dated history log stays warning-only,
+see Phase 7). Both this warning and Phase 7 only ever touch a version number and
+an added caveat comment; the actual `apply_patch`/`codex exec` parsing logic is
+never auto-edited — re-verifying and fixing that logic, if it actually changed,
+remains a human decision.
+
+## Phase 7: Mechanical version-label update (dinner-harness only)
+
+After printing the Phase 6 warning, also perform a narrow, mechanical version-label
+swap in the five code-comment locations below — replace ONLY the old codex-cli
+version number with the new one just confirmed in Phase 3, and add an inline
+caveat marking the label as auto-updated and NOT re-verified. Never touch the
+surrounding logic, and never touch `CODEX-COVERAGE.md` (it is a dated historical
+log — mixing multiple past version numbers on purpose; a blind replace there would
+corrupt history, so leave it as a manual follow-up instead).
+
+Exact edits (`<OLD>` = the previously installed codex version from Phase 1,
+`<NEW>` = the version confirmed in Phase 3):
+
+1. `orchestrator/vendors.py` — in the `CodexBackend` docstring:
+   - old: `` """`codex exec` non-interactive mode. Verified against codex-cli <OLD>. ``
+   - new: `` """`codex exec` non-interactive mode. Verified against codex-cli <NEW>. (version label auto-updated by cli-update — NOT re-verified; confirm codex exec flags/output format before trusting this.) ``
+2. `assets/claude/hooks/lib/common.py` — the comment above `_APPLY_PATCH_PATH_RE`:
+   - old: `# Codex <OLD> sends file edits as tool_name="apply_patch" with the patch body in`
+   - new: two lines — `# Codex <NEW> sends file edits as tool_name="apply_patch" with the patch body in` followed by `# (version label auto-updated by cli-update — NOT re-verified against <NEW>)`
+3. `assets/claude/hooks/handlers/secret_scan.py` — the comment above `_TARGET_TOOLS`:
+   - old: `# "apply_patch" is Codex <OLD>'s file-edit tool (CODEX-COVERAGE.md §6.2); Claude`
+   - new: `# "apply_patch" is Codex <NEW>'s file-edit tool (CODEX-COVERAGE.md §6.2, version label auto-updated by cli-update — NOT re-verified); Claude`
+4. `assets/claude/hooks/handlers/scope_check.py` — the comment above `_TARGET_TOOLS`:
+   - old: `# "apply_patch" is Codex <OLD>'s file-edit tool (CODEX-COVERAGE.md §6.2); it`
+   - new: `# "apply_patch" is Codex <NEW>'s file-edit tool (CODEX-COVERAGE.md §6.2, version label auto-updated by cli-update — NOT re-verified); it`
+5. `adapters/codex.py` — the module docstring line:
+   - old: `Cycle 3 / adapter v2 targets current Codex (0.140+ / <OLD> observed):`
+   - new: `Cycle 3 / adapter v2 targets current Codex (0.140+ / <NEW> observed, version label auto-updated by cli-update — NOT re-verified):`
+
+Apply each edit only if the exact old string (with `<OLD>` substituted for the
+actual previously-recorded version in that file) is still present — the file may
+have drifted since this skill was last updated, in which case skip that file and
+say so in the report rather than guessing at a different match. After editing,
+report which files were changed, and remind the user these are label-only edits:
+the underlying `apply_patch`/`codex exec` parsing logic still needs a human (or a
+separate Codex Builder task) to actually re-verify against the new codex-cli
+release before it can be trusted again.
 
 ### Notes
 
