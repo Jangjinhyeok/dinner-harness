@@ -15,3 +15,10 @@ RESULT.md
 .idea/
 # omo run-continuation state (per-session runtime)
 .omo/
+# Orphaned tempfile.TemporaryDirectory() dirs from sandboxed test runs (see
+# investigation: Codex Windows sandbox denies deleting real-OS-temp files,
+# which can redirect Python's tempfile fallback into the repo root)
+/tmp????????/
+.tmp-builder-guard-tests/
+.tmp-orchestrator-tests/
+.tmp-tests/

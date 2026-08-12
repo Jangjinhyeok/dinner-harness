@@ -49,11 +49,21 @@ from orchestrator.vendors import (
     default_low_scenario,
 )
 from orchestrator.safety import Change
-
 _HOOKS_ROOT = Path(__file__).resolve().parents[2] / "assets" / "claude" / "hooks"
 if str(_HOOKS_ROOT) not in sys.path:
     sys.path.insert(0, str(_HOOKS_ROOT))
 from handlers import builder_guard, route_nudge  # noqa: E402
+
+# Pin tempfile.tempdir to the OS-reported temp dir directly, bypassing
+# tempfile's own candidate-search fallback. Under some sandboxed test runs,
+# deleting files in the real OS temp dir raises PermissionError while creating
+# them still succeeds; CPython's _get_default_tempdir() treats that pattern as
+# "try the next candidate" and can fall all the way through to os.getcwd() —
+# silently redirecting every TemporaryDirectory()/mkdtemp() call in this suite
+# into the repo working tree instead of the OS temp folder.
+_os_tempdir = os.environ.get("TMPDIR") or os.environ.get("TEMP") or os.environ.get("TMP")
+if _os_tempdir:
+    tempfile.tempdir = _os_tempdir
 
 
 _GIT_ISOLATION = {
