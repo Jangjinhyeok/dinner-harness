@@ -110,8 +110,9 @@ In that case, after the Phase 5 summary, add:
     the Codex Builder safety net; a payload-shape change here can fail silently.
   - orchestrator/vendors.py CodexBackend — `codex exec` flags / output parsing.
   - adapters/codex.py — ~/.codex hooks.json / agents.toml generation schema.
-  Re-check these against the new codex-cli release (see CODEX-COVERAGE.md) before
-  trusting Codex Builder dispatch or a fresh `install.py --target codex` again.
+  Re-check these against the new codex-cli release before trusting Codex Builder
+  dispatch or a fresh `install.py --target codex` again — see Phase 8 for the
+  exact re-verification steps.
 ```
 
 Phase 7 performs a narrow, mechanical version-label swap in five of these
@@ -158,6 +159,52 @@ report which files were changed, and remind the user these are label-only edits:
 the underlying `apply_patch`/`codex exec` parsing logic still needs a human (or a
 separate Codex Builder task) to actually re-verify against the new codex-cli
 release before it can be trusted again.
+
+## Phase 8: Manual re-verification procedure (dinner-harness only)
+
+Phase 6/7 only warn and relabel — they never confirm behavior actually still
+matches. When the user (or a future session) is ready to actually re-verify,
+this is the exact procedure (mirrors the 2026-08-10 run recorded in
+`CODEX-COVERAGE.md` §6.3):
+
+1. **`apply_patch` payload check** (covers `hooks/lib/common.py` parse_apply_patch
+   + `scope_check.py`/`secret_scan.py`): with `~/.codex/hooks.json` installed and
+   `CLAUDE_SCOPE_WHITELIST_MODE=enforce` set, have a Codex Builder (or a direct
+   `codex exec` call) attempt to edit a file outside a deliberately narrow scope
+   fence in a scratch directory. Then check
+   `~/.codex/hooks/logs/scope_check.log` for a fresh entry: `tool_name` should be
+   `"apply_patch"`, `file_path` should be the exact path just edited (correctly
+   extracted from the patch envelope), and `decision` should be `"block"`. If
+   `tool_name` is missing, `file_path` is wrong/empty, or the handler errors
+   instead of deciding, the payload shape has drifted and `parse_apply_patch`
+   needs an actual code fix, not just a label swap.
+2. **`codex exec` output check** (covers `orchestrator/vendors.py`
+   `CodexBackend`): this one is nearly free — any normal
+   `orchestrate.py build --backend real` run already exercises it. If the build
+   reaches `BUILT`/`BLOCKED` with a parsed verdict instead of erroring out on
+   unparseable output, the output-parsing format still matches. No separate step
+   needed beyond doing one ordinary delegate/architect build after the update.
+3. **Install pipeline check** (covers `adapters/codex.py`): run
+   `py -3 install.py --target codex --dest <scratch-dir>` (a scratch `--dest`,
+   never live `~/.codex`, unless `--allow-live` is intended) and confirm
+   `hooks.json`/`agents/*.toml` are generated without error and match what the
+   installed codex-cli actually loads (e.g. `codex features list` still reports
+   `hooks`/`multi_agent` stable).
+4. **Record the result** as a new dated `### 6.x <version> 재검증 (<date>)`
+   section in `CODEX-COVERAGE.md`, following the exact shape of the existing
+   `### 6.3 0.147.0 재검증 (2026-08-10)` section — new section, never edit
+   older dated sections (they are frozen historical snapshots, not "current
+   status").
+5. **Only after that record exists**, update the five Phase 7 caveats from
+   `(version label auto-updated by cli-update — NOT re-verified)` to
+   `(re-verified <date> — see CODEX-COVERAGE.md §6.x)` — same shape as the
+   existing citations, single-file mechanical edits like any other LOW change.
+
+This phase is never run automatically by `cli-update` — it is what a human (or a
+follow-up session the user explicitly starts) does after reading the Phase 6
+warning. Do not skip straight to step 5 without doing steps 1-3 first; that
+would fabricate a "re-verified" claim the way an unchecked label swap risks
+doing.
 
 ### Notes
 
