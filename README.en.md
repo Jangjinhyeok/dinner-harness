@@ -191,7 +191,7 @@ The skills, agents, and hooks this harness ships. _A frontmatter-derived snapsho
 when skills/agents change._ For which items are native/degraded/dropped on the codex target,
 see `CODEX-COVERAGE.md`.
 
-### Skills (28)
+### Skills (29)
 
 **Meta-principles (5)**
 - `simplicity-first` — minimum-viable code; prevents over-engineering and speculative flexibility
@@ -209,8 +209,9 @@ see `CODEX-COVERAGE.md`.
 - `perf-profile` — bottleneck analysis, budget comparison, optimization ranking
 - `tech-debt` — track, categorize, and schedule technical-debt repayment
 
-**Workflow (7)**
+**Workflow (8)**
 - `delegate` — hand a LOW single-purpose task to the Codex Builder headless + inline review (no full ceremony)
+- `cli-update` — check installed Claude Code CLI / Codex CLI versions against the latest release and apply the update automatically when one exists
 - `changelog` — auto-generate a changelog from git commits (internal + player-facing)
 - `hotfix` — emergency-fix workflow (severity, rollback plan, audit trail)
 - `codebase-onboarding` — analyze an unfamiliar codebase into an onboarding guide (engine-aware)
