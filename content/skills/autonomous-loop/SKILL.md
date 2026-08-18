@@ -29,7 +29,7 @@ origin: self
 
 ### 2. Implement
 - `~/.claude/skills/surgical-changes/SKILL.md` 규율 하에 최소 변경. 요청 범위 밖 "겸사겸사" 수정 금지.
-- Two-CLI라면 HANDOFF의 ` ```scope ` 화이트리스트를 준수한다(`scope_check` hook이 deterministic하게 강제).
+- Two-CLI라면 HANDOFF의 ` ```scope ` 화이트리스트를 준수한다. Interactive Claude에서는 scope codeblock layer가 dryrun 경고이고 always-block layer만 structured Edit/Write payload를 즉시 차단한다. Headless Builder dispatch에서는 controller-side net이 pinned fence로 `scope_check`·`secret_scan`을 재실행해 hard gate로 강제한다. Codex native hook 자체는 advisory다.
 
 ### 3. Deterministic verify
 - `~/.claude/skills/verification-loop/SKILL.md` 6-phase(build·type·lint·test·security·diff)를 돌린다.
@@ -63,5 +63,8 @@ origin: self
 
 ## 주의
 
-- **deterministic 안전망 상존**: tier·자율과 무관하게 `scope_check`·`secret_scan` hook은 항상 작동한다.
+- **runtime별 deterministic 안전망**: tier·자율과 무관하게 검사는 수행되지만 enforcement 주체가 다르다.
+  - Interactive Claude: `scope_check`의 scope codeblock은 dryrun 경고만 내고, always-block만 Edit/Write payload를 즉시 hard block한다. `secret_scan`은 enforce 모드다.
+  - Controller-side net(headless Builder dispatch): pinned structured payload로 `scope_check`·`secret_scan`을 재실행하는 deterministic hard gate다.
+  - Codex native hook: advisory이며 hard block이 아니다. Headless Codex Builder의 실질 hard gate는 controller-side net이다.
 - **Codex degradation**: Codex엔 Task 패널이 없어 step 4가 inert가 된다. 그땐 step 3(deterministic verify)에 의존하고 **모든 비-trivial 결과를 사람이 검토**하며, HIGH는 매 게이트 명시 리뷰로 폴백한다(`assets/codex/AGENTS.md` §7). 그래서 이 skill은 codex에서 **degraded copy**로 설치된다(드롭 아님).

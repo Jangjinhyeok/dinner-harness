@@ -5,7 +5,6 @@ argument-hint: "[path-to-file-or-directory]"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
 model: sonnet
-agent: code-reviewer
 ---
 
 ## Phase 1: Load Target Files

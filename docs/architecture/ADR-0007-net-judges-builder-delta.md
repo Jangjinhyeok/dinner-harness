@@ -199,8 +199,9 @@ Builder's work and is not charged to it.
   the dispatched text unconditionally (`_same_text`, CRLF/outer-whitespace
   tolerant). Any drift — including **deletion**, which reads as `""`, and an
   unreadable file, which reads as `None` — fails the cycle before the fence is
-  consulted. The handler re-reads the fence from disk, so an edited handoff would
-  otherwise be rewriting the rule it is judged by.
+  consulted. Previously, the handler re-read the fence from disk for every scan,
+  so an edited handoff could rewrite the rule it was judged by; the pinned fence
+  closes that TOCTOU window.
 - **Encoding:** every bus read the Builder could have touched goes through
   `_read_bus`, which returns `None` on any decode failure. `_same_text(None, x)`
   is `False`, so unreadable is treated as drift, never as "unchanged". This

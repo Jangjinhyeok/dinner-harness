@@ -14,6 +14,9 @@ UMG/CommonUI task. **First Read `~/.claude/docs/specialists/ue-umg.md`** (the fo
 ue-umg-specialist, demoted to a reference doc 2026-07-02) and apply its protocol and
 checklists as your domain persona.
 
+**Then Read `~/.claude/skills/ue-umg-review/SKILL.md`** and use its checklist for
+this focused route.
+
 Handle the user's request (the invocation argument) end to end:
 
 - Apply the `ue-umg-review` checklist and UMG/CommonUI best practices.

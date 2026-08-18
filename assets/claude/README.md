@@ -60,7 +60,7 @@
 | ① 항상 자동 로드 | `CLAUDE.md`, `rules/agent-routing.md`, `rules/` 중 `paths` 없는 파일 | 매 세션 시작 시 context에 박힘 |
 | ② 조건부 자동 inject | `rules/_mode/*` (`paths: [글로브]`) | 매칭 파일이 context에 들어올 때만 (`HANDOFF`→builder, `RESULT`→architect) |
 | ③ 명시 호출 | `skills/`, `agents/`, `roles/` | `/명령` · Task 위임 · "모드" 선언으로 직접 부름 |
-| ④ 도구 호출 시 자동 발화 | `hooks/` | Edit/Write/Bash 직전 자동 검사 (allow/block) |
+| ④ 도구 호출 시 자동 발화 | `hooks/` | hook별 matcher에 따라 자동 검사: secret_scan은 Edit/Write/Bash/PowerShell, scope_check은 Edit/Write, learning_log은 Bash/PowerShell |
 
 > **핵심 — `rules/`는 auto-load 영역이다.** `paths` 필드가 없으면 매 세션 무조건 로드, `paths: [글로브]`면 매칭 시에만 로드된다 (`paths: []` 빈 배열은 미정의 동작이라 의존 금지). 따라서 "매 세션 로드하지 않는 lookup-only 참고자료"는 `rules/` **밖**에 둬야 한다 — ECC 카탈로그를 `ecc-reference/`로 옮긴 이유다 (필요할 때만 Read).
 
@@ -80,17 +80,17 @@
 | `secret_scan` | Pre · Edit·Write·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
 | `scope_check` | Pre · Edit·Write | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
-| `learning_log` | Post · Bash·PowerShell | Bash 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
+| `learning_log` | Post · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
 | `route_nudge` | UserPromptSubmit | 구현 의도마다 default execution route를 context에 주입하고, UE 도메인 신호에는 focused Architect reference도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0): HANDOFF/scope/tier/HIGH approval은 Claude workflow가 만든 뒤 기존 controller가 dispatch | 2026-06-16, 2026-08-07 auto-route protocol |
 | `builder_guard` | Pre · Edit·Write | 기본 `claude` 세션에서 HANDOFF/RESULT/INPUT/ADR 외 Claude 직접 edit 차단 → Codex dispatch 유도. `claude-direct.cmd` escape 세션에서만 inert | ADR-0008 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
 
-모드는 각 환경변수(`CLAUDE_SECRET_SCAN_MODE` / `CLAUDE_SCOPE_WHITELIST_MODE`)로 `off`/`dryrun`/`enforce`를 정하며 새 세션부터 적용된다. **현재 `secret_scan`은 enforce, `scope_check`은 dryrun.** `secret_scan`은 1주 관찰(실사용 false-positive 0건) 후 2026-05-31 enforce로 승격했다(ADR-0001 Gate 4). `scope_check`은 always-block layer(`settings.json` + `hooks/` 본체 6 entries의 hook-integrity 핵심)만으로 dryrun에서도 즉시 차단이 작동하고, enforce는 ad-hoc 편집 마찰이 커서 **dryrun을 영구 유지**한다. 로그는 `hooks/logs/*.log`(JSON-lines, git·동기화 제외).
+모드는 각 환경변수(`CLAUDE_SECRET_SCAN_MODE` / `CLAUDE_SCOPE_WHITELIST_MODE`)로 `off`/`dryrun`/`enforce`를 정하며 새 세션부터 적용된다. **현재 `secret_scan`은 enforce, `scope_check`은 dryrun.** `secret_scan`은 1주 관찰(실사용 false-positive 0건) 후 2026-05-31 enforce로 승격했다(ADR-0001 Gate 4). `scope_check`의 always-block은 Edit/Write/apply_patch payload에 대해서만 dryrun에서도 즉시 차단되며, Bash/PowerShell write는 의도적으로 이 workflow guard 밖이고 containment는 sandbox가 맡는다. scope codeblock enforce는 ad-hoc 편집 마찰이 커서 **dryrun을 영구 유지**한다. 로그는 `hooks/logs/*.log`(JSON-lines, git·동기화 제외).
 
 `suggest_compact`는 위 두 차단형과 달리 룰셋·모드·차단이 없는 advisory-only hook이다 — 도구 호출이 누적되면 stderr로 `/compact`를 제안만 하고 항상 exit 0이다. 핸들러·런처(`hooks/handlers/suggest_compact.py`·`hooks/launchers/suggest_compact.cmd`)가 배치됐고 `settings.json.template`·로컬 `settings.json`(`PreToolUse`) 양쪽에 등록 완료다(새 머신은 template로 자동 적용). `settings.json`은 scope_check always-block 대상이라, 활성화는 본인이 직접 hand-edit하거나(에디터로 직접 수정 시 hook이 발화하지 않음) off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 추가했다 — 추가 즉시 hot-reload된다. (출처: `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅. 결정 이력은 `hooks/README.md` 참조.)
 
-`learning_log`은 첫 **PostToolUse** hook이다(예약돼 있던 ADR-0004 활성화 — gap #4). Bash 호출 직후 출력에서 강한 실패 신호만 골라 `learning_log.log`에 포착하고, `learnings-review` skill이 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습). advisory(항상 exit 0). off-ceremony로 `hooks/handlers/`·`hooks/launchers/`에 설치 + 로컬 `settings.json`의 `PostToolUse`에 등록 완료(2026-06-01). 새 머신은 `settings.json.template`의 `PostToolUse`로 자동 적용된다.
+`learning_log`은 첫 **PostToolUse** hook이다(예약돼 있던 ADR-0004 활성화 — gap #4). Bash/PowerShell 호출 직후 출력에서 강한 실패 신호만 골라 `learning_log.log`에 포착하고, `learnings-review` skill이 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습). advisory(항상 exit 0). off-ceremony로 `hooks/handlers/`·`hooks/launchers/`에 설치 + 로컬 `settings.json`의 `PostToolUse`에 등록 완료(2026-06-01). 새 머신은 `settings.json.template`의 `PostToolUse`로 자동 적용된다.
 
 상세 발화 흐름·운영 모드·ceremony·패턴 추가법은 `hooks/README.md` 참조.
 
@@ -107,7 +107,7 @@ MCP는 위 "작동 방식"의 4가지(①auto-load ②조건부 inject ③명시
 
 **사용**: 등록되면 해당 서버의 tool이 세션에 자동 노출되고, 자연어 요청 시 Claude가 호출한다. stdio 서버는 Claude Code가 세션 시작 시 직접 spawn하므로 별도 실행이 필요 없다(원격 HTTP 서버는 독립 실행 + URL 연결). `.mcp.json`은 **세션 시작 시점에 한 번** 읽히므로, 추가·수정 후엔 세션 재시작이 필요하다.
 
-> ⚠️ **MCP는 hooks 안전망 밖이다.** `secret_scan`·`scope_check`은 Claude의 Edit/Write/Bash만 가로채므로, MCP가 에디터를 조작하거나 외부에 쓰는 동작은 검사되지 않는다. write 계열 MCP tool은 테스트 브랜치/사본에서 먼저 검증한다 (CLAUDE.md §5).
+> ⚠️ **MCP는 hooks 안전망 밖이다.** `secret_scan`은 Edit/Write/Bash/PowerShell, `scope_check`은 structured edit payload(Edit/Write; Codex에서는 apply_patch)만 가로채므로 MCP가 에디터를 조작하거나 외부에 쓰는 동작은 검사되지 않는다. `scope_check`이 shell write를 다루지 않는 것은 의도된 workflow-guard 경계이며 containment는 sandbox가 맡는다. write 계열 MCP tool은 테스트 브랜치/사본에서 먼저 검증한다 (CLAUDE.md §5).
 
 **runtime 인지**: 위 셋업/템플릿은 auto-load 밖이라, 엔진 MCP의 존재를 세션 중 에이전트가 인지하려면 always-on 진입점이 필요하다. `rules/agent-routing.md`의 "MCP-aware 라우팅" 절이 그 역할 — 엔진 MCP tool이 세션에 있을 때만 발동하는 conditional lane으로, text(specialist)/live(MCP) 분리와 read-only sweet spot을 규정한다.
 

@@ -31,6 +31,9 @@ dh-architect.cmd
   -> RESULT + diff review + receipt
 ```
 
+> **Superseded note:** ADR-0009 replaced the linked Builder worktree portion
+> with in-place dispatch inside the repository sandbox; the controller net remains.
+
 `builder_guard` allows only root bus artifacts and `docs/architecture/*.md`.
 It intentionally does not interpret arbitrary shell commands; this is an
 honest-session workflow guard, not a hostile-agent sandbox. The existing linked
@@ -77,6 +80,8 @@ process. `dh.cmd` and `dh-architect.cmd` remain compatibility launchers.
 This supersedes the original opt-in launcher wording, not the decision to keep
 the Architect review loop, linked Builder worktree, controller net, receipts,
 and human HIGH-tier sign-off.
+
+> The linked-worktree part of this historical decision was superseded by ADR-0009.
 
 ## Alternatives considered
 

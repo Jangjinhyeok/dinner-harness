@@ -9,7 +9,11 @@
 - **②중간 판단은 agent에게 위임한다.** implement → 검증 → adversarial-review → self-correct 루프를 agent가 자율로 돈다.
 - **사람은 ①진입과 ③종단 두 경계에만 선다.** 무엇을 할지·성공 기준을 정하고(시작), 결과를 수용/반려한다(종료).
 
-단, **위험 등급(risk tier)에 따라 ③종단 게이트의 강제 여부가 갈린다.** 약한 고리는 "판단을 LLM에 위임" 자체이므로(조용히 틀림), 완화는 **judge 다양성**(→ `adversarial-review`)과 **이 tiering** 두 축으로 한다. deterministic 안전망(`scope_check`·`secret_scan` hook)은 tier 무관하게 항상 작동한다.
+단, **위험 등급(risk tier)에 따라 ③종단 게이트의 강제 여부가 갈린다.** 약한 고리는 "판단을 LLM에 위임" 자체이므로(조용히 틀림), 완화는 **judge 다양성**(→ `adversarial-review`)과 **이 tiering** 두 축으로 한다. deterministic 검사는 tier 무관하게 수행되지만 hard-enforcement semantics는 runtime별로 다르다.
+
+- **Interactive Claude**: `scope_check`의 scope codeblock layer는 dryrun 경고만 내고 always-block layer만 structured Edit/Write payload를 즉시 hard block한다. `secret_scan`은 enforce 모드다.
+- **Controller-side net** (`orchestrator/safety.py`, headless Builder dispatch): pinned structured payload로 `scope_check`·`secret_scan`을 재실행하는 deterministic hard gate다.
+- **Codex native hook**: advisory이며 hard block이 아니다. Headless Codex Builder의 실질 hard gate는 controller-side net이다.
 
 ## 위험 등급
 
@@ -52,6 +56,6 @@
 | inner-loop 사람 게이트 | 없음 (자율 진행) | 없음 (자율 진행) — 단 jury 필수, 패널 FAIL/BLOCK 시 정지, 종단은 사람 서명 대기 |
 | `adversarial-review` jury | 비-trivial 시 권장 | **필수·우회 불가** (만장일치 요구) |
 | 종단 사람 서명 | 불필요 (결과 보고만) | **필수** — 서명 전 merge/apply/deploy 금지 |
-| deterministic hook (`scope_check`·`secret_scan`) | 항상 작동 | 항상 작동 |
+| deterministic safety check (`scope_check`·`secret_scan`) | 항상 작동(runtime별 enforcement는 위 구분 적용) | 항상 작동(runtime별 enforcement는 위 구분 적용) |
 
 상세 절차는 `~/.claude/skills/autonomous-loop/SKILL.md`(루프)와 `~/.claude/skills/adversarial-review/SKILL.md`(jury) 참조.

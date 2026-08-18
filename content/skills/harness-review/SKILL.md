@@ -130,7 +130,7 @@ Phase 1에서 Explore에 넘길 **실사용 행동** 체크리스트. "설계가
 ## 안전 규약 (scope_check / hooks 인지)
 
 - **always-block 파일은 자동 수정 금지** — repo에선 `assets/claude/settings.json.template`·`assets/claude/hooks/handlers/*`·`assets/claude/hooks/launchers/*`(설치 시 `~/.claude`의 `settings.json`·`hooks/`로 감) 및 README가 always-block으로 지정한 인프라 파일. 이들은 Phase 4에서 Edit/Write하지 말고 **수동 적용 안내**로만 출력 (off-ceremony 필요 시 `assets/claude/hooks/README.md` 참조).
-- `secret_scan`(enforce)·`scope_check`(dryrun)이 Edit/Write/Bash를 가로챈다. 적용 중 hook이 막으면 우회하지 말고 사용자에게 보고.
+- `secret_scan`(enforce)은 Edit/Write/Bash/PowerShell을, `learning_log`은 Bash/PowerShell을, `scope_check`(dryrun)는 structured edit payload(Edit/Write; Codex에서는 apply_patch)만 가로챈다. `scope_check`의 always-block도 Edit/Write/apply_patch payload에 대해서만 성립하며 shell write containment는 sandbox 책임이다. 적용 중 hook이 막으면 우회하지 말고 사용자에게 보고.
 - 새 파일 생성·일반 콘텐츠 파일(`agents/*`, `skills/*`, `rules/*`, `CLAUDE.md`, `README.md`) 수정은 정상 경로.
 
 ## 출력 원칙
