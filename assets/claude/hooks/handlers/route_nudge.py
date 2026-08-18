@@ -65,17 +65,21 @@ def _default_route_message() -> str:
     """Return the routing protocol injected before implementation work."""
     if os.environ.get("DINNER_EXECUTION_MODE") != "direct":
         return (
-            "[execution-route] Apply CLAUDE.md strict Builder-first routing before source "
-            "edits: keep read-only analysis in Claude, but every structured Edit/Write "
+            "[execution-route] Apply CLAUDE.md Builder-first routing before source "
+            "edits: keep read-only analysis in Claude. An Edit of 2 lines or fewer in a "
+            "single file, outside harness infrastructure paths (assets/claude/hooks/, "
+            "settings*.json, harness.toml, orchestrator/, orchestrate.py), may stay inline "
+            "— builder_guard allows it directly (trivial fast-path, ADR-0012). Every other "
+            "structured Edit/Write "
             "implementation-file write "
             "must go through Codex Builder. A clear single-purpose LOW change must run the "
             "delegate workflow now (write HANDOFF_DELEGATE.md, dispatch Codex Builder, then "
             "review RESULT.md plus the diff) without asking the user to type /delegate; "
             "multi-file, multi-gate, design, or HIGH-signal work must follow the architect "
             "workflow (draft HANDOFF, obtain the required human start approval, then dispatch "
-            "Codex Builder). An explicit request for a small direct Claude edit cannot bypass "
-            "a HIGH route. Do not treat ! as an override; it is Claude Code's shell-output "
-            "fast path."
+            "Codex Builder). An explicit request for a small direct Claude edit cannot widen "
+            "the trivial fast-path or bypass a HIGH route. Do not treat ! as an override; it "
+            "is Claude Code's shell-output fast path."
         )
     return (
         "[execution-route] Apply CLAUDE.md direct-edit escape routing before source edits: "

@@ -88,7 +88,7 @@
 
 근거: main(Claude)이 Pro 등 quota가 빠듯한 plan일 수 있어, token sink인 구현을 기본 세션에서 떠안으면 **구독료 절감 목적이 무너진다**. 무거운 구현은 Codex(Builder)로 넘기는 게 이 하네스의 절감 설계다.
 
-질문·탐색·디버깅은 기본 `claude`와 `claude-direct.cmd` 모두에서 Claude가 직접 처리한다. 파일 수정은 `claude-direct.cmd` escape에서만 1~2줄·단일 파일 조건으로 inline 처리할 수 있고, 기본 `claude`에서는 크기와 무관하게 Builder로 보낸다. 무게가 애매하면 한 줄로 제안만 하고 사용자 선택에 맡긴다 — 강권하지 않는다.
+질문·탐색·디버깅은 기본 `claude`와 `claude-direct.cmd` 모두에서 Claude가 직접 처리한다. 파일 수정은 두 세션 모두에서 `Edit`이 2줄 이하·단일 파일이고 하네스 인프라 경로(`assets/claude/hooks/`, `settings*.json`, `harness.toml`, `orchestrator/`, `orchestrate.py`)가 아니면 `builder_guard` hook이 직접 허용한다(trivial fast-path, ADR-0012) — `Write`/`apply_patch`나 그 밖의 변경은 `claude-direct.cmd` escape에서만 크기·경로 제한 없이 inline 처리할 수 있고, 기본 `claude`에서는 Builder로 보낸다. 무게가 애매하면 한 줄로 제안만 하고 사용자 선택에 맡긴다 — 강권하지 않는다.
 
 ### 중간 무게 → `/delegate` 경량 lane (full ceremony 없이 Codex dispatch)
 
@@ -97,16 +97,17 @@
 - **LOW 전용**: HIGH 신호(replication·save format·live config·migration·security·비가역 등)나 다파일·다게이트·설계토론 필요 시 `/delegate`는 거부하고 architect 모드로 에스컬레이션한다(보수적 OR — 모호하면 HIGH). 상세는 `~/.claude/skills/delegate/SKILL.md`.
 - **코드 전용이 아니다 — 문서도 같은 lane이다**: dispatch 경로엔 도메인 가정이 없다(scope fence는 파일 화이트리스트, 안전망은 `git status` + 파일 단위 hook). 그래서 파일 기반 문서 작업 — 이력서/경력기술서 변형, JD 대조 갭 분석, 톤 통일 — 도 `/delegate`로 위임한다. 문서 lane은 verify를 구조 체크(섹션·분량·금지 표현)로 대체하고, **원본을 scope fence에서 빼** `scope_check`가 원본 수정을 hard-block하게 한다. HIGH는 외부 제출·발송·공개 확정(초안 작성은 LOW).
 - **전제: 작업 디렉터리가 git repo여야 한다.** 안전망이 `git status --porcelain`으로 changeset을 수집하고 git이 없으면 fail-closed로 차단하므로, non-repo 디렉터리에선 dispatch 자체가 불가하다. 파일이 이미 있는 폴더에서 CLI를 켜고 baseline을 먼저 커밋한다.
-- 경로 요약: **기본 `claude`**에서는 질문·읽기·탐색은 Claude, 모든 structured `Edit`/`Write` 구현 파일 수정은 Codex Builder다. **`claude-direct.cmd` escape**에서만 1~2줄 inline · LOW 단일목적(코드·문서 무관)은 `/delegate` · 무거움/HIGH는 architect 모드다.
+- 경로 요약: **기본 `claude`**에서는 질문·읽기·탐색은 Claude, `Edit`이 2줄 이하·단일 파일·비-인프라 경로면 Claude 직접(trivial fast-path), 그 외 모든 구현 파일 수정(`Write`/`apply_patch` 포함)은 Codex Builder다. **`claude-direct.cmd` escape**에서만 크기·경로 제한 없는 inline · LOW 단일목적(코드·문서 무관)은 `/delegate` · 무거움/HIGH는 architect 모드다.
 
 모드 진입 키워드를 받은 직후의 첫 행동은 해당 ROLE 파일을 Read하는 것이다. ROLE 파일을 Read하기 전에는 어떤 도구도 호출하지 않는다. ROLE 규약을 읽고 이해한 뒤에야 그 규약에 따라 작업을 시작한다.
 
 ### Default Builder-first entrypoint
 
 일상적인 구현 세션은 project directory에서 일반 `claude`로 시작한다. Claude는 읽기·검색·MCP
-조사·설계·HANDOFF 작성·RESULT/diff 검토를 직접 수행하지만 **구현 파일의 structured
-Edit/Write는 할 수 없다**. `builder_guard`는 기본으로 root bus artifact와 ADR 외의 직접 edit을
-차단하고 Codex Builder dispatch로 돌려보낸다.
+조사·설계·HANDOFF 작성·RESULT/diff 검토를 직접 수행하고, root bus artifact·ADR 외의 구현
+파일도 **`Edit`이 2줄 이하·단일 파일이고 하네스 인프라 경로가 아니면 직접 처리한다**
+(trivial fast-path, ADR-0012). 그 밖의 구현 파일 `Edit`과 모든 `Write`/`apply_patch`는
+`builder_guard`가 차단하고 Codex Builder dispatch로 돌려보낸다.
 
 - 단일 목적 LOW 구현은 `HANDOFF_DELEGATE.md`를 작성해 같은 turn에 Builder를 dispatch한다.
   사용자의 원래 요청이 start intent이므로 `/delegate`를 다시 입력하라고 묻지 않는다.
@@ -114,6 +115,9 @@ Edit/Write는 할 수 없다**. `builder_guard`는 기본으로 root bus artifac
   approval 뒤에 Builder를 dispatch한다. HIGH terminal approval도 그대로 남는다.
 - 직접 수정이 꼭 필요할 때만 `~/.claude/claude-direct.cmd`를 실행한다. 이 명시적 escape에서는
   guard가 동작하지 않으므로 strict token boundary를 보장하지 않는다.
+- trivial fast-path의 인프라 예외: `assets/claude/hooks/`, `settings*.json`, `harness.toml`,
+  `orchestrator/`, `orchestrate.py`는 크기와 무관하게 계속 Builder 전용이다 — guard 자신을
+  무력화하는 자기참조적 우회를 막기 위해서다.
 
 이 guard는 structured file-edit 도구만 다루는 honest-session workflow guard이며 Bash/
 PowerShell implementation을 sandbox처럼 해석·차단하지 않는다. controller safety net이

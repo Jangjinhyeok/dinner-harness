@@ -37,6 +37,9 @@ _EVENT = "PreToolUse"
 _DIRECT_MODE = "direct"
 _TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
 _BUS_NAMES = {"HANDOFF.md", "RESULT.md", "INPUT.md"}
+_TRIVIAL_MAX_LINES = 2
+_INFRA_REPO_RELATIVE_EXACT = {"harness.toml", "orchestrate.py"}
+_INFRA_REPO_RELATIVE_PREFIXES = ("orchestrator/", "assets/claude/hooks/")
 
 
 def _path_digest(path: str) -> str:
@@ -86,6 +89,12 @@ def _repo_root(cwd: Path) -> Path:
         return fallback
 
 
+def _resolve_claude_home() -> Path:
+    return Path(
+        get_env_override("CLAUDE_CONFIG_DIR", Path.home() / ".claude")
+    ).expanduser().resolve(strict=False)
+
+
 def _allowed_path(raw_path: str, cwd: Path, base: Path) -> bool:
     """True only for Architect artifacts and Claude persistent-memory Markdown."""
     try:
@@ -110,9 +119,7 @@ def _allowed_path(raw_path: str, cwd: Path, base: Path) -> bool:
         return True
 
     try:
-        claude_home = Path(
-            get_env_override("CLAUDE_CONFIG_DIR", Path.home() / ".claude")
-        ).expanduser().resolve(strict=False)
+        claude_home = _resolve_claude_home()
         memory_relative = path.relative_to(claude_home)
     except (OSError, ValueError):
         return False
@@ -125,6 +132,53 @@ def _allowed_path(raw_path: str, cwd: Path, base: Path) -> bool:
     )
 
 
+def _line_span(text: str) -> int:
+    return text.count("\n") + 1 if text else 1
+
+
+def _is_infra_path(path: Path, base: Path, claude_home: Path) -> bool:
+    """True for harness safety-net infrastructure, excluded from the trivial fast path."""
+    if path.suffix.lower() == ".json" and path.name.lower().startswith("settings"):
+        return True
+    try:
+        path.relative_to(claude_home)
+        return True
+    except (OSError, ValueError):
+        pass
+    try:
+        relative = path.relative_to(base).as_posix().casefold()
+    except (OSError, ValueError):
+        return False
+    if relative in _INFRA_REPO_RELATIVE_EXACT:
+        return True
+    return any(relative.startswith(prefix) for prefix in _INFRA_REPO_RELATIVE_PREFIXES)
+
+
+def _is_trivial_edit(
+    tool_name: str, tool_input: dict, raw_path: str, cwd: Path, base: Path, claude_home: Path
+) -> bool:
+    if tool_name != "Edit":
+        return False
+    old_string = tool_input.get("old_string")
+    new_string = tool_input.get("new_string")
+    if old_string is None or new_string is None:
+        return False
+    if tool_input.get("replace_all"):
+        return False
+    if (
+        _line_span(old_string) > _TRIVIAL_MAX_LINES
+        or _line_span(new_string) > _TRIVIAL_MAX_LINES
+    ):
+        return False
+    try:
+        path = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
+            strict=False
+        )
+    except OSError:
+        return False
+    return not _is_infra_path(path, base, claude_home)
+
+
 def guarded_paths(payload: dict) -> list[str]:
     """Return code-edit targets reserved for Codex outside direct-edit sessions."""
     if os.environ.get("DINNER_EXECUTION_MODE") == _DIRECT_MODE:
@@ -132,7 +186,8 @@ def guarded_paths(payload: dict) -> list[str]:
     tool_name = payload.get("tool_name")
     if tool_name not in _TARGET_TOOLS:
         return []
-    paths = _extract_paths(tool_name, payload.get("tool_input") or {})
+    tool_input = payload.get("tool_input") or {}
+    paths = _extract_paths(tool_name, tool_input)
     if not paths:
         # A file edit whose target cannot be understood is not safe to classify
         # as an Architect artifact. Fail closed outside the explicit direct-edit
@@ -140,7 +195,15 @@ def guarded_paths(payload: dict) -> list[str]:
         return ["<unparseable file edit>"]
     cwd = get_cwd(payload)
     base = _repo_root(cwd)
-    return [path for path in paths if not _allowed_path(path, cwd, base)]
+    claude_home = _resolve_claude_home()
+    blocked = []
+    for path in paths:
+        if _allowed_path(path, cwd, base):
+            continue
+        if _is_trivial_edit(tool_name, tool_input, path, cwd, base, claude_home):
+            continue
+        blocked.append(path)
+    return blocked
 
 
 def main() -> None:
@@ -164,7 +227,8 @@ def main() -> None:
         "for Codex Builder. Write HANDOFF*.md, RESULT.md, INPUT.md, or "
         "docs/architecture/*.md; Claude persistent memory Markdown under "
         "<CLAUDE_CONFIG_DIR>/projects/*/memory/ is also allowed. Then dispatch "
-        "orchestrate.py build. "
+        "orchestrate.py build. Edits beyond the 2-line trivial fast path or targeting "
+        "harness infrastructure remain blocked. "
         f"Blocked: {target}"
     )
 

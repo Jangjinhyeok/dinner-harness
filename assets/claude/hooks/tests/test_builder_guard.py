@@ -22,6 +22,20 @@ def _edit_payload(cwd: Path, path: str) -> dict:
     }
 
 
+def _trivial_edit_payload(
+    cwd: Path, path: str, old_string: str = "old", new_string: str = "new"
+) -> dict:
+    return {
+        "tool_name": "Edit",
+        "cwd": str(cwd),
+        "tool_input": {
+            "file_path": path,
+            "old_string": old_string,
+            "new_string": new_string,
+        },
+    }
+
+
 class BuilderGuardPaths(unittest.TestCase):
     def test_project_implementation_file_is_blocked(self):
         self.assertEqual(
@@ -69,6 +83,79 @@ class BuilderGuardPaths(unittest.TestCase):
                 builder_guard.guarded_paths(_edit_payload(Path("C:/repo"), "src/feature.py")),
                 [],
             )
+
+    def test_trivial_edit_outside_infra_is_allowed(self):
+        self.assertEqual(
+            builder_guard.guarded_paths(
+                _trivial_edit_payload(Path("C:/repo"), "src/feature.py")
+            ),
+            [],
+        )
+
+    def test_edit_over_line_threshold_is_blocked(self):
+        self.assertEqual(
+            builder_guard.guarded_paths(
+                _trivial_edit_payload(
+                    Path("C:/repo"), "src/feature.py", new_string="one\ntwo\nthree"
+                )
+            ),
+            ["src/feature.py"],
+        )
+
+    def test_trivial_edit_to_harness_toml_is_blocked(self):
+        self.assertEqual(
+            builder_guard.guarded_paths(
+                _trivial_edit_payload(Path("C:/repo"), "harness.toml")
+            ),
+            ["harness.toml"],
+        )
+
+    def test_trivial_edit_to_hooks_dir_is_blocked(self):
+        path = "assets/claude/hooks/handlers/builder_guard.py"
+        self.assertEqual(
+            builder_guard.guarded_paths(_trivial_edit_payload(Path("C:/repo"), path)),
+            [path],
+        )
+
+    def test_trivial_edit_to_case_variant_infra_path_is_blocked(self):
+        path = "Assets/Claude/Hooks/handlers/builder_guard.py"
+        self.assertEqual(
+            builder_guard.guarded_paths(_trivial_edit_payload(Path("C:/repo"), path)),
+            [path],
+        )
+
+    def test_trivial_edit_to_settings_json_is_blocked(self):
+        self.assertEqual(
+            builder_guard.guarded_paths(
+                _trivial_edit_payload(Path("C:/repo"), "settings.json")
+            ),
+            ["settings.json"],
+        )
+
+    def test_trivial_edit_under_claude_home_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            claude_home = Path(tmp) / ".claude"
+            target = claude_home / "notes" / "note.txt"
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(claude_home)}):
+                self.assertEqual(
+                    builder_guard.guarded_paths(
+                        _trivial_edit_payload(Path("C:/repo"), str(target))
+                    ),
+                    [str(target)],
+                )
+
+    def test_trivial_write_is_still_blocked(self):
+        payload = {
+            "tool_name": "Write",
+            "cwd": "C:/repo",
+            "tool_input": {"file_path": "src/feature.py", "content": "small"},
+        }
+        self.assertEqual(builder_guard.guarded_paths(payload), ["src/feature.py"])
+
+    def test_trivial_replace_all_is_still_blocked(self):
+        payload = _trivial_edit_payload(Path("C:/repo"), "src/feature.py")
+        payload["tool_input"]["replace_all"] = True
+        self.assertEqual(builder_guard.guarded_paths(payload), ["src/feature.py"])
 
 
 if __name__ == "__main__":
