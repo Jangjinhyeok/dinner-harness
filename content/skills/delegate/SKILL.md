@@ -1,5 +1,6 @@
 ---
 name: delegate
+user-invocable: true
 description: Lightweight delegation lane — hand a small, single-purpose LOW-risk task (code OR file-based document) to the Codex Builder headless (orchestrate.py build) and review the result inline, skipping the full Architect ceremony (mode entry, gated HANDOFF, ADR). Use when the user wants a self-contained change built by Codex without the heavy ritual — "위임", "이거 codex/코덱스로 시켜", "delegate this", "quick build" — including document work such as 이력서/경력기술서 변형, JD 대조 갭 분석, 여러 버전 톤 통일, 문서 재구조화. HIGH-risk or multi-file/multi-gate/design work escalates to architect mode instead.
 ---
 

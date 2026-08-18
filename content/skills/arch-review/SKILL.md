@@ -105,7 +105,7 @@ Also spawn the **Primary Specialist** for any file touching engine architecture 
 
 ### QA Testability Review
 
-For Logic and Integration changes, evaluate **testability directly** as part of this review — this skill runs as the `code-reviewer` agent and no separate QA agent is installed. Consider the implementation files plus any test cases / acceptance criteria the user provided (if the project keeps them), and check:
+For Logic and Integration changes, evaluate **testability directly** as part of this review — this skill runs standalone (no `agent:` binding) via Task-spawned specialists, and no separate QA agent is installed. Consider the implementation files plus any test cases / acceptance criteria the user provided (if the project keeps them), and check:
 - [ ] Are all test hooks and interfaces exposed (not hidden behind private/internal access)?
 - [ ] Do the intended test cases map to testable code paths?
 - [ ] Are any acceptance criteria untestable as implemented (e.g., hardcoded values, no seam for injection)?
