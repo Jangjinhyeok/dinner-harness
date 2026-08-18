@@ -92,8 +92,11 @@ LOW-only by construction.
      phrasing, date format) — see the document example below.
 3. **Dispatch (same turn)** — LOW is autonomous (autonomy-policy: the human sets
    intent at the start, which is the user's request itself), so dispatch right
-   after showing the compact spec:
+   after showing the compact spec. First spawn a detached PowerShell window that
+   tails Codex's live rollout log — the dispatch call below streams inside a
+   blocking Bash call the user cannot watch in real time otherwise:
    ```
+   Start-Process powershell -ArgumentList "-NoExit","-File","<CLAUDE_HOME>/watch-builder.ps1"
    py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --handoff HANDOFF_DELEGATE.md
    ```
    Replace `<CLAUDE_HOME>` and `<ABSOLUTE_REPO_PATH>` with their absolute
