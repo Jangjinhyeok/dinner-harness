@@ -78,6 +78,7 @@ function Read-RolloutUpdate {
     }
 }
 
+$Host.UI.RawUI.WindowTitle = "Codex Builder Monitor"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 if (-not $NoWait) {
