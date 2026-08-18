@@ -1,6 +1,6 @@
 """ADR-0001 secret-scan PreToolUse hook.
 
-Reads a Claude Code hook payload from stdin, scans Edit / Write / Bash
+Reads a Claude Code hook payload from stdin, scans Edit / Write / Bash / PowerShell
 inputs against a small regex ruleset and emits allow / warn / block
 based on ``CLAUDE_SECRET_SCAN_MODE``.
 
@@ -43,7 +43,7 @@ _EVENT = "PreToolUse"
 _RULES_PATH = _HOOKS_ROOT / "rules" / "secret_patterns.json"
 # "apply_patch" is Codex 0.147.0's file-edit tool (CODEX-COVERAGE.md §6.2, re-verified 2026-08-10 — see §6.3); Claude
 # never emits it, so listing it here is inert on Claude and active on Codex.
-_TARGET_TOOLS = {"Edit", "Write", "Bash", "apply_patch"}
+_TARGET_TOOLS = {"Edit", "Write", "Bash", "PowerShell", "apply_patch"}
 
 
 class Match(NamedTuple):
@@ -112,7 +112,7 @@ def _scan(tool_name: str, tool_input: dict, patterns: dict) -> Optional[Match]:
             return m
         return _scan_against(content, content_rules, "content", file_path or "<content>")
 
-    if tool_name == "Bash":
+    if tool_name in ("Bash", "PowerShell"):
         command = tool_input.get("command", "") or ""
         # Per HANDOFF Section 7.4: v1 policy applies path_patterns regex
         # to the entire command string (naive substring). No shell

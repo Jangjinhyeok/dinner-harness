@@ -4,9 +4,13 @@ Reads a Claude Code hook payload from stdin. For ``Edit`` / ``Write``
 calls, normalises ``file_path`` to an absolute POSIX path and runs two
 policy layers:
 
-  1. always-block: paths matching ``rules/scope_protect.json`` are
-     blocked unconditionally inside ``~/.claude/`` (dryrun-exempt,
-     immediate enforce). Mode ``off`` is the only escape.
+  1. always-block: for the structured file-edit tools in ``_TARGET_TOOLS``
+     (``Edit``, ``Write``, and ``apply_patch``), paths matching
+     ``rules/scope_protect.json`` are blocked unconditionally inside
+     ``~/.claude/`` (dryrun-exempt, immediate enforce). Mode ``off`` is the only
+     escape. Writes through ``Bash`` or PowerShell are intentionally outside
+     this layer. Like ``builder_guard.py``, it is a workflow guard, not a
+     sandbox; containment belongs to the sandbox.
   2. scope codeblock: paths must match an entry in the first
      ``` ```scope ``` codeblock of the handoff named by
      ``CLAUDE_SCOPE_HANDOFF_NAME`` (default ``HANDOFF.md``). An absent

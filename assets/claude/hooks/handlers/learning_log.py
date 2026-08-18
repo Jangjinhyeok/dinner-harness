@@ -1,6 +1,6 @@
 """Learning-capture PostToolUse hook (advisory, Tier B — gap #4 / ADR-0004).
 
-After a Bash tool call, scans the command output for strong failure signals
+After a Bash or PowerShell tool call, scans the command output for strong failure signals
 (compile/link errors, build failures, tracebacks, missing files, etc.) and, on a
 match, appends one JSON line to ``hooks/logs/learning_log.log`` via ``log_event``.
 It NEVER blocks — always exits 0. The captured failures are later reviewed and
@@ -32,7 +32,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
 
 _HOOK_NAME = "learning_log"
 _EVENT = "PostToolUse"
-_TARGET_TOOL = "Bash"
+_TARGET_TOOLS = {"Bash", "PowerShell"}
 _MAX_SCAN = 40000  # cap response text scanned — stay within the 200ms budget
 
 # Strong, specific failure signals only — keep the log low-noise. The
@@ -91,7 +91,7 @@ def _excerpt(text: str, m: "re.Match") -> str:
 def main() -> None:
     payload = read_hook_input()
 
-    if payload.get("tool_name") != _TARGET_TOOL:
+    if payload.get("tool_name") not in _TARGET_TOOLS:
         exit_allow()
 
     text = _extract_text(payload)
