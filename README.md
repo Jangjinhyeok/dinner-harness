@@ -155,7 +155,7 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 | 요청 유형 | Claude의 역할 | Codex Builder 사용 | 사용자 행동 |
 | --- | --- | --- | --- |
 | 질문, 코드 Read, 검색, MCP 조사, 설계, 리뷰 | 직접 수행 | 아니오 | 평소처럼 질문 |
-| 한 파일 한두 줄을 포함한 구현 파일 수정 | 범위 파악·HANDOFF·결과 리뷰 | 예, strict 경로 | 평소처럼 요청 |
+| 한 파일 한두 줄을 포함한 구현 파일 수정 | 범위 파악·HANDOFF·결과 리뷰 | 트리비얼 `Edit`(단일 파일·old/new 각 2줄 이하·비인프라 경로)은 아니오, 그 외는 예 | 평소처럼 요청 |
 | 명확한 LOW 단일 목적 변경 | `HANDOFF_DELEGATE.md` 작성·리뷰 | 예, 같은 세션에서 자동 dispatch | 추가 명령 불필요 |
 | 다파일, build/test iterate, 구조 변경, HIGH 신호 | 설계·HANDOFF/ADR·리뷰 | 예, 승인 뒤 자동 dispatch | 시작/종단 승인 |
 
@@ -164,7 +164,12 @@ quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배
 architect 경로로 판정된 도메인 작업(코드 리뷰·설계·C++ 빌드·게임플레이/네트워크/UI/툴/성능 구현 등, 표의 세 번째·네 번째 행에 해당하는 규모)도 `_core`/`_gamedev` agent consult가 필요하며, 이 규칙은 ADR-0011에 정리되어 있다.
 
 `builder_guard`는 Claude의 structured `Edit`/`Write` 구현 변경을 막고 Builder 경로를
-안내한다. 이는 workflow guard이지 보안 sandbox가 아니다. Bash/PowerShell을 해석해서
+안내한다. 단, ADR-0012의 trivial-edit fast path에 따라 `Edit`이면서 대상이 단일 파일이고
+`old_string`과 `new_string`이 각각 2줄 이하이며 하네스 인프라(`assets/claude/hooks/`,
+`settings*.json`, `harness.toml`, `orchestrator/`, `orchestrate.py`)나 live `~/.claude` install
+경로(`projects/*/memory/*.md` 제외)가 아닌 경우에는 Claude가 직접 처리한다. `Write`·
+`apply_patch`·여러 줄/여러 파일·인프라 경로 변경은 계속 Builder 전용이다. 이는 workflow
+guard이지 보안 sandbox가 아니다. Bash/PowerShell을 해석해서
 모든 쓰기를 막지는 않으므로, shell로 guard를 우회하는 사용은 이 UX의 범위 밖이다.
 
 ### 2) 작업 결과를 확인하고 반영하기
@@ -311,6 +316,6 @@ Git 변경을 받은 뒤에는 `py -3 refresh.py`로 plan을 확인하고 `py -3
 - `secret_scan` (PreToolUse) — 입력에서 시크릿·민감 파일경로 regex 검출 (enforce, 차단형)
 - `scope_check` (PreToolUse) — cycle 스코프 밖 수정 + hook 인프라 보호 (dryrun, always-block 즉시 차단)
 - `suggest_compact` (PreToolUse) — 도구 호출 누적 시 `/compact` 제안 (advisory)
-- `learning_log` (PostToolUse) — Bash 실패 신호 포착 → `learnings-review`로 승격 (advisory)
+- `learning_log` (PostToolUse) — Bash/PowerShell 실패 신호 포착 → `learnings-review`로 승격 (advisory)
 - `route_nudge` (Claude UserPromptSubmit 전용) — 구현 작업은 HANDOFF 작성 전 허브 consult가 필수임을 안내(read-only 질문과 실제 1~2줄 변경은 면제). 프롬프트의 UE 도메인 신호를 검출해 라우팅 nudge를 주입한다: 단일 도메인은 `/alias`(허브+포커스 문서), 멀티 도메인은 architect 모드+dispatch 제안 (advisory). standalone Codex가 self-dispatch할 수 없으므로 Codex `hooks.json`에서는 의도적으로 제외한다.
 - `builder_guard` (PreToolUse) — 일반 `claude`에서 직접 structured code edit을 막고 Codex Builder dispatch로 유도; `claude-direct.cmd` escape에서만 inert

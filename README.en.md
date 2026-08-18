@@ -112,8 +112,14 @@ claude
 ```
 
 Claude still reads code, searches, uses MCP, designs, and reviews HANDOFF/RESULT/diffs
-in this session; every structured `Edit`/`Write` implementation-file write goes to the
-Codex Builder. The normal `claude` command is therefore the strict Builder-first path.
+in this session. Structured `Edit`/`Write` implementation-file writes go to the Codex
+Builder, except for the ADR-0012 trivial-edit fast path: Claude may directly handle an
+`Edit` affecting one file when both `old_string` and `new_string` are at most two lines
+and the target is neither harness infrastructure (`assets/claude/hooks/`, `settings*.json`,
+`harness.toml`, `orchestrator/`, or `orchestrate.py`) nor a live `~/.claude` install path
+(`projects/*/memory/*.md` excepted). `Write`, `apply_patch`, multiline or multi-file edits,
+and infrastructure-path changes still go to the Builder. The normal `claude` command
+therefore remains Builder-first with this narrow exception.
 
 For the rare session that genuinely needs Claude to edit directly, use the explicit
 escape instead:
@@ -141,8 +147,10 @@ no delivery branch; it stages and commits the accepted delta on your current bra
 explicitly authorize `commit` or `commit and push` in that conversation. Push likewise
 requires that explicit authorization; task completion alone never authorizes it.
 
-> Questions, reading, and searching stay with Claude in the strict session. Even a tiny file
-> edit takes the Codex Builder route in that session.
+> Questions, reading, and searching stay with Claude in the strict session. A tiny edit may
+> stay with Claude only when it meets the ADR-0012 single-file, two-lines-per-side,
+> non-infrastructure fast-path conditions; all other implementation edits take the Codex
+> Builder route in that session.
 
 ### 2) Calling the orchestrator directly (optional)
 
@@ -264,6 +272,6 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `secret_scan` (PreToolUse) — regex-detect secrets / sensitive file paths in input (enforce, blocking)
 - `scope_check` (PreToolUse) — block out-of-scope edits + protect hook infra (dryrun, always-block hard-blocks)
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
-- `learning_log` (PostToolUse) — capture Bash failure signals → promote via `learnings-review` (advisory)
+- `learning_log` (PostToolUse) — capture Bash/PowerShell failure signals → promote via `learnings-review` (advisory)
 - `route_nudge` (Claude UserPromptSubmit only) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory). It is deliberately excluded from Codex `hooks.json`.
-- `builder_guard` (PreToolUse) — reserve structured code edits for Codex Builder by default; only the explicit `claude-direct.cmd` escape disables it
+- `builder_guard` (PreToolUse) — reserve structured code edits for Codex Builder by default; the explicit `claude-direct.cmd` escape disables it entirely, while the ADR-0012 trivial-edit fast path narrowly permits only a single-file, at-most-two-lines-per-side, non-infrastructure `Edit`
