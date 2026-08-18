@@ -34,13 +34,66 @@ function Format-RolloutLine {
     }
 }
 
+function Get-LatestRolloutFile {
+    param([string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions")
+    Get-ChildItem $SessionsRoot -Recurse -Filter "rollout-*.jsonl" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+}
+
+function Read-RolloutUpdate {
+    param(
+        [string]$CurrentPath,
+        [long]$Position,
+        [string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions"
+    )
+    $latest = Get-LatestRolloutFile -SessionsRoot $SessionsRoot
+    $switched = $false
+    if ($latest -and $latest.FullName -ne $CurrentPath) {
+        $CurrentPath = $latest.FullName
+        $Position = 0
+        $switched = $true
+    }
+    $lines = @()
+    if ($CurrentPath -and (Test-Path $CurrentPath)) {
+        $stream = [System.IO.File]::Open(
+            $CurrentPath, [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite
+        )
+        try {
+            $stream.Seek($Position, [System.IO.SeekOrigin]::Begin) | Out-Null
+            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+            while (-not $reader.EndOfStream) {
+                $lines += $reader.ReadLine()
+            }
+            $Position = $stream.Position
+        } finally {
+            $stream.Close()
+        }
+    }
+    return [PSCustomObject]@{
+        CurrentPath = $CurrentPath
+        Position    = $Position
+        Lines       = $lines
+        Switched    = $switched
+    }
+}
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 if (-not $NoWait) {
-    $latest = Get-ChildItem "$env:USERPROFILE\.codex\sessions" -Recurse -Filter "rollout-*.jsonl" |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Get-Content $latest.FullName -Encoding UTF8 -Wait -Tail 20 | ForEach-Object {
-        $result = Format-RolloutLine $_
-        if ($result) { Write-Host $result.Text -ForegroundColor $result.Color }
+    $currentPath = $null
+    $position = 0
+    while ($true) {
+        $update = Read-RolloutUpdate -CurrentPath $currentPath -Position $position
+        if ($update.Switched) {
+            Write-Host "[session] watching $(Split-Path $update.CurrentPath -Leaf)" -ForegroundColor DarkCyan
+        }
+        $currentPath = $update.CurrentPath
+        $position = $update.Position
+        foreach ($line in $update.Lines) {
+            $result = Format-RolloutLine $line
+            if ($result) { Write-Host $result.Text -ForegroundColor $result.Color }
+        }
+        Start-Sleep -Milliseconds 500
     }
 }
