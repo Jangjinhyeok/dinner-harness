@@ -140,6 +140,6 @@ Before writing any code:
 ## Coordination
 - Work with **unreal-specialist** for overall UE architecture
 - Work with **network-programmer** for transport-layer networking
-- Work with **ue-gas-specialist** for ability replication and prediction
+- See `docs/specialists/ue-gas.md` for ability replication and prediction
 - Work with **gameplay-programmer** for replicated gameplay systems
 - Work with the user for network security validation

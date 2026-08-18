@@ -147,4 +147,4 @@ Before writing any code:
 - Work with **gameplay-programmer** for ECS gameplay system design
 - Work with **performance-analyst** for profiling DOTS performance
 - Work with `unity-specialist` for low-level optimization
-- Work with **unity-shader-specialist** for Entities Graphics rendering
+- See `docs/specialists/unity-shader.md` for Entities Graphics rendering

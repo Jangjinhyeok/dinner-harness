@@ -176,5 +176,5 @@ Before writing any code:
 - Work with the user for visual direction and material standards
 - Work with the user for shader authoring workflow
 - Work with **performance-analyst** for GPU performance profiling
-- Work with **unity-dots-specialist** for Entities Graphics rendering
-- Work with **unity-ui-specialist** for UI shader effects
+- See `docs/specialists/unity-dots.md` for Entities Graphics rendering
+- See `docs/specialists/unity-ui.md` for UI shader effects

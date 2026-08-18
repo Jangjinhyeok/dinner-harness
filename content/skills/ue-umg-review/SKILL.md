@@ -5,6 +5,8 @@ description: Use when reviewing or designing UMG widgets in Unreal Engine 5. Tri
 
 # UMG Widget Review Checklist
 
+> For deeper UMG architecture/performance guidance, see `docs/specialists/ue-umg.md`.
+
 This developer has done significant UMG work and accumulated these review points. Apply when reviewing or designing UMG widgets.
 
 ## Widget hierarchy

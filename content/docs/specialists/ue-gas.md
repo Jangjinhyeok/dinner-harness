@@ -131,5 +131,5 @@ Before writing any code:
 - Work with **unreal-specialist** for general UE architecture decisions
 - Work with **gameplay-programmer** for ability implementation
 - Work with the user for ability design specs and balance values
-- Work with **ue-replication-specialist** for multiplayer ability prediction
-- Work with **ue-umg-specialist** for ability UI (cooldown indicators, buff icons)
+- See `docs/specialists/ue-replication.md` for multiplayer ability prediction
+- See `docs/specialists/ue-umg.md` for ability UI (cooldown indicators, buff icons)

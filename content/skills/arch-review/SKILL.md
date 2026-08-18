@@ -23,7 +23,7 @@ Read `.claude/docs/technical-preferences.md`, section `## Engine Specialists`. N
 - The **Shader Specialist** (used when reviewing shader files)
 - The **UI Specialist** (used when reviewing UI code)
 
-If the section reads `[TO BE CONFIGURED]`, no engine is pinned — skip engine specialist steps.
+If the file doesn't exist or the section reads `[TO BE CONFIGURED]`, no engine is pinned — skip engine specialist steps.
 
 ---
 

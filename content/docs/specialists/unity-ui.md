@@ -214,6 +214,6 @@ Before writing any code:
 - Work with **unity-specialist** for overall Unity architecture
 - Work with **ui-programmer** for general UI implementation patterns
 - Work with the user for interaction design and accessibility
-- Work with **unity-addressables-specialist** for UI asset loading
+- See `docs/specialists/unity-addressables.md` for UI asset loading
 - Work with the user for text fitting and localization
 - Work with the user for accessibility compliance

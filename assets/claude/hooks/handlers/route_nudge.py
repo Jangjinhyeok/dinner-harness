@@ -50,6 +50,9 @@ _UE_GENERIC = re.compile(
     r"\bUnreal\b|\bUE5\b|\.uasset\b|UPROPERTY|UFUNCTION|Niagara|\bcooking\b|\bpackaging\b",
     re.IGNORECASE,
 )
+# Self-referential audit/meta prompts (e.g. /harness-review) enumerate UE domain
+# keywords and work-intent verbs as catalog text, not real implementation intent.
+_META_AUDIT = re.compile(r"harness-review|route_nudge|hook log|conformance 감사", re.IGNORECASE)
 # Route only an actual implementation request. The former meta-keyword denylist
 # suppressed legitimate work such as "fix the harness routing"; intent is the
 # reliable boundary now that this handler also serves non-UE repositories.
@@ -104,8 +107,11 @@ def message_for_prompt(prompt: str) -> tuple[str, list[str]] | None:
     if not prompt or not _WORK_INTENT.search(prompt):
         return None
 
-    matched = [(key, agent) for key, agent, pat in _UE_DOMAINS if pat.search(prompt)]
     prefix = _default_route_message()
+    if _META_AUDIT.search(prompt):
+        return prefix, ["default"]
+
+    matched = [(key, agent) for key, agent, pat in _UE_DOMAINS if pat.search(prompt)]
     if len(matched) == 1:
         key, agent = matched[0]
         return (

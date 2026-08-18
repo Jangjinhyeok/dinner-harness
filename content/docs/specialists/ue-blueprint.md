@@ -148,5 +148,5 @@ Before writing any code:
 - Work with **unreal-specialist** for C++/BP boundary architecture decisions
 - Work with **gameplay-programmer** for exposing C++ hooks to Blueprint
 - Work with the user for level Blueprint standards
-- Work with **ue-umg-specialist** for UI Blueprint patterns
+- See `docs/specialists/ue-umg.md` for UI Blueprint patterns
 - Work with the user for designer-facing Blueprint tools

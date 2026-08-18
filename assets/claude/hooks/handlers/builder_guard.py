@@ -210,6 +210,14 @@ def main() -> None:
     payload = read_hook_input()
     blocked = guarded_paths(payload)
     if not blocked:
+        if payload.get("tool_name") in _TARGET_TOOLS:
+            log_event(
+                _HOOK_NAME,
+                event=_EVENT,
+                decision="allow",
+                tool_name=payload.get("tool_name", ""),
+                mode="builder-first",
+            )
         exit_allow()
     target = blocked[0]
     log_event(

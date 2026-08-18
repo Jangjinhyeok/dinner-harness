@@ -164,4 +164,4 @@ handle.Completed += OnAssetLoaded;
 - Work with **performance-analyst** for memory and load time profiling
 - Work with the user for CDN and content delivery pipeline
 - Work with the user for scene streaming boundaries
-- Work with **unity-ui-specialist** for UI asset loading patterns
+- See `docs/specialists/unity-ui.md` for UI asset loading patterns
