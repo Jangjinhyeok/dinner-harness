@@ -10,25 +10,42 @@ function Format-RolloutLine {
     } catch {
         return $null
     }
-    switch ($evt.payload.type) {
-        "agent_message" {
-            return [PSCustomObject]@{ Text = $evt.payload.message; Color = "Cyan" }
+    $payload = $evt.payload
+    switch ($payload.type) {
+        "message" {
+            if ($payload.role -ne "assistant") { return $null }
+            $text = ($payload.content | Where-Object { $_.type -eq "output_text" } | ForEach-Object { $_.text }) -join "`n"
+            if (-not $text) { return $null }
+            return [PSCustomObject]@{ Text = $text; Color = "Cyan" }
         }
         "custom_tool_call" {
-            $preview = [string]$evt.payload.input
+            $preview = [string]$payload.input
             if ($preview.Length -gt 200) { $preview = $preview.Substring(0,200) + "..." }
-            return [PSCustomObject]@{ Text = "[tool] $($evt.payload.name): $preview"; Color = "DarkGray" }
+            return [PSCustomObject]@{ Text = "[tool] $($payload.name): $preview"; Color = "DarkGray" }
         }
-        "patch_apply_end" {
-            $status = if ($evt.payload.success) { "OK" } else { "FAIL" }
-            $lines = foreach ($path in $evt.payload.changes.PSObject.Properties.Name) {
-                $changeType = $evt.payload.changes.$path.type
-                "[patch $status] $changeType : $path"
+        "item_completed" {
+            $item = $payload.item
+            switch ($item.type) {
+                "FileChange" {
+                    $lines = foreach ($path in $item.changes.PSObject.Properties.Name) {
+                        $changeType = $item.changes.$path.type
+                        "[patch $($item.status)] $changeType : $path"
+                    }
+                    return [PSCustomObject]@{ Text = ($lines -join "`n"); Color = "Yellow" }
+                }
+                "CommandExecution" {
+                    $cmd = ($item.command -join " ")
+                    if ($cmd.Length -gt 150) { $cmd = $cmd.Substring(0,150) + "..." }
+                    $color = if ($item.exit_code -ne 0) { "Red" } else { "DarkGray" }
+                    return [PSCustomObject]@{ Text = "[cmd exit=$($item.exit_code)] $cmd"; Color = $color }
+                }
+                default {
+                    return $null
+                }
             }
-            return [PSCustomObject]@{ Text = ($lines -join "`n"); Color = "Yellow" }
         }
         "task_complete" {
-            $seconds = [math]::Round($evt.payload.duration_ms / 1000, 1)
+            $seconds = [math]::Round($payload.duration_ms / 1000, 1)
             return [PSCustomObject]@{ Text = "[done] turn complete in ${seconds}s"; Color = "Green" }
         }
         default {
