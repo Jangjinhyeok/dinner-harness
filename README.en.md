@@ -273,5 +273,5 @@ For the full firing flow and operating modes, see `assets/claude/README.md` + `a
 - `scope_check` (PreToolUse) — block out-of-scope edits + protect hook infra (dryrun, always-block hard-blocks)
 - `suggest_compact` (PreToolUse) — suggest `/compact` once tool calls accumulate (advisory)
 - `learning_log` (PostToolUse) — capture Bash/PowerShell failure signals → promote via `learnings-review` (advisory)
-- `route_nudge` (Claude UserPromptSubmit only) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests the `/alias` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory). It is deliberately excluded from Codex `hooks.json`.
+- `route_nudge` (Claude UserPromptSubmit only) — detect UE-domain signals in the prompt → inject a routing nudge: single domain suggests a router like `/umg` (hub + focus doc), multi-domain suggests architect mode + dispatch (advisory). It is deliberately excluded from Codex `hooks.json`.
 - `builder_guard` (PreToolUse) — reserve structured code edits for Codex Builder by default; the explicit `claude-direct.cmd` escape disables it entirely, while the ADR-0012 trivial-edit fast path narrowly permits only a single-file, at-most-two-lines-per-side, non-infrastructure `Edit`

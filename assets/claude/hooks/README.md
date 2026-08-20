@@ -20,13 +20,16 @@ Codex Builder, and receives its routing guidance through `AGENTS.md` instead.
 
 이 디렉터리는 Claude Code의 **PreToolUse·PostToolUse hook 안전망** 인프라를 담는다. hook은 Claude가 도구를 실행하기 *직전(PreToolUse)·직후(PostToolUse)*에 자동으로 끼어들어 검사하고, 종료 코드로 통과(exit 0)/차단(exit 2)을 결정한다(advisory hook은 차단 없이 stderr 제안·로깅만 한다). 사용자가 직접 호출하지 않는다.
 
+ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로, 여기엔
+없다 — 배경은 docs/architecture/ADR-0006-option-a.md의 Context 절 참조.
+
 ## 한눈에
 
 |  | `secret_scan` | `scope_check` | `suggest_compact` | `learning_log` | `route_nudge` |
 |---|---|---|---|---|---|
 | 이벤트 | PreToolUse | PreToolUse | PreToolUse | PostToolUse | UserPromptSubmit |
 | matcher | Edit · Write · Bash · PowerShell | Edit · Write | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
-| 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge를 stdout으로 출력 (2026-07-02 재조준: 단일 도메인→`/alias`+포커스 문서, 멀티→architect 모드+dispatch 제안) |
+| 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge를 stdout으로 출력 (2026-07-02 재조준: 단일 도메인→`/umg` 등 라우터+포커스 문서, 멀티→architect 모드+dispatch 제안) |
 | 룰셋 | `rules/secret_patterns.json` | `rules/scope_protect.json` + `HANDOFF.md`의 scope 블록 | 없음 (`COMPACT_THRESHOLD` env, 기본 50) | 없음 (핸들러 내장 패턴) | 없음 (핸들러 내장 regex) |
 | 모드 env var | `CLAUDE_SECRET_SCAN_MODE` | `CLAUDE_SCOPE_WHITELIST_MODE` | 없음 (항상 advisory) | 없음 (항상 advisory) | 없음 (항상 advisory) |
 | 현재 모드 | enforce (2026-05-31 승격, ADR-0001 Gate 4) | dryrun (영구 — always-block layer만 실차단) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) |

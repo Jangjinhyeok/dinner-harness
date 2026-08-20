@@ -229,7 +229,10 @@ def _builder_bailed(verdicts) -> bool:
     through untouched (not retried, not clobbered)."""
     if not verdicts:
         return True
-    return any((v.status or "").strip().lower() == "blocked" for v in verdicts)
+    return any(
+        (v.status or "").strip().lower() == "blocked" and not (v.panel or "").strip()
+        for v in verdicts
+    )
 
 
 def compute_has_high(tiers: dict[str, str], verdicts) -> bool:

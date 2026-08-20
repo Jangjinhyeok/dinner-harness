@@ -1,7 +1,7 @@
 ---
 name: unity-specialist
 description: "Use PROACTIVELY for any substantial Unity work — MonoBehaviour vs DOTS/ECS, Addressables, Input System, UI Toolkit/UGUI, Jobs/Burst, render pipeline. The authority on all Unity-specific patterns, APIs, and optimization; enforces Unity best practices. This is the single Unity engine agent; deep subsystem guidance (DOTS, shader, Addressables, UI) lives in docs/specialists/ reference docs it Reads on demand. MUST BE USED as the entry point for engine-specific Unity implementation and architecture."
-tools: Read, Glob, Grep, Write, Edit, Bash, Task
+tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
 model: sonnet
 maxTurns: 20
 skills:

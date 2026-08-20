@@ -75,6 +75,9 @@
 
 `hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`), Builder-first 전용 차단형 `builder_guard`, advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다.
 
+ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로, 여기엔
+없다 — 배경은 docs/architecture/ADR-0006-option-a.md의 Context 절 참조.
+
 | hook | 이벤트·matcher | 역할 | 출처 |
 |---|---|---|---|
 | `secret_scan` | Pre · Edit·Write·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |

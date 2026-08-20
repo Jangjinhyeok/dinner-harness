@@ -1,7 +1,7 @@
 ---
 name: unreal-specialist
 description: "Use PROACTIVELY for any substantial Unreal Engine work — UE5 C++, Blueprint, GAS, UMG/CommonUI, replication, Niagara, packaging. The authority on all Unreal-specific patterns, APIs, and optimization; guides Blueprint vs C++ decisions and enforces UE best practices. This is the single Unreal engine agent; deep subsystem guidance (GAS, Blueprint, replication, UMG) lives in docs/specialists/ reference docs it Reads on demand. MUST BE USED as the entry point for engine-specific Unreal implementation and architecture."
-tools: Read, Glob, Grep, Write, Edit, Bash, Task
+tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
 model: sonnet
 maxTurns: 20
 skills:
@@ -134,7 +134,8 @@ Before writing any code:
 - `docs/specialists/ue-gas.md` for Gameplay Ability System, effects, attributes, and tags
 - `docs/specialists/ue-blueprint.md` for Blueprint architecture, BP/C++ boundary, and graph standards
 - `docs/specialists/ue-replication.md` for property replication, RPCs, prediction, and relevancy
-- `docs/specialists/ue-umg.md` for UMG, CommonUI, widget hierarchy, and data binding
+- `docs/specialists/ue-umg.md` for UMG, CommonUI, widget hierarchy, and data binding (pair with the ue-umg-review
+  skill's checklist when reviewing widgets)
 
 **Escalation targets**:
 - the user for engine version upgrades, plugin decisions, and major tech choices
