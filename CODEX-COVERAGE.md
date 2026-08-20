@@ -111,3 +111,18 @@ enforcement 무음 상실 방지를 위해 두 곳에 명시:
 
 - `apply_patch` 2회에서 PreToolUse handler가 `decision=block`과 exit 2를 기록해도 edit은 모두 적용됐고, 같은 turn의 차단 사유 probe 응답은 `NONE`이었다.
 - `codex features list`에서 `exec_permission_approvals`와 `request_permissions_tool`은 `under development`/`false`여서 headless `codex exec`에는 approval layer가 없다.
+
+### 6.4 0.148.0 재검증 (2026-08-20)
+
+환경: `codex-cli 0.148.0`(`@openai/codex` npm 패키지, `codex-cli` cli-update로 0.147.0→0.148.0 업데이트 직후). `codex features list` → `hooks` stable·`multi_agent` stable(0.147.0과 동일).
+
+cli-update skill Phase 8 절차 3단계 전부 재실행:
+
+1. **`apply_patch` payload check** — scratch 디렉터리(`DINNER_HARNESS_HOME`로 핀)에 좁은 ` ```scope ``` ` fence(`allowed.txt`만 포함)를 둔 HANDOFF.md를 두고, `CLAUDE_SCOPE_WHITELIST_MODE=enforce`로 실제 `codex exec -s workspace-write --skip-git-repo-check --enable experimental_windows_sandbox`를 실행해 fence 밖 파일(`blocked.txt`)에 apply_patch 편집을 지시했다.
+   - `scope_check.log`에 `tool_name=apply_patch`, `file_path=.../blocked.txt`(패치 envelope의 `*** Update File:` 마커에서 정확히 추출), `decision=block`, `mode=enforce`가 정상 기록됐다 — `parse_apply_patch`/경로 추출 로직은 0.148.0에서도 변화 없음.
+   - 그러나 `blocked.txt`는 실제로 편집이 적용됐다(hook block에도 불구하고) — **0.147.0(§6.3)과 동일하게 PreToolUse exit-2는 hard block이 아니라 advisory**임을 재확인.
+   - 같은 방식으로 fence 안 파일(`allowed.txt`)에 가짜 AWS 키(`AKIA` + 16자)를 apply_patch로 주입 → `secret_scan.log`에 `tool_name=apply_patch`, `match_path=allowed.txt`, `decision=block`, `reason=aws_access_key match in content` 정상 기록. `secret_scan`의 apply_patch content 파싱도 무변화.
+2. **`codex exec` output check** — scratch git repo에서 LOW-tier `HANDOFF_DELEGATE.md`(hello.txt 생성)로 실제 `orchestrate.py build --backend real --builder codex`를 실행. `[outcome] BUILT after 1 cycle(s): all-LOW`로 정상 완료 — RESULT.md의 ` ```verdicts ``` ` 블록(`gate 1: status=completed tier=LOW panel=PASS`)이 정상 파싱되고 controller-side net이 changed file 3개를 스캔했다. `CodexBackend`의 `codex exec` 플래그·출력 파싱 포맷은 0.148.0에서도 무변화.
+3. **install pipeline check** — `py -3 install.py --target codex --dest <scratch>` 성공(`plan: agent=13, copy=57, hooks_json=1`). 생성된 `hooks.json`은 native 스키마와 일치(top-level `hooks`, `PreToolUse`/`PostToolUse`, `matcher`+`hooks[]`, handler `type=command`/`command`/`timeout`). `agents/*.toml` 13개 전부 `tomllib.load()` 파싱 성공.
+
+결론: 세 축 모두 0.147.0(§6.3) 대비 드리프트 없음. `parse_apply_patch`(D4 안전망)·`CodexBackend`(dispatch 파싱)·`adapters/codex.py`(install 파이프라인) 전부 codex-cli 0.148.0에서 동작 확인.

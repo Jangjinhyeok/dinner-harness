@@ -35,6 +35,7 @@ ROLE_BUILDER = "builder"
 
 _SANDBOX_HEADER_RE = re.compile(r"^\s*sandbox:\s*([a-z-]+)")
 _SESSION_HEADER_DIVIDER_RE = re.compile(r"^-{4,}\s*$")
+_SESSION_ID_RE = re.compile(r"^\s*session id:\s*(\S+)\s*$", re.IGNORECASE)
 
 
 def sandbox_degraded(line: str, requested: str) -> Optional[str]:
@@ -49,6 +50,23 @@ def sandbox_degraded(line: str, requested: str) -> Optional[str]:
         "or upgrade codex-cli. This is a sandbox configuration failure, not "
         "'builder bailed'."
     )
+
+
+def _write_session_marker(session_id: str, cfg: Config) -> None:
+    """Best-effort: record the Codex session id this process just launched,
+    so watch-builder.ps1 can pin its live tail to this dispatch's own
+    rollout file instead of following whichever ~/.codex/sessions file has
+    the newest mtime -- a heuristic an unrelated, concurrent Codex session
+    can steal. Writing this must never fail the build, so all errors are
+    swallowed.
+    """
+    try:
+        cfg.audit_dir.mkdir(parents=True, exist_ok=True)
+        (cfg.audit_dir / "watch-builder-session.txt").write_text(
+            session_id, encoding="utf-8"
+        )
+    except OSError:
+        pass
 
 
 class _HeaderAbortCheck:
@@ -153,6 +171,7 @@ def _run(
     *,
     stdin_text: Optional[str] = None,
     abort_check: Optional[Callable[[str], Optional[str]]] = None,
+    on_session_id: Optional[Callable[[str], None]] = None,
 ) -> Turn:
     # shell=False with a list argv: the prompt (which carries the user goal and
     # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
@@ -190,9 +209,10 @@ def _run(
         stdout: list[str] = []
         stderr: list[str] = []
         abort_error: Optional[str] = None
+        session_id_found = False
 
         def pump(stream, captured: list[str], destination, check_abort: bool = False) -> None:
-            nonlocal abort_error
+            nonlocal abort_error, session_id_found
             header_abort_check = (
                 _HeaderAbortCheck(abort_check)
                 if check_abort and abort_check is not None
@@ -209,6 +229,11 @@ def _run(
                             proc.kill()
                         except OSError:
                             pass
+                if check_abort and on_session_id is not None and not session_id_found:
+                    match = _SESSION_ID_RE.match(line)
+                    if match:
+                        session_id_found = True
+                        on_session_id(match.group(1))
             stream.close()
 
         out_pump = threading.Thread(
@@ -271,7 +296,7 @@ class ClaudeBackend(Backend):
 
 
 class CodexBackend(Backend):
-    """`codex exec` non-interactive mode. Verified against codex-cli 0.147.0 (re-verified 2026-08-10 — see CODEX-COVERAGE.md §6.3).
+    """`codex exec` non-interactive mode. Verified against codex-cli 0.148.0 (re-verified 2026-08-20 — see CODEX-COVERAGE.md §6.4).
 
     Prompts are sent through stdin instead of argv because the Windows `.CMD`
     shim invokes cmd.exe, whose command-line limit is 8191 characters.
@@ -314,6 +339,7 @@ class CodexBackend(Backend):
                 last_message_file=last_msg,
                 stdin_text=prompt,
                 abort_check=lambda line: sandbox_degraded(line, sandbox),
+                on_session_id=lambda sid: _write_session_marker(sid, cfg),
             )
         finally:
             try:

@@ -1,4 +1,7 @@
-param([switch]$NoWait)
+param(
+    [switch]$NoWait,
+    [string]$SessionMarkerPath = (Join-Path $PSScriptRoot "logs\watch-builder-session.txt")
+)
 
 function Format-RolloutLine {
     param([string]$Line)
@@ -34,8 +37,32 @@ function Format-RolloutLine {
     }
 }
 
+function Get-PinnedSessionId {
+    param([string]$MarkerPath)
+    if (-not $MarkerPath -or -not (Test-Path $MarkerPath)) { return $null }
+    try {
+        $id = (Get-Content -Path $MarkerPath -Raw -ErrorAction Stop).Trim()
+        if ($id) { return $id }
+    } catch {}
+    return $null
+}
+
+function Get-RolloutFileForSession {
+    param([string]$SessionId, [string]$SessionsRoot)
+    Get-ChildItem $SessionsRoot -Recurse -Filter "rollout-*-$SessionId.jsonl" -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+}
+
 function Get-LatestRolloutFile {
-    param([string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions")
+    param(
+        [string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions",
+        [string]$MarkerPath
+    )
+    $pinnedId = Get-PinnedSessionId -MarkerPath $MarkerPath
+    if ($pinnedId) {
+        $pinned = Get-RolloutFileForSession -SessionId $pinnedId -SessionsRoot $SessionsRoot
+        if ($pinned) { return $pinned }
+    }
     Get-ChildItem $SessionsRoot -Recurse -Filter "rollout-*.jsonl" -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
 }
@@ -44,9 +71,10 @@ function Read-RolloutUpdate {
     param(
         [string]$CurrentPath,
         [long]$Position,
-        [string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions"
+        [string]$SessionsRoot = "$env:USERPROFILE\.codex\sessions",
+        [string]$MarkerPath
     )
-    $latest = Get-LatestRolloutFile -SessionsRoot $SessionsRoot
+    $latest = Get-LatestRolloutFile -SessionsRoot $SessionsRoot -MarkerPath $MarkerPath
     $switched = $false
     if ($latest -and $latest.FullName -ne $CurrentPath) {
         $CurrentPath = $latest.FullName
@@ -85,7 +113,7 @@ if (-not $NoWait) {
     $currentPath = $null
     $position = 0
     while ($true) {
-        $update = Read-RolloutUpdate -CurrentPath $currentPath -Position $position
+        $update = Read-RolloutUpdate -CurrentPath $currentPath -Position $position -MarkerPath $SessionMarkerPath
         if ($update.Switched) {
             Write-Host "[session] watching $(Split-Path $update.CurrentPath -Leaf)" -ForegroundColor DarkCyan
         }
