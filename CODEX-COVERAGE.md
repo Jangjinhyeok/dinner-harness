@@ -126,3 +126,18 @@ cli-update skill Phase 8 절차 3단계 전부 재실행:
 3. **install pipeline check** — `py -3 install.py --target codex --dest <scratch>` 성공(`plan: agent=13, copy=57, hooks_json=1`). 생성된 `hooks.json`은 native 스키마와 일치(top-level `hooks`, `PreToolUse`/`PostToolUse`, `matcher`+`hooks[]`, handler `type=command`/`command`/`timeout`). `agents/*.toml` 13개 전부 `tomllib.load()` 파싱 성공.
 
 결론: 세 축 모두 0.147.0(§6.3) 대비 드리프트 없음. `parse_apply_patch`(D4 안전망)·`CodexBackend`(dispatch 파싱)·`adapters/codex.py`(install 파이프라인) 전부 codex-cli 0.148.0에서 동작 확인.
+
+### 6.5 0.149.0 재검증 (2026-08-21)
+
+환경: `codex-cli 0.149.0`(`@openai/codex` npm 패키지, `cli-update` skill로 0.148.0→0.149.0 업데이트 직후). `codex features list` → `hooks` stable·`multi_agent` stable(0.148.0과 동일). 단 `experimental_windows_sandbox`가 이번 목록에서 `removed`/`false`로 표시됨 — 그러나 `codex exec --enable experimental_windows_sandbox`는 여전히 인자로 수용되고, 세션 헤더가 `sandbox: workspace-write [workdir, /tmp, $TMPDIR]`를 정상 보고해 기능 자체는 무변화(라벨만 "removed"로 바뀐 것으로 보임 — 향후 실제로 인자가 거부되는 시점을 주시할 것).
+
+cli-update skill Phase 8 절차 3단계 전부 재실행:
+
+1. **`apply_patch` payload check** — scratch 디렉터리(`DINNER_HARNESS_HOME`로 핀, `CLAUDE_SCOPE_FENCE=allowed.txt`로 fence 직접 pin)에서 `CLAUDE_SCOPE_WHITELIST_MODE=enforce`로 실제 `codex exec -s workspace-write --skip-git-repo-check --enable experimental_windows_sandbox`를 실행해 fence 밖 파일(`blocked.txt`)에 apply_patch 편집을 지시했다.
+   - `scope_check.log`에 `tool_name=apply_patch`, `file_path=.../blocked.txt`(패치 envelope의 `*** Update File:` 마커에서 정확히 추출), `decision=block`, `mode=enforce`가 정상 기록됐다 — `parse_apply_patch`/경로 추출 로직은 0.149.0에서도 변화 없음.
+   - 그러나 `blocked.txt`는 실제로 편집이 적용됐다(hook block에도 불구하고) — **0.148.0(§6.4)과 동일하게 PreToolUse exit-2는 hard block이 아니라 advisory**임을 재확인.
+   - 같은 방식으로 fence 안 파일(`allowed.txt`)에 가짜 AWS 키(`AKIA` + 16자)를 apply_patch로 주입 → `secret_scan.log`에 `tool_name=apply_patch`, `match_path=allowed.txt`, `decision=block`, `reason=aws_access_key match in content` 정상 기록. `secret_scan`의 apply_patch content 파싱도 무변화.
+2. **`codex exec` output check** — scratch git repo에서 LOW-tier `HANDOFF_DELEGATE.md`(hello.txt 생성)로 실제 `orchestrate.py build --backend real --builder codex`를 실행. `[outcome] BUILT after 1 cycle(s): all-LOW`로 정상 완료 — RESULT.md의 ` ```verdicts ``` ` 블록(`gate 1: status=completed tier=LOW panel=PASS`)이 정상 파싱되고 controller-side net이 changed file 3개를 스캔했다. `CodexBackend`의 `codex exec` 플래그·출력 파싱 포맷은 0.149.0에서도 무변화.
+3. **install pipeline check** — `py -3 install.py --target codex --dest <scratch>` 성공(`plan: agent=13, copy=57, hooks_json=1` — 0.148.0과 동일한 카운트). 생성된 `hooks.json`은 native 스키마와 일치(top-level `hooks`, `PreToolUse`/`PostToolUse`). `agents/*.toml` 13개 전부 `tomllib.load()` 파싱 성공.
+
+결론: 세 축 모두 0.148.0(§6.4) 대비 드리프트 없음. `parse_apply_patch`(D4 안전망)·`CodexBackend`(dispatch 파싱)·`adapters/codex.py`(install 파이프라인) 전부 codex-cli 0.149.0에서 동작 확인. `experimental_windows_sandbox`의 features-list 라벨 변화(removed 표시)만 관찰됐고 실동작은 무변화.

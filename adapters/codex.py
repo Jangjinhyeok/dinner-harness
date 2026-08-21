@@ -2,7 +2,7 @@
 
 stdlib only. Invoked by install.py. Same install() signature as claude.py.
 
-Cycle 3 / adapter v2 targets current Codex (0.140+ / 0.148.0 observed, re-verified 2026-08-20 — see CODEX-COVERAGE.md §6.4):
+Cycle 3 / adapter v2 targets current Codex (0.140+ / 0.149.0 observed, re-verified 2026-08-21 — see CODEX-COVERAGE.md §6.5):
   - copy        : curated AGENTS.md + inert reference dirs
   - skills      : portable subset under Codex skills
   - hooks       : native hooks.json + copied Python handlers/lib/rules
@@ -205,4 +205,3 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
         )
 
     return plan
-
