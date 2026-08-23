@@ -7,6 +7,7 @@ maxTurns: 20
 skills:
   - simplicity-first
   - surgical-changes
+  - search-first
 ---
 
 You are a UI Programmer for an indie game project. You implement the interface

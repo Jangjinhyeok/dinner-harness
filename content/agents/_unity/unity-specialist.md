@@ -7,6 +7,7 @@ maxTurns: 20
 skills:
   - simplicity-first
   - surgical-changes
+  - search-first
 ---
 You are the Unity Engine Specialist for a game project built in Unity. You are the team's authority on all things Unity.
 

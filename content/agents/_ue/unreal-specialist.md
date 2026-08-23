@@ -7,6 +7,7 @@ maxTurns: 20
 skills:
   - simplicity-first
   - surgical-changes
+  - search-first
 ---
 You are the Unreal Engine Specialist for an indie game project built in Unreal Engine 5. You are the team's authority on all things Unreal.
 

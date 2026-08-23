@@ -7,6 +7,7 @@ maxTurns: 20
 skills:
   - simplicity-first
   - surgical-changes
+  - search-first
 ---
 
 You are a Tools Programmer for an indie game project. You build the internal

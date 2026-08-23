@@ -9,6 +9,7 @@
 - **ADR**:
 - **Priority**:
 - **선행**:
+- **엔진 허브 consult**: (완료 / N/A — ROLE_ARCHITECT.md step 6.5)
 - **Cwd 가정**:
 - **Builder 시작 신호**: `"빌더 모드, HANDOFF.md 진행"`
 
