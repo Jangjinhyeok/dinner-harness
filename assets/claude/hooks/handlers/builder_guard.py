@@ -95,41 +95,44 @@ def _resolve_claude_home() -> Path:
     ).expanduser().resolve(strict=False)
 
 
-def _allowed_path(raw_path: str, cwd: Path, base: Path) -> bool:
-    """True only for Architect artifacts and Claude persistent-memory Markdown."""
+def _allowed_path(raw_path: str, cwd: Path, base: Path) -> str | None:
+    """Return the allow reason for an Architect artifact or Claude persistent-memory
+    Markdown, or ``None`` if `raw_path` doesn't match any allowed category."""
     try:
         path = (Path(raw_path) if Path(raw_path).is_absolute() else cwd / raw_path).resolve(
             strict=False
         )
     except OSError:
-        return False
+        return None
     try:
         relative = path.relative_to(base).as_posix()
     except (OSError, ValueError):
         relative = None
     if relative is not None:
         if relative in _BUS_NAMES:
-            return True
+            return "bus_artifact"
         if relative.startswith("HANDOFF_") and relative.endswith(".md") and "/" not in relative:
-            return True
+            return "handoff_delegate"
         if relative.startswith("docs/architecture/") and relative.endswith(".md"):
-            return True
+            return "docs_architecture"
 
     if _in_session_scratchpad(path):
-        return True
+        return "scratchpad"
 
     try:
         claude_home = _resolve_claude_home()
         memory_relative = path.relative_to(claude_home)
     except (OSError, ValueError):
-        return False
+        return None
     parts = memory_relative.parts
-    return (
+    if (
         len(parts) >= 4
         and parts[0] == "projects"
         and parts[2] == "memory"
         and path.suffix.lower() == ".md"
-    )
+    ):
+        return "memory"
+    return None
 
 
 def _line_span(text: str) -> int:
@@ -179,6 +182,24 @@ def _is_trivial_edit(
     return not _is_infra_path(path, base, claude_home)
 
 
+def _allow_reason(
+    payload: dict, paths: list[str], cwd: Path, base: Path, claude_home: Path
+) -> str:
+    """Classify why guarded_paths() allowed this call. Observability only —
+    never called by guarded_paths() itself, so it cannot affect block/allow."""
+    if os.environ.get("DINNER_EXECUTION_MODE") == _DIRECT_MODE:
+        return "direct_mode"
+    tool_name = payload.get("tool_name")
+    tool_input = payload.get("tool_input") or {}
+    for path in paths:
+        reason = _allowed_path(path, cwd, base)
+        if reason:
+            return reason
+        if _is_trivial_edit(tool_name, tool_input, path, cwd, base, claude_home):
+            return "trivial_fast_path"
+    return "unknown"
+
+
 def guarded_paths(payload: dict) -> list[str]:
     """Return code-edit targets reserved for Codex outside direct-edit sessions."""
     if os.environ.get("DINNER_EXECUTION_MODE") == _DIRECT_MODE:
@@ -209,16 +230,29 @@ def guarded_paths(payload: dict) -> list[str]:
 def main() -> None:
     payload = read_hook_input()
     blocked = guarded_paths(payload)
+    mode = "direct" if os.environ.get("DINNER_EXECUTION_MODE") == _DIRECT_MODE else "builder-first"
     if not blocked:
         if payload.get("tool_name") in _TARGET_TOOLS:
+            tool_name = payload.get("tool_name")
+            if mode == "direct":
+                reason = "direct_mode"
+            else:
+                tool_input = payload.get("tool_input") or {}
+                cwd = get_cwd(payload)
+                base = _repo_root(cwd)
+                claude_home = _resolve_claude_home()
+                paths = _extract_paths(tool_name, tool_input)
+                reason = _allow_reason(payload, paths, cwd, base, claude_home)
             log_event(
                 _HOOK_NAME,
                 event=_EVENT,
                 decision="allow",
-                tool_name=payload.get("tool_name", ""),
-                mode="builder-first",
+                reason=reason,
+                tool_name=tool_name,
+                mode=mode,
             )
         exit_allow()
+        return
     target = blocked[0]
     log_event(
         _HOOK_NAME,
@@ -228,7 +262,7 @@ def main() -> None:
         tool_name=payload.get("tool_name", ""),
         blocked_path_sha256=_path_digest(target),
         blocked_path_count=len(blocked),
-        mode="builder-first",
+        mode=mode,
     )
     exit_block(
         "[builder_guard:block] Builder-first mode reserves implementation edits "
