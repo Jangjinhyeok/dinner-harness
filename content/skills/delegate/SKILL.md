@@ -95,9 +95,14 @@ LOW-only by construction.
    intent at the start, which is the user's request itself), so dispatch right
    after showing the compact spec. First spawn a detached PowerShell window that
    tails Codex's live rollout log — the dispatch call below streams inside a
-   blocking Bash call the user cannot watch in real time otherwise:
+   blocking Bash call the user cannot watch in real time otherwise. `Start-Process`
+   is a PowerShell-only cmdlet with no equivalent in the Bash tool's Git Bash, so
+   run that line with the **PowerShell tool** and the `orchestrate.py build` line
+   with the **Bash tool**:
    ```
+   # PowerShell tool
    Start-Process powershell -ArgumentList "-NoExit","-File","<CLAUDE_HOME>/watch-builder.ps1"
+   # Bash tool
    py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --handoff HANDOFF_DELEGATE.md
    ```
    Replace `<CLAUDE_HOME>` and `<ABSOLUTE_REPO_PATH>` with their absolute
