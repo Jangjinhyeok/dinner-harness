@@ -420,7 +420,7 @@ class TestBuilderFirstGuard(unittest.TestCase):
         delegate = (root / "content" / "skills" / "delegate" / "SKILL.md").read_text(encoding="utf-8")
         architect_cmd = (
             'py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
-            '"<ABSOLUTE_REPO_PATH>" --backend real'
+            '"<ABSOLUTE_REPO_PATH>" --backend real --builder codex'
         )
         delegate_cmd = architect_cmd + " --handoff HANDOFF_DELEGATE.md"
         self.assertIn(architect_cmd, architect)

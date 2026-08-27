@@ -103,10 +103,10 @@ LOW-only by construction.
    # PowerShell tool
    Start-Process powershell -ArgumentList "-NoExit","-File","<CLAUDE_HOME>/watch-builder.ps1"
    # Bash tool
-   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --handoff HANDOFF_DELEGATE.md
+   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder codex --handoff HANDOFF_DELEGATE.md
    ```
    Replace `<CLAUDE_HOME>` and `<ABSOLUTE_REPO_PATH>` with their absolute
-   runtime paths. Do not prepend `cd` or append a pipe/redirection: the exact
+   runtime paths. `--builder codex` is the Claude Max switch point — see CLAUDE.md §2 "Builder vendor 스위치". Do not prepend `cd` or append a pipe/redirection: the exact
    direct invocation is the narrow permission-allowlisted dispatch path.
    `--handoff HANDOFF_DELEGATE.md` keeps a persistent `HANDOFF.md` (if any)
    untouched.

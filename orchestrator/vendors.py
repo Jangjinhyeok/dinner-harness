@@ -172,6 +172,7 @@ def _run(
     stdin_text: Optional[str] = None,
     abort_check: Optional[Callable[[str], Optional[str]]] = None,
     on_session_id: Optional[Callable[[str], None]] = None,
+    env: Optional[dict] = None,
 ) -> Turn:
     # shell=False with a list argv: the prompt (which carries the user goal and
     # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
@@ -205,6 +206,9 @@ def _run(
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            # None inherits the parent's environment unchanged (subprocess.Popen's
+            # own default) -- every existing caller keeps its current behavior.
+            env=env,
         )
         stdout: list[str] = []
         stderr: list[str] = []
@@ -287,12 +291,22 @@ class ClaudeBackend(Backend):
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
+        env = None
         # A Builder edits files autonomously; without a non-interactive
         # permission posture the headless turn would stall on approval.
         # VERIFY this flag name/behaviour on your CLI version.
         if role == ROLE_BUILDER:
             argv += ["--permission-mode", "acceptEdits"]
-        return _run(argv, cfg, stdin_text=prompt)
+            # This subprocess inherits the machine's installed ~/.claude hooks.json
+            # (it is a real `claude -p` session), including builder_guard -- which
+            # has no concept of "this Claude process IS the Builder" and blocks any
+            # non-bus-artifact Edit/Write outright. DINNER_EXECUTION_MODE=direct is
+            # the same escape claude-direct.cmd sets for a human direct-edit
+            # session; without it a Claude Builder turn can never write its
+            # implementation. The controller-side net (safety.py) remains the
+            # deterministic gate regardless of vendor.
+            env = {**os.environ, "DINNER_EXECUTION_MODE": "direct"}
+        return _run(argv, cfg, stdin_text=prompt, env=env)
 
 
 class CodexBackend(Backend):
