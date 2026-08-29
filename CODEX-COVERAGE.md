@@ -26,6 +26,13 @@ Codex 표현 위치 또는 drop 사유를 기록한다. **무음 소실 0**이 �
 > - **still-dropped**: `_mode` glob inject(Codex 대응 기제 없음). routing 별칭 skills·`adversarial-review`는 §2 drop 표.
 > - **preflight 반영 (§6) + 배선**: ① **apply_patch 배선 — 완료·검증.** Codex 편집은 `tool_name=apply_patch` + `tool_input.command`(패치 envelope), Claude식 `file_path` 아님(§6.2). `lib/common.parse_apply_patch`(envelope → `[(path, +content)]`) 추가 + `secret_scan`·`scope_check`·`suggest_compact`의 `_TARGET_TOOLS`에 `apply_patch` 추가 + path/content 추출 분기. 실 캡처 payload로 단위·핸들러 검증(보호경로 apply_patch→**exit 2 block**, `+`content fake key→**secret block**, Claude Edit 무회귀). **enforce 기제 = native sandbox/approval (확정, PreToolUse exit-2 아님)**: 정상 세션(`permission_mode=default`) 재검증(§6.3)에서도 exit-2가 apply_patch를 막지 못함(초기 측정 2회는 confound: ① bypass 모드 ② 훅이 code 1로 관측 + auto-accept 디버그 하니스). Codex가 approval 기반이라 apply_patch의 hard block은 **file-change approval(`FileChangeRequestApprovalResponse`: accept/decline)·sandbox·permission profile**이지 PreToolUse 훅 veto가 아님 → **Codex 포팅 hooks는 advisory(발화·로그·warn, hard block 아님)로 확정**(§4·AGENTS.md). 배선은 advisory를 정확화하는 데 유효. 스키마 사실: PermissionRequest 출력은 `{"decision":"decline"}` 거부, bare `"decline"` 수용(§6.4). ② **route_nudge는 Claude 전용으로 확정** — standalone Codex가 자신을 Builder로 dispatch할 수 없으므로 `hooks.json`에 등록하지 않으며, routing guidance는 `AGENTS.md`가 담당한다. ③ **skill path(완화)** — §6.6: Codex 0.141이 `~/.codex/skills` **와** `~/.agents/skills` **둘 다** 발견 → 현 `~/.codex/skills` 유효. ④ **hooks.json 스키마(OK)** — §6.1: native와 일치, 수정 불요. ⑤ subagent depth-1 동작·depth-2 차단 확인(§6.5) → hub는 leaf 직접 spawn 평탄화(agent preamble 반영됨).
 
+> **※ 2026-08-29 추가 (ADR-0013):** `orchestrate.py`/`orchestrator/`가 이제
+> `[targets.codex]` copy 목록에도 있어 `~/.codex/orchestrate.py`로 설치된다 —
+> 이전엔 `~/.claude`에만 있고 AGENTS.md 프로즈에서만 언급됐다. D1·D6 매핑 자체는
+> 바뀌지 않는다(cross-vendor orchestrator는 애초에 두 target 밖에 있는 controller
+> 소프트웨어); 이 추가는 그 controller가 이제 두 install 모두에서 물리적으로
+> 실행 가능함을 기록한다.
+
 ## 2. skills 회계 (27 = 9 native + 10 degraded + 8 dropped)
 
 설치됨 = **19** (clean 9 + degraded 10). 미설치 = **8** (dropped).

@@ -71,6 +71,8 @@ shared_dirs = ["agents"]
 
 copy = [
   ["assets/codex/AGENTS.md",  "AGENTS.md"],
+  ["orchestrate.py",           "orchestrate.py"],
+  ["orchestrator",             "orchestrator"],
   ["content/ecc-reference",   "ecc-reference"],
   ["content/docs",            "docs"],
   ["content/templates",       "templates"],

@@ -193,6 +193,28 @@ skips that axis.
 > **every** handler, so a bad copy there breaks every interactive hook at once. Details in
 > `orchestrator/README.md`.
 
+### 7) Using only one vendor
+
+**Claude only (without Codex)**: Architect is already Claude by default, so only the
+Builder vendor changes. In the dispatch commands in `content/instructions/CLAUDE.md`,
+`content/roles/ROLE_ARCHITECT.md`, `content/rules/_mode/architect.md`, and
+`content/skills/delegate/SKILL.md`, change `--builder codex` to `--builder claude` (4
+places). The existing code already injects `DINNER_EXECUTION_MODE=direct` into the
+subprocess environment so `ClaudeBackend` does not get blocked by its own
+`builder_guard` when it acts as Builder; no additional action is needed.
+
+**Codex only (without Claude Code)**: Conversely, the axis that changes is the
+**Architect vendor** — when the interactive driver itself is opened with the Codex
+CLI, Codex automatically takes the Architect role, and Builder already defaults to
+`codex`, so there is no flag to change. The only prerequisite is that
+`~/.codex/orchestrate.py` exists; `py -3 install.py --target codex` installs it
+automatically (ADR-0013). See §8 "Architect vendor switch" in `~/.codex/AGENTS.md`
+for the detailed dispatch command and switch explanation. Codex has no automatic
+`_mode` file injection, so explicitly declare `architect mode`/`builder mode` each time.
+
+Neither switch requires code changes — `ClaudeBackend` and `CodexBackend` in
+`orchestrator/vendors.py` already support the two roles symmetrically.
+
 ## What's inside (capabilities)
 
 The skills, agents, and hooks this harness ships. _A frontmatter-derived snapshot — update
