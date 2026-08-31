@@ -76,7 +76,7 @@ _HANDOFF_PATH = _HARNESS_HOME / _HANDOFF_NAME
 _FENCE_ENV = os.environ.get("CLAUDE_SCOPE_FENCE")
 _FENCE_PINNED = _FENCE_ENV is not None
 # "apply_patch" is Codex 0.149.0's file-edit tool (CODEX-COVERAGE.md §6.2, re-verified 2026-08-21 — see §6.5); it
-# codex-cli 0.149.1 installed 2026-08-26 (version label auto-updated by cli-update — NOT re-verified)
+# codex-cli 0.151.0 installed 2026-08-31 (version label auto-updated by cli-update — NOT re-verified)
 # carries the patch in tool_input.command, not a single file_path. Inert on
 # Claude (never emitted), active on Codex.
 _TARGET_TOOLS = {"Edit", "Write", "apply_patch"}

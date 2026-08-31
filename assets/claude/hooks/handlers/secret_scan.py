@@ -42,7 +42,7 @@ _HOOK_NAME = "secret_scan"
 _EVENT = "PreToolUse"
 _RULES_PATH = _HOOKS_ROOT / "rules" / "secret_patterns.json"
 # "apply_patch" is Codex 0.149.0's file-edit tool (CODEX-COVERAGE.md §6.2, re-verified 2026-08-21 — see §6.5); Claude
-# codex-cli 0.149.1 installed 2026-08-26 (version label auto-updated by cli-update — NOT re-verified)
+# codex-cli 0.151.0 installed 2026-08-31 (version label auto-updated by cli-update — NOT re-verified)
 # never emits it, so listing it here is inert on Claude and active on Codex.
 _TARGET_TOOLS = {"Edit", "Write", "Bash", "PowerShell", "apply_patch"}
 

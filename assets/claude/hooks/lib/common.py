@@ -65,7 +65,7 @@ def get_env_override(name: str, default: Any = None) -> Any:
 
 # Codex 0.149.0 sends file edits as tool_name="apply_patch" with the patch body in
 # (re-verified 2026-08-21 against codex-cli 0.149.0 — see CODEX-COVERAGE.md §6.5)
-# codex-cli 0.149.1 installed 2026-08-26 (version label auto-updated by cli-update — NOT re-verified against 0.149.1)
+# codex-cli 0.151.0 installed 2026-08-31 (version label auto-updated by cli-update — NOT re-verified against 0.151.0)
 # tool_input.command (a "*** Begin Patch ... *** End Patch" envelope) instead of
 # Claude's Edit/Write file_path+content shape (verified: CODEX-COVERAGE.md §6.2).
 # File paths live on the "*** Add/Update/Delete File:" and "*** Move to:" marker
