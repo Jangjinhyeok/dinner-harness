@@ -4,7 +4,8 @@ stdlib only. Invoked by install.py. Same install() signature as claude.py.
 
 Cycle 3 / adapter v2 targets current Codex (0.140+ / 0.149.0 observed, re-verified 2026-08-21 — see CODEX-COVERAGE.md §6.5).
 codex-cli 0.149.1 installed 2026-08-26 (version label auto-updated by cli-update — NOT re-verified):
-  - copy        : curated AGENTS.md + inert reference dirs
+  - copy        : inert reference dirs
+  - template    : curated AGENTS.md with plain-text variable substitution
   - skills      : portable subset under Codex skills
   - hooks       : native hooks.json + copied Python handlers/lib/rules
   - agents      : content/agents/*.md -> agents/*.toml
@@ -172,7 +173,7 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
     plan = []
 
-    # 1. verbatim copies (curated AGENTS.md + inert reference dirs)
+    # 1. verbatim copies (inert reference dirs)
     for src_rel, dest_rel in target_cfg.get("copy", []):
         _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run)
 
@@ -204,5 +205,17 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
             plan,
             dry_run,
         )
+
+    # 5. templated files (plain text substitution only — no JSON handling needed here).
+    builder_vendor_token = vars_cfg.get("builder_vendor_token", "<BUILDER_VENDOR>")
+    builder_vendor = vars_cfg.get("builder_vendor", "codex")
+    for entry in target_cfg.get("template", []):
+        src = repo_root / entry["src"]
+        dest = dest_root / entry["dest"]
+        text = src.read_text(encoding="utf-8").replace(builder_vendor_token, builder_vendor)
+        plan.append(("template", dest))
+        if not dry_run:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(text.encode("utf-8"))
 
     return plan

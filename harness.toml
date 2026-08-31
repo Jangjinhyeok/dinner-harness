@@ -13,6 +13,8 @@ description = "Custom harness: tool-neutral content/ + claude-native assets/clau
 # not pinned to C: and follow a custom --dest.
 username_token = "<USERNAME>"
 claude_home_token = "<CLAUDE_HOME>"
+builder_vendor_token = "<BUILDER_VENDOR>"
+builder_vendor = "codex"
 
 [targets.claude]
 # Directories shared with another tool. Leftovers under them are advisory-only;
@@ -22,18 +24,18 @@ shared_dirs = []
 # Verbatim copies. Each entry: [src (repo-relative), dest (target-root-relative)].
 # src may be a file or a directory (recursive). Directories honor the exclude lists below.
 copy = [
-  ["content/instructions/CLAUDE.md",      "CLAUDE.md"],
-  ["content/rules",                       "rules"],
+  ["content/rules/agent-routing.md",      "rules/agent-routing.md"],
+  ["content/rules/autonomy-policy.md",    "rules/autonomy-policy.md"],
+  ["content/rules/_mode/builder.md",      "rules/_mode/builder.md"],
   ["content/skills",                      "skills"],
   ["content/agents",                      "agents"],
-  ["content/roles",                       "roles"],
+  ["content/roles/ROLE_BUILDER.md",       "roles/ROLE_BUILDER.md"],
   ["content/templates",                   "templates"],
   ["content/ecc-reference",               "ecc-reference"],
   ["content/docs",                        "docs"],
   ["assets/claude/hooks",                 "hooks"],
   ["orchestrate.py",                      "orchestrate.py"],
   ["orchestrator",                        "orchestrator"],
-  ["assets/claude/README.md",             "README.md"],
   ["assets/claude/dh.cmd",                "dh.cmd"],
   ["assets/claude/dh-architect.cmd",      "dh-architect.cmd"],
   ["assets/claude/claude-direct.cmd",     "claude-direct.cmd"],
@@ -48,6 +50,12 @@ copy = [
 # Inline-table array so these stay direct keys of [targets.claude] regardless of order.
 template = [
   { src = "assets/claude/settings.json.template", dest = "settings.json", strip_keys = ["_template"], merge = true },
+  { src = "content/instructions/CLAUDE.md", dest = "CLAUDE.md" },
+  { src = "content/roles/ROLE_ARCHITECT.md", dest = "roles/ROLE_ARCHITECT.md" },
+  { src = "content/rules/_mode/architect.md", dest = "rules/_mode/architect.md" },
+  # `content/skills` stays bulk-copied; delegate is intentionally rendered again below.
+  { src = "content/skills/delegate/SKILL.md", dest = "skills/delegate/SKILL.md" },
+  { src = "assets/claude/README.md", dest = "README.md" },
 ]
 
 # Workflow state files: written only when the dest does not already exist
@@ -63,19 +71,22 @@ exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
 
 [targets.codex]
-# codex target: portable subset only (Cycle 2, D1/D7/D8). No templating, no skip-if-exists.
+# codex target: portable subset only (Cycle 2, D1/D7/D8). Plain-text templates only; no skip-if-exists.
 # Claude-only machinery (agents, hooks, roles, agent-routing, _mode) is dropped by this adapter
 # — a design decision (newer Codex supports hooks/agents but the semantics don't fully map; see
 # CODEX-RECON.md), accounted for in CODEX-COVERAGE.md. MCP is out of scope (no source; D5).
 shared_dirs = ["agents"]
 
 copy = [
-  ["assets/codex/AGENTS.md",  "AGENTS.md"],
   ["orchestrate.py",           "orchestrate.py"],
   ["orchestrator",             "orchestrator"],
   ["content/ecc-reference",   "ecc-reference"],
   ["content/docs",            "docs"],
   ["content/templates",       "templates"],
+]
+
+template = [
+  { src = "assets/codex/AGENTS.md", dest = "AGENTS.md" },
 ]
 
 # Skills: copy content/skills/* EXCEPT the Claude-machinery skills (D8). The dropped ones

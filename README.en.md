@@ -196,12 +196,12 @@ skips that axis.
 ### 7) Using only one vendor
 
 **Claude only (without Codex)**: Architect is already Claude by default, so only the
-Builder vendor changes. In the dispatch commands in `content/instructions/CLAUDE.md`,
-`content/roles/ROLE_ARCHITECT.md`, `content/rules/_mode/architect.md`, and
-`content/skills/delegate/SKILL.md`, change `--builder codex` to `--builder claude` (4
-places). The existing code already injects `DINNER_EXECUTION_MODE=direct` into the
-subprocess environment so `ClaudeBackend` does not get blocked by its own
-`builder_guard` when it acts as Builder; no additional action is needed.
+Builder vendor changes. Set `[vars].builder_vendor` to `"claude"` in `harness.toml` and
+run `py -3 refresh.py --apply` to reinstall (ADR-0014) — the four documents that once
+had to be synchronized by hand are now rendered from one source of truth. The existing
+code already injects `DINNER_EXECUTION_MODE=direct` into the subprocess environment so
+`ClaudeBackend` does not get blocked by its own `builder_guard` when it acts as Builder;
+no additional action is needed.
 
 **Codex only (without Claude Code)**: Conversely, the axis that changes is the
 **Architect vendor** — when the interactive driver itself is opened with the Codex
