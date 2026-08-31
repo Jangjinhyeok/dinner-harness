@@ -131,11 +131,19 @@ codex feasibility 분석(build vs adopt)은 `CODEX-RECON.md`, 콘텐츠별 nativ
 어느 역할이든 맡는다. **기본은 Claude=Architect / Codex=Builder** (역방향도 가능) — token sink인 Builder를
 quota 여유 큰 plan(Codex)에, 저volume Architect를 Claude Pro에 두는 배치.
 
-운용 모드 셋(통신은 어느 쪽이든 프로젝트 루트의 `HANDOFF.md`·`RESULT.md`·`INPUT.md` — IPC/MCP 불필요한 버스):
-- **orchestrated single-pane (기본)** — 인터랙티브 Claude 한 세션이 HANDOFF 승인 후 `orchestrate.py build`로
-  Codex Builder를 headless 자동 dispatch(**별도 Codex 터미널 안 엶**), RESULT를 같은 세션이 리뷰.
-- **manual dual-session** — 사람이 양쪽 인터랙티브 세션을 열고 버스로 courier(역방향·동일 vendor·fallback).
-- **fully headless** — `orchestrate.py run`이 양쪽을 headless 구동.
+운용 모드 셋과 지원 등급(통신은 어느 쪽이든 프로젝트 루트의 `HANDOFF.md`·`RESULT.md`·`INPUT.md` — IPC/MCP 불필요한 버스):
+- **Primary / production — orchestrated single-pane** (기본): 인터랙티브 Claude 한 세션이 HANDOFF 승인 후
+  `orchestrate.py build`(`run_from_handoff()`)로 Codex Builder를 headless 자동 dispatch(**별도 Codex 터미널
+  안 엶**). **HIGH acceptance는 Builder의 panel 자기보고가 아니라 Claude의 실제 diff 리뷰 + 사람 종단
+  서명이 담당한다** — 자기보고는 advisory일 뿐 accept/reject를 결정하지 않는다.
+- **Supported secondary — manual dual-session**: 사람이 양쪽 인터랙티브 세션을 열고 버스로 courier(역방향
+  페어링·동일 vendor 2세션·Codex 단독 Architect 등). 매 게이트를 사람이 직접 리뷰하므로 독립 검토가 유지된다.
+- **Experimental — fully headless** (`orchestrate.py run`): Architect·Builder 양쪽을 headless 구동한다.
+  **이 경로만 Builder의 panel 자기보고를 hard tier gate의 일부로 신뢰한다** — 그 사이에 독립적인 사람/Claude
+  리뷰가 없어(그 topology엔 다른 리뷰어가 없음) HIGH acceptance semantics가 primary path보다 **약하다**.
+  Builder가 jury skill이 없는 vendor(Codex — `adversarial-review`는
+  `harness.toml [targets.codex].skills_drop`)면 자기보고는 검증되지 않은 self-review에 불과하다. HIGH
+  작업에 이 경로를 쓸 땐 결과를 추가로 사람이 직접 검토할 것을 권장한다.
 
 - **Claude**: `content/roles/ROLE_{ARCHITECT,BUILDER}.md` + `rules/_mode/`(통신 파일 paths 매칭 시 자동 inject).
 - **Codex**: 동일 프로토콜을 `assets/codex/AGENTS.md` §8로 curate. Codex엔 paths 자동 inject가 없어 모드는
@@ -248,6 +256,11 @@ refresh.py --apply`로 재설치하면 끝이다(ADR-0014) — 예전엔 4개 �
 `ClaudeBackend`가 Builder 역할일 때 자기 자신의 `builder_guard`에 막히지 않도록
 `DINNER_EXECUTION_MODE=direct`를 서브프로세스 환경에 심는 처리는 이미 코드로 되어
 있어 추가 조치가 필요 없다.
+
+**주의**: 이 설정은 위 문서들의 렌더된 dispatch 예시만 바꾼다. `orchestrate.py`를
+`--builder` 플래그 없이 직접 호출하면 `orchestrator/config.py`의 코드 기본값
+(`"codex"`)이 적용된다 — `harness.toml`은 런타임에 읽히지 않는다. 렌더된 문서가
+보여주는 `--builder <BUILDER_VENDOR>` 형태를 그대로 쓰면 문제없다.
 
 **Codex만 사용 (Claude Code 없이)**: 반대로 바뀌는 축은 Architect vendor다 —
 인터랙티브 드라이버 자체를 Codex CLI로 열면 Architect 역할은 자동으로 Codex가

@@ -33,13 +33,13 @@ Codex 표현 위치 또는 drop 사유를 기록한다. **무음 소실 0**이 �
 > 소프트웨어); 이 추가는 그 controller가 이제 두 install 모두에서 물리적으로
 > 실행 가능함을 기록한다.
 
-## 2. skills 회계 (27 = 9 native + 10 degraded + 8 dropped)
+## 2. skills 회계 (29 = 10 native + 10 degraded + 9 dropped)
 
-설치됨 = **19** (clean 9 + degraded 10). 미설치 = **8** (dropped).
+설치됨 = **20** (clean 10 + degraded 10). 미설치 = **9** (dropped).
 
-### COPY — clean native (9)
+### COPY — clean native (10)
 Claude-machinery 마커 없음(정밀 grep 0건). Codex에서 그대로 동작:
-`eval-harness`, `goal-driven-execution`, `simplicity-first`, `surgical-changes`, `tech-debt`, `think-before-coding`, `ue-umg-review`, `verification-loop`, `walkthrough`(2026-07-02 신설 — git+Read만, vendor-neutral)
+`cli-update`(Bash+Read만, vendor-neutral — npm/brew 버전 확인·업데이트에 Claude 전용 기제 없음, 정밀 grep 0건), `eval-harness`, `goal-driven-execution`, `simplicity-first`, `surgical-changes`, `tech-debt`, `think-before-coding`, `ue-umg-review`, `verification-loop`, `walkthrough`(2026-07-02 신설 — git+Read만, vendor-neutral)
 
 > **Open Q2 해소**: HANDOFF가 `ue-umg-review`를 degraded 예시로 들었으나, 실제 스캔 결과 `agent:`/`Task`/`specialist`/`~/.claude` 마커 **0건** → **clean**으로 분류(UMG 도메인 지식은 portable, Claude-tool 결합 없음). HANDOFF 가정이 미성립.
 
@@ -61,7 +61,7 @@ verbatim 복사하되, **Claude-specific frontmatter/본문이 Codex에서 무�
 
 > degraded는 **drop이 아님** — skill 본문 절차는 Codex에서도 유효하며, Claude 전용 위임 지시만 무시된다.
 
-### DROP (8)
+### DROP (9)
 core function이 Claude-harness 기제라 설치 제외(`harness.toml [targets.codex].skills_drop`):
 
 | skill | drop 사유 |
@@ -74,6 +74,7 @@ core function이 Claude-harness 기제라 설치 제외(`harness.toml [targets.c
 | `harness-review` | `~/.claude/` 배선 감사 — Claude 하네스 전용 |
 | `learnings-review` | `learning_log` hook 산출물 → CLAUDE.md 승격 — Claude hook 전용 |
 | `adversarial-review` | 직교 축 다중 judge를 Task로 fan-out하는 패널 — Codex subagent exec 부재로 붕괴 |
+| `delegate` | Claude Architect가 Codex Builder를 headless dispatch하는 워크플로우 자체(`orchestrate.py build`) — Codex 세션이 자기 자신을 재귀 dispatch할 수 없음. `~/.claude/rules/autonomy-policy.md` 등 Claude 경로도 참조 |
 
 ## 3. dropped 인벤토리 (무음 소실 0)
 
@@ -148,3 +149,18 @@ cli-update skill Phase 8 절차 3단계 전부 재실행:
 3. **install pipeline check** — `py -3 install.py --target codex --dest <scratch>` 성공(`plan: agent=13, copy=57, hooks_json=1` — 0.148.0과 동일한 카운트). 생성된 `hooks.json`은 native 스키마와 일치(top-level `hooks`, `PreToolUse`/`PostToolUse`). `agents/*.toml` 13개 전부 `tomllib.load()` 파싱 성공.
 
 결론: 세 축 모두 0.148.0(§6.4) 대비 드리프트 없음. `parse_apply_patch`(D4 안전망)·`CodexBackend`(dispatch 파싱)·`adapters/codex.py`(install 파이프라인) 전부 codex-cli 0.149.0에서 동작 확인. `experimental_windows_sandbox`의 features-list 라벨 변화(removed 표시)만 관찰됐고 실동작은 무변화.
+
+### 6.6 0.151.0 재검증 (2026-08-31)
+
+환경: `codex-cli 0.151.0`(cli-update로 0.149.1→0.151.0 업데이트 후 미검증 상태였던 것을 이번에 재검증). `codex features list` → `hooks` stable·`multi_agent` stable(0.149.0과 동일). `experimental_windows_sandbox`는 여전히 `removed` 라벨이지만(0.149.0부터 동일 관찰) `codex exec --enable experimental_windows_sandbox`는 여전히 인자로 수용되고 세션 헤더가 `sandbox: workspace-write [workdir, /tmp, $TMPDIR]`를 정상 보고 — 실동작 무변화.
+
+cli-update skill Phase 8 절차를 dinner-harness 재검증 cycle(Phase 0-D)의 최종 release-candidate 검토 중 실제로 재실행했다. 이번엔 controller-side net을 스크립트로 직접 재실행해(§6.3-6.5의 native hook 단독 확인보다 강한 증거) 실제 enforcement 경로까지 검증했다:
+
+1. **`apply_patch` payload check** — scratch git repo에 좁은 ` ```scope ``` `(`allowed.py`만)를 두고, 실제 `orchestrate.py build --backend real --builder codex`로 Codex Builder에게 scope 밖 파일(`forbidden.py`, 가짜 AWS 키 `AKIA`+16자 포함)도 함께 만들도록 지시했다.
+   - **native hook**(`~/.codex/hooks.json`) 로그: `secret_scan.log`에 `tool_name=apply_patch`, `match_path=forbidden.py`(패치 envelope에서 정확히 추출), `decision=block`, `reason=aws_access_key match in content`가 두 차례(Codex의 자체 재시도) 정상 기록됨 — `parse_apply_patch`/경로 추출 로직은 0.151.0에서도 변화 없음.
+   - `scope_check.log`(native)는 이 실제 dispatch 경로에서 `HANDOFF.md not found`(`error_internal`)를 기록했다 — native `codex exec` 프로세스에는 `DINNER_HARNESS_HOME`/`CLAUDE_SCOPE_FENCE`가 전달되지 않기 때문(controller의 자체 재-스캔 subprocess에만 그 env가 설정됨)이며, 기존에 이미 문서화된 "native hook은 advisory"라는 설계와 정합 — 새 회귀 아님.
+   - **controller-side net**(실제 hard-block 경로, `orchestrator/safety.py`)을 같은 changeset에 대해 직접 재실행 → `secret_scan`·`scope_check` 둘 다 `forbidden.py`를 정확히 block(`blocked=True`, `scope_blocked_paths=['forbidden.py']`, `secret_blocked_paths=['forbidden.py']`). 실제 `orchestrate.py build` 프로세스도 이 net 때문에 최종 `BLOCKED`(exit code 1)로 종료 — 0.151.0에서 실제 enforcement 경로 무변화 확인.
+2. **`codex exec` output check** — 위 scratch dispatch 자체가 이 축도 겸해 검증한다: 세션이 정상 시작(`OpenAI Codex v0.151.0`, workdir/model/sandbox 정상 보고)했고, Codex가 최종 메시지에 ` ```verdicts ``` ` 블록을 정상 작성했다(controller가 정상 파싱). 이와 별개로 이번 재검증 cycle(Phase 0-D, 14개 gate + corrective) 동안 같은 메커니즘으로 실제 `orchestrate.py build --backend real --builder codex`를 dinner-harness 저장소 자체에 대해 19회 반복 실행했고, 전부 RESULT.md의 verdicts 블록이 정상 파싱되고 controller-side net이 정상 동작했다 — `CodexBackend`의 `codex exec` 플래그·출력 파싱 포맷은 0.151.0에서도 무변화.
+3. **install pipeline check** — `py -3 install.py --target codex --dest <scratch>` 성공(`plan: agent=13, copy=67, hooks_json=1, template=1`). copy 카운트가 0.149.0 재검증(§6.5, 57)보다 늘어난 건 codex-cli 버전과 무관하게 이번 재검증 cycle 동안 harness content 자체가 늘었기 때문(CI workflow·새 ADR 5개·reference 문서 등 추가)이다. 생성된 `hooks.json`은 native 스키마와 일치. `agents/*.toml` 13개 전부 `tomllib.load()` 파싱 성공.
+
+결론: 세 축 모두 0.149.0(§6.5) 대비 드리프트 없음. `parse_apply_patch`(D4 안전망)·`CodexBackend`(dispatch 파싱)·`adapters/codex.py`(install 파이프라인) 전부 codex-cli 0.151.0에서 동작 확인. 이번 재검증은 처음으로 controller-side net(실제 hard-block 경로)을 native hook 로그와 별개로 직접 재실행해 검증했다 — 이후 재검증도 이 방식을 권장한다(native hook만으로는 advisory 경로만 증명되고, 실제 dispatch가 기대는 enforcement 경로는 증명되지 않는다).

@@ -154,29 +154,9 @@ path이므로 기존 의미대로만 사용한다.
 
 ### Builder-first execution details
 
-The normal `claude` command is the daily strict entrypoint. `builder_guard`
-blocks Claude `Edit`/`Write` implementation edits by default; it permits only
-root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
-`docs/architecture/*.md`, plus persistent-memory Markdown under
-`<CLAUDE_CONFIG_DIR>/projects/*/memory/` (or `~/.claude/...` when the variable
-is unset). The memory path is resolved before segment-based matching, so path
-traversal is not allowed. Write the self-contained HANDOFF, create an ADR when
-the decision is structural, then dispatch Codex with `orchestrate.py build`.
-
-`~/.claude/dh.cmd` and `~/.claude/dh-architect.cmd` remain compatibility
-launchers with the same Builder-first behavior. They are not required for the
-daily workflow. `~/.claude/claude-direct.cmd` is the only direct-edit escape;
-it sets `DINNER_EXECUTION_MODE=direct` for that one Claude process.
-
-This is a workflow guard, not a sandbox. It deliberately does not parse or
-block arbitrary Bash/PowerShell commands: the controller safety net remains the
-deterministic decision boundary, and containment remains the sandbox's responsibility.
-
-Each `build` appends content-free `attempted` then terminal (`built`, `blocked`,
-`timeout`, or `builder_bailed`) JSONL events under the harness runtime `logs/`
-directory and prints a `[receipt]` path only after the terminal event is
-written. The record has hashes and outcome metadata, never HANDOFF/RESULT text,
-prompts, or changed-file content.
+`builder_guard`가 정확히 무엇을 허용/차단하는지, `dh.cmd`류 호환 launcher,
+"sandbox 아님" 설계, audit receipt(JSONL) 형식 등 내부 동작 detail은 →
+`~/.claude/rules/two-cli-reference.md` "Builder-first execution details" 참조.
 
 ### `!` shell-output fast path
 
@@ -199,30 +179,15 @@ prompts, or changed-file content.
 
 ### Cross-vendor 역할 분담
 
-Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**. 두 역할 모두 vendor-neutral한 협업 프로토콜이며 Claude·Codex 어느 쪽이든 어느 역할이든 맡을 수 있다.
-
-**기본 페어링은 Claude = Architect, Codex = Builder다.** 근거는 token economy — 두 역할의 토큰 소비는 비대칭이다. **Builder가 token sink**다(여러 파일 Read, diff 생성, 빌드·에러 iterate 반복, 큰 컨텍스트, tool call 다발). 반면 **Architect는 low-volume·high-leverage**다(추론, 선별 Read, HANDOFF spec 작성, diff 검수). 따라서 토큰 무거운 Builder를 **quota 여유가 큰 plan(Codex)**에, 가벼운 Architect를 **quota가 빠듯한 plan(Claude Pro)**에 둔다 — Claude Max→Pro 다운그레이드로 Claude quota가 줄어든 상황의 합리적 배치다. 품질 축도 같은 방향이다: 설계 오류는 blast-radius가 크지만 Architect는 저volume이라, quota 빠듯하지만 추론 잘하는 모델에 정확히 들어맞는다.
-
-예시 페어링:
-
-- **Claude = Architect, Codex = Builder** (기본 — 설계·추론은 Claude, 토큰 무거운 구현·iterate는 Codex)
-- **Codex = Architect, Claude = Builder** (역방향 — Claude quota가 충분하거나 특정 작업에서 Codex 설계가 더 나을 때)
-- 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
+Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**이며, 기본 페어링은 **Claude = Architect, Codex = Builder**다(token economy 근거·예시 페어링·vendor 스위치 메커니즘·scope 한계·cross-vendor 주의사항 → `~/.claude/rules/two-cli-reference.md` "Cross-vendor 역할 분담").
 
 통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본 dispatch는 원본 repository에서 실행한다. 런타임 IPC나 MCP는 필요 없다.
 
-**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면, dispatch 전에 baseline commit으로 원본 repository를 clean하게 둔다.
+**Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면 곧바로 dispatch한다. Baseline commit은 protocol 요구사항이 아니다 — controller의 before/after `git status` snapshot delta(ADR-0007)가 tracked 상태의 기존 dirt를 두 snapshot 모두에 포함시켜 이미 상쇄하므로, dispatch 전에 clean commit을 강제할 필요가 없다. 다만 커밋되지 않은 **untracked** 중요 파일은 Builder나 이후 작업으로 유실될 rollback 위험이 남으므로, 그런 파일이 있다면 사용자 판단으로 선택적으로 커밋해 두는 것을 권장한다(강제 아님 — §6의 명시 승인 없는 auto-commit 금지와 정합).
 
-**Builder vendor 스위치**: 기본값은 `codex` — Claude가 quota 빠듯한 plan(Pro 등)이라 token sink인 구현을 Codex에 맡기는 게 전제다(근거는 위 "cross-vendor 역할 분담"). 이 값은 `harness.toml`의 `[vars].builder_vendor` 한 곳에서 중앙 관리된다(ADR-0014) — **Claude Max 등으로 옮겨 Codex 없이 Claude만 쓰고 싶어지면, 그 값을 `"claude"`로 바꾸고 `py -3 refresh.py --apply`로 재설치하는 것이 유일한 필수 변경이다.** `orchestrate.py`는 이미 `ClaudeBackend`/`CodexBackend` 양쪽을 동등하게 지원하므로(`orchestrator/vendors.py`) 코드 변경은 불필요하다. 아래 dispatch 명령을 비롯해 `~/.claude/roles/ROLE_ARCHITECT.md`·`~/.claude/rules/_mode/architect.md`·`~/.claude/skills/delegate/SKILL.md`·`~/.claude/README.md`·`~/.codex/AGENTS.md`의 동일 dispatch 명령도 같은 값으로 함께 렌더링되므로 개별 수정이 필요 없다. 이 문서·ROLE 파일의 나머지 Codex 관련 서술(quota 비대칭 근거, cross-vendor 주의사항 등)은 그 시점부터 더는 적용되지 않지만 동작을 막지는 않는다 — 정리는 그때 필요한 만큼만 한다. 반대로 Claude Code 없이 Codex만 쓰고 싶다면(Codex 단독), 바뀌는 축은 Builder vendor가 아니라 **Architect vendor**다 — 상세는 `~/.codex/AGENTS.md` §8 "Architect vendor 스위치" 참조(근거: ADR-0013).
+이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>` 형태로 **Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다. `--builder <BUILDER_VENDOR>`는 `harness.toml`의 `[vars].builder_vendor`에서 중앙 관리된다(ADR-0014) — 스위치 방법·scope 한계는 위 참조 문서.
 
-이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>` 형태로 **Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다.
-
-원본 repository의 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로, dispatch 중에는 해당 repository를 편집하지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 발화하지만 PreToolUse exit 2가 edit을 직접 막지 못하므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 in-place dispatch 절. (역방향·동일 vendor 2세션은 수동.)
-
-cross-vendor 시 주의:
-
-- **HANDOFF.md는 self-contained여야 한다.** Builder가 다른 vendor면 상대에게 없는 도구(특정 skill·subagent·`/명령`)를 전제하지 않는다. 게이트의 빌드·검증은 표준 CLI 명령으로 기술한다.
-- **Codex 세션은 path-매칭 auto-inject가 없다.** Claude는 `HANDOFF.md`/`RESULT.md`를 읽으면 `_mode` reminder가 자동으로 박히지만, Codex엔 그 기제가 없으므로 사용자가 모드를 **명시 선언**한다(`architect 모드`/`builder 모드`). Codex의 역할 프로토콜은 `~/.codex/AGENTS.md`의 Two-CLI 섹션(§8)에 있다.
+원본 repository의 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로, dispatch 중에는 해당 repository를 편집하지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 advisory이므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 in-place dispatch 절. (역방향·동일 vendor 2세션은 수동. cross-vendor 시 주의사항은 위 참조 문서.)
 
 ### 모드를 사용하지 않아도 되는 경우
 

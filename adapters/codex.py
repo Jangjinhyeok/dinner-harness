@@ -2,8 +2,7 @@
 
 stdlib only. Invoked by install.py. Same install() signature as claude.py.
 
-Cycle 3 / adapter v2 targets current Codex (0.140+ / 0.149.0 observed, re-verified 2026-08-21 — see CODEX-COVERAGE.md §6.5).
-codex-cli 0.151.0 installed 2026-08-31 (version label auto-updated by cli-update — NOT re-verified):
+Cycle 3 / adapter v2 targets current Codex (0.140+ / 0.151.0 observed, re-verified 2026-08-31 — see CODEX-COVERAGE.md §6.6):
   - copy        : inert reference dirs
   - template    : curated AGENTS.md with plain-text variable substitution
   - skills      : portable subset under Codex skills
@@ -116,8 +115,15 @@ Codex custom-agent notes:
 def _write_agents(repo_root, dest_root, agents_src, agents_dest, plan, dry_run):
     src_root = repo_root / agents_src
     dest = dest_root / agents_dest
+    seen: dict[str, Path] = {}
     for f in sorted(src_root.rglob("*.md")):
         rel = f.relative_to(src_root)
+        if f.stem in seen:
+            raise RuntimeError(
+                f"duplicate agent stem {f.stem!r}: {seen[f.stem]} and {f} both "
+                f"flatten to {f.stem}.toml — rename one before installing"
+            )
+        seen[f.stem] = f
         target = dest / f"{f.stem}.toml"
         plan.append(("agent", target))
         if not dry_run:

@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+from datetime import datetime, timezone
 import os
 import re
 import sys
@@ -278,9 +279,7 @@ def check_install(target, live_root=None, username=None):
 
 
 def do_update():
-    blessed_at = "unknown"
-    if CURATION.is_file():
-        blessed_at = tomllib.load(open(CURATION, "rb")).get("blessed_at", "unknown")
+    blessed_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     h = sha256(CLAUDE_MD)
     CURATION.write_text(
         "# curation drift manifest — read by check.py. Re-bless: `py -3 check.py --update`.\n"
@@ -288,7 +287,7 @@ def do_update():
         f'claude_md_blessed_hash = "{h}"\n'
         f'blessed_at = "{blessed_at}"\n',
         encoding="utf-8")
-    print(f"re-blessed CLAUDE.md hash → curation.toml ({h[:16]}…)")
+    print(f"re-blessed CLAUDE.md hash → curation.toml ({h[:16]}…, blessed_at={blessed_at})")
 
 
 def main(argv=None):

@@ -53,7 +53,32 @@ Compare as semver (major.minor.patch); treat a non-parseable local version strin
 
 ## Phase 4: Apply updates
 
-For every tool marked UPDATE AVAILABLE:
+**Harness compatibility gate (codex only):** before applying a codex update, check
+whether the current working directory (or the repo housing this skill install)
+contains `orchestrator/vendors.py` — the same detection Phase 6 uses below, just
+evaluated earlier. If it does and codex is marked UPDATE AVAILABLE, do NOT run the
+install command yet. Instead report:
+
+```
+⚠ codex candidate v<Y> detected in the dinner-harness repo. This repo has
+  version-pinned safety-net code (apply_patch parsing, codex exec output
+  parsing, hooks.json/agents.toml generation — see Phase 6/8 below) that has
+  only been verified against v<X>. Promoting straight to v<Y> without a
+  compatibility check risks silently breaking the Codex Builder safety net.
+  Run Phase 8's re-verification procedure against the candidate first, or
+  explicitly confirm you want to install v<Y> now anyway (same latest-first
+  behavior as before, at your own risk).
+```
+
+Wait for the user's explicit go-ahead before running `npm install -g
+@openai/codex@latest` in this case. If the user does not confirm, skip the
+install for codex and report it in Phase 5 as "update available, held pending
+compatibility check" rather than silently dropping it. This gate does not apply
+to `claude`, and does not apply to `codex` outside the dinner-harness repo —
+those proceed immediately, exactly as before.
+
+For every other tool marked UPDATE AVAILABLE (or codex after explicit
+confirmation above):
 
 - npm channel: run `npm install -g <package>@latest`.
 - Homebrew channel: run `brew upgrade <formula>`.

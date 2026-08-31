@@ -36,7 +36,7 @@
 
 기본 페어링(Claude=Architect, Codex=Builder)에서, HANDOFF.md가 in-session 사람 승인을 받은 직후 — 사용자에게 Codex 터미널 수동 전환을 시키지 말고 **자동으로 Builder를 dispatch**한다:
 
-1. 승인된 HANDOFF.md가 있는 원본 repository를 dispatch 전에 baseline commit으로 clean하게 둔다. HANDOFF.md는 같은 repository의 bus artifact이므로 복사하지 않는다.
+1. 승인된 HANDOFF.md가 있는 원본 repository에서 곧바로 dispatch한다 — baseline commit은 필수가 아니다(controller의 snapshot delta가 tracked 기존 dirt를 이미 상쇄한다; untracked 중요 파일이 있다면 선택적으로 커밋해 두는 것을 권장). HANDOFF.md는 같은 repository의 bus artifact이므로 복사하지 않는다.
 2. **PowerShell 도구로** 새 terminal 창을 detached로 띄워 Codex rollout log를 실시간으로 tail한다: `Start-Process powershell -ArgumentList "-NoExit","-File","<CLAUDE_HOME>/watch-builder.ps1"`. (`Start-Process`는 PowerShell 전용 cmdlet이라 Bash tool=Git Bash에는 이 이름의 명령이 존재하지 않는다 — Bash로 실행하면 `command not found`로 조용히 실패하고 다음 단계인 `orchestrate.py build`는 정상 진행되어, 겉보기엔 dispatch가 성공한 것처럼 보이면서 모니터 창만 뜨지 않는다.)
    - `<CLAUDE_HOME>`은 설치된 Claude home의 절대경로로 치환한다. 이 창은 **Bash tool**로 호출한 `orchestrate.py build`(3번)가 완료 전까지 사람에게 stream되지 않는 동안 Builder의 실시간 진행상황(Codex rollout event)을 보여준다.
 3. Bash로 호출: `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>`

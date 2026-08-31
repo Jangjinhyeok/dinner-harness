@@ -1,6 +1,6 @@
 # Autonomy Policy (Risk-Tiered Gating)
 
-이 규칙은 항상 주입된다. **중간 판단(inner-loop)을 사람이 게이트하느냐 agent가 게이트하느냐**를 정하는 단일 소스다. CLAUDE.md(§1.4·§5·§6)·roles(`ROLE_ARCHITECT`·`ROLE_BUILDER`)·`agent-routing.md`·`autonomous-loop`·`adversarial-review` skill이 전부 이 파일을 **경로로 참조**한다 — tier 정의를 다른 곳에서 재정의하지 않는다.
+이 규칙은 항상 주입된다. **중간 판단(inner-loop)을 사람이 게이트하느냐 agent가 게이트하느냐**를 정하는 canonical policy 정의다. CLAUDE.md(§1.4·§5·§6)·roles(`ROLE_ARCHITECT`·`ROLE_BUILDER`)·`agent-routing.md`·`autonomous-loop`·`adversarial-review` skill이 전부 이 파일을 **경로로 참조**한다. `orchestrator/controller.py`의 `_TIER_RULE`(헤드리스 Architect 프롬프트용 runtime mirror)처럼 이 정의를 코드에 복사해 쓰는 곳은 이 문서와 **semantically 동일해야 하며**, `test_tier_rule_contains_all_high_keywords` regression test가 이를 지킨다(ADR-0017) — 새 machine-readable policy layer는 두지 않는다.
 
 ## 핵심 모델
 

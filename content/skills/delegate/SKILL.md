@@ -51,8 +51,11 @@ push a new delivery branch.
 **Prerequisite (both lanes): the work directory must be a git repo.** The safety
 net collects the changeset via `git status --porcelain` and **fails closed** when
 git is unavailable, so a non-repo directory cannot be dispatched at all. Run the
-CLI from the directory where the files already live, and commit a clean baseline
-first — the inline review reads `git diff` against it.
+CLI from the directory where the files already live. A baseline commit is not
+required — the controller's before/after snapshot delta already isolates the
+Builder's own changes even on a dirty tree; the inline review reads `git diff`
+against whatever was there before dispatch. If any untracked file matters and
+isn't ready to lose, commit it first as an optional safety net.
 
 ## When to use vs escalate
 

@@ -111,6 +111,8 @@ def _build(args: argparse.Namespace) -> int:
     )
     outcome = Orchestrator(cfg, builder, builder, AutoApprove()).run_from_handoff()
     print(f"\n[outcome] {outcome.status} after {outcome.cycles} cycle(s): {outcome.reason}")
+    if outcome.remaining_gates:
+        print(f"[outcome] remaining gates: {', '.join(outcome.remaining_gates)}")
     if outcome.receipt_path is not None:
         print(f"[receipt] {outcome.receipt_path} id={outcome.receipt_id}")
     if outcome.status == BUILT:

@@ -203,6 +203,12 @@ code already injects `DINNER_EXECUTION_MODE=direct` into the subprocess environm
 `ClaudeBackend` does not get blocked by its own `builder_guard` when it acts as Builder;
 no additional action is needed.
 
+**Note**: this setting only changes the dispatch example rendered into the documents
+above. Calling `orchestrate.py` directly without a `--builder` flag still uses the
+code-level default in `orchestrator/config.py` (currently `"codex"`) — `harness.toml`
+is not read at runtime. Using the `--builder <BUILDER_VENDOR>` form the rendered
+documents already show avoids the mismatch.
+
 **Codex only (without Claude Code)**: Conversely, the axis that changes is the
 **Architect vendor** — when the interactive driver itself is opened with the Codex
 CLI, Codex automatically takes the Architect role, and Builder already defaults to

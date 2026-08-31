@@ -50,6 +50,26 @@ _UE_GENERIC = re.compile(
     r"\bUnreal\b|\bUE5\b|\.uasset\b|UPROPERTY|UFUNCTION|Niagara|\bcooking\b|\bpackaging\b",
     re.IGNORECASE,
 )
+# Repo-level signal (mirrors agent-routing.md's "엔진 판별"): only these two
+# glob patterns identify an Unreal project. UE-domain keyword matches below
+# are gated on this so a bare word like "widget"/"repl" in a non-Unreal repo
+# (e.g. this harness repo itself) does not trigger an Unreal-specific nudge.
+_UE_REPO_GLOBS = ("*.uproject", "Source/*/*.Build.cs")
+
+
+def _looks_like_unreal_repo(cwd: str | None) -> bool:
+    """Best-effort repo-signal check. ``cwd=None`` means the caller did not
+    supply one (e.g. a prompt-only unit test) — treat that as "unknown" rather
+    than "not Unreal" so existing prompt-only callers keep prior behavior."""
+    if cwd is None:
+        return True
+    try:
+        root = Path(cwd)
+        return any(next(root.glob(pattern), None) is not None for pattern in _UE_REPO_GLOBS)
+    except OSError:
+        return True
+
+
 # Self-referential audit/meta prompts (e.g. /harness-review) enumerate UE domain
 # keywords and work-intent verbs as catalog text, not real implementation intent.
 _META_AUDIT = re.compile(r"harness-review|route_nudge|hook log|conformance 감사", re.IGNORECASE)
@@ -87,12 +107,15 @@ def _default_route_message() -> str:
     )
 
 
-def message_for_prompt(prompt: str) -> tuple[str, list[str]] | None:
+def message_for_prompt(prompt: str, cwd: str | None = None) -> tuple[str, list[str]] | None:
     """Return the route injection and optional UE domains, or ``None`` for reads.
 
-    This is intentionally prompt-only: exact tier, scope, and verification
-    remain Claude's responsibility after repository inspection and before a
-    delegate or architect workflow writes its HANDOFF.
+    This is intentionally prompt-only for tier/scope/verification: exact tier,
+    scope, and verification remain Claude's responsibility after repository
+    inspection and before a delegate or architect workflow writes its HANDOFF.
+    ``cwd``, when supplied, gates the UE-domain branches on an actual repo
+    signal (see ``_looks_like_unreal_repo``) so a keyword match alone cannot
+    trigger an Unreal-specific nudge in a non-Unreal repository.
     """
     if not prompt or not _WORK_INTENT.search(prompt):
         return None
@@ -101,39 +124,40 @@ def message_for_prompt(prompt: str) -> tuple[str, list[str]] | None:
     if _META_AUDIT.search(prompt):
         return prefix, ["default"]
 
-    matched = [(key, agent) for key, agent, pat in _UE_DOMAINS if pat.search(prompt)]
-    if len(matched) == 1:
-        key, agent = matched[0]
-        return (
-            f"{prefix} [route-nudge] This also looks like UE {key.upper()} work. "
-            f"For implementation work, you MUST consult `/{key}` "
-            f"(unreal-specialist + docs/specialists/{agent}) before writing the HANDOFF "
-            "and incorporate the consult's design decisions, anti-patterns, and "
-            "verification points into it. Read-only questions and genuine 1-2-line "
-            "changes are exceptions.",
-            [key],
-        )
-    if len(matched) >= 2:
-        domains = [key for key, _ in matched]
-        aliases = ", ".join(f"/{key}" for key in domains)
-        return (
-            f"{prefix} [route-nudge] This prompt spans multiple UE subsystems "
-            f"[{aliases}], an additional architect-route signal. Use `/ue` only for "
-            "implementation work: you MUST consult it before writing the HANDOFF and "
-            "incorporate the consult's design decisions, anti-patterns, and "
-            "verification points into it. Read-only questions and genuine 1-2-line "
-            "changes are exceptions.",
-            domains,
-        )
-    if _UE_GENERIC.search(prompt):
-        return (
-            f"{prefix} [route-nudge] This also has a generic Unreal signal; use `/ue` "
-            "for implementation work: you MUST consult it before writing the HANDOFF "
-            "and incorporate the consult's design decisions, anti-patterns, and "
-            "verification points into it. Read-only questions and genuine 1-2-line "
-            "changes are exceptions.",
-            ["hub_generic"],
-        )
+    if _looks_like_unreal_repo(cwd):
+        matched = [(key, agent) for key, agent, pat in _UE_DOMAINS if pat.search(prompt)]
+        if len(matched) == 1:
+            key, agent = matched[0]
+            return (
+                f"{prefix} [route-nudge] This also looks like UE {key.upper()} work. "
+                f"For implementation work, you MUST consult `/{key}` "
+                f"(unreal-specialist + docs/specialists/{agent}) before writing the HANDOFF "
+                "and incorporate the consult's design decisions, anti-patterns, and "
+                "verification points into it. Read-only questions and genuine 1-2-line "
+                "changes are exceptions.",
+                [key],
+            )
+        if len(matched) >= 2:
+            domains = [key for key, _ in matched]
+            aliases = ", ".join(f"/{key}" for key in domains)
+            return (
+                f"{prefix} [route-nudge] This prompt spans multiple UE subsystems "
+                f"[{aliases}], an additional architect-route signal. Use `/ue` only for "
+                "implementation work: you MUST consult it before writing the HANDOFF and "
+                "incorporate the consult's design decisions, anti-patterns, and "
+                "verification points into it. Read-only questions and genuine 1-2-line "
+                "changes are exceptions.",
+                domains,
+            )
+        if _UE_GENERIC.search(prompt):
+            return (
+                f"{prefix} [route-nudge] This also has a generic Unreal signal; use `/ue` "
+                "for implementation work: you MUST consult it before writing the HANDOFF "
+                "and incorporate the consult's design decisions, anti-patterns, and "
+                "verification points into it. Read-only questions and genuine 1-2-line "
+                "changes are exceptions.",
+                ["hub_generic"],
+            )
     return prefix, ["default"]
 
 
@@ -153,7 +177,7 @@ def main() -> None:
         pass
 
     payload = read_hook_input()
-    route = message_for_prompt(str(payload.get("prompt") or ""))
+    route = message_for_prompt(str(payload.get("prompt") or ""), cwd=payload.get("cwd"))
     if route:
         msg, domains = route
         sys.stdout.write(msg + "\n")

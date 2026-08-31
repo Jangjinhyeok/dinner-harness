@@ -38,8 +38,13 @@ _DIRECT_MODE = "direct"
 _TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
 _BUS_NAMES = {"HANDOFF.md", "RESULT.md", "INPUT.md"}
 _TRIVIAL_MAX_LINES = 2
-_INFRA_REPO_RELATIVE_EXACT = {"harness.toml", "orchestrate.py"}
-_INFRA_REPO_RELATIVE_PREFIXES = ("orchestrator/", "assets/claude/hooks/")
+_INFRA_REPO_RELATIVE_EXACT = {
+    "harness.toml", "orchestrate.py", "install.py", "refresh.py", "check.py",
+}
+_INFRA_REPO_RELATIVE_PREFIXES = (
+    "orchestrator/", "assets/claude/hooks/", "adapters/", "assets/codex/",
+    "content/rules/", "content/roles/", "content/instructions/",
+)
 
 
 def _path_digest(path: str) -> str:

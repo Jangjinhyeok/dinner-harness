@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import io
+from datetime import datetime, timezone
 import os
 import shutil
 import subprocess
@@ -27,6 +28,7 @@ from orchestrator.config import Config
 from orchestrator.controller import (
     AutoApprove,
     Orchestrator,
+    _TIER_RULE,
     build_prompt,
     review_prompt,
     verdict_recovery_prompt,
@@ -222,6 +224,22 @@ class TestVendorRunner(unittest.TestCase):
 
 
 class TestBuildPrompt(unittest.TestCase):
+
+    def test_tier_rule_contains_all_high_keywords(self):
+        low = _TIER_RULE.lower()
+        required = [
+            "rpc", "replication", "net serialization", "bandwidth", "save",
+            "migration", "schema", "security", "public api", "abi", "build",
+            "packaging", "irreversible",
+        ]
+        for keyword in required:
+            with self.subTest(keyword=keyword):
+                self.assertIn(keyword, low)
+        self.assertTrue(
+            "back-compat" in low or "back compat" in low,
+            "missing back-compat",
+        )
+
     def test_high_gate_clause_requires_implementation_before_later_sign_off(self):
         prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
 
@@ -354,6 +372,31 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertTrue(any("permissions.allow" in problem for problem in problems), problems)
             self.assertEqual(leftovers, [])
 
+    def test_write_agents_raises_on_duplicate_stem(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            src_root = root / "agents"
+            (src_root / "sub1").mkdir(parents=True)
+            (src_root / "sub2").mkdir(parents=True)
+            (src_root / "sub1" / "dup.md").write_text("body\n", encoding="utf-8")
+            (src_root / "sub2" / "dup.md").write_text("body\n", encoding="utf-8")
+            dest_root = root / ".codex"
+            with self.assertRaises(RuntimeError):
+                codex_adapter._write_agents(root, dest_root, "agents", "agents", [], dry_run=True)
+
+    def test_all_generated_agent_toml_files_parse(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target = manifest["targets"]["codex"]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".codex"
+            codex_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            agent_files = sorted((dest / "agents").glob("*.toml"))
+            self.assertTrue(agent_files)
+            for f in agent_files:
+                with self.subTest(file=f.name):
+                    tomllib.loads(f.read_text(encoding="utf-8"))
+
     def test_codex_shared_agent_leftover_is_advisory(self):
         root = Path(__file__).resolve().parents[2]
         manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
@@ -383,6 +426,18 @@ class TestBuilderFirstGuard(unittest.TestCase):
         self.assertTrue(present)
         self.assertEqual(problems, [])
         self.assertEqual(leftovers, [("skills/foo.md", False)])
+
+    def test_do_update_stamps_current_date(self):
+        with tempfile.TemporaryDirectory() as d:
+            claude_md = Path(d) / "CLAUDE.md"
+            claude_md.write_text("hello\n", encoding="utf-8")
+            curation = Path(d) / "curation.toml"
+            with mock.patch.object(check, "CLAUDE_MD", claude_md), \
+                 mock.patch.object(check, "CURATION", curation):
+                check.do_update()
+            text = curation.read_text(encoding="utf-8")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.assertIn(f'blessed_at = "{today}"', text)
 
     def test_advisory_leftovers_do_not_fail_the_cli(self):
         with mock.patch.object(
@@ -557,7 +612,9 @@ class TestBuilderFirstGuard(unittest.TestCase):
             }
             self.assertEqual(builder_guard.guarded_paths(payload), [])
         finally:
-            if old is not None:
+            if old is None:
+                os.environ.pop("DINNER_EXECUTION_MODE", None)
+            else:
                 os.environ["DINNER_EXECUTION_MODE"] = old
 
     def test_apply_patch_cannot_hide_a_code_edit_behind_an_allowed_handoff(self):
@@ -609,6 +666,26 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
 
 class TestDefaultSessionRouting(unittest.TestCase):
+    def test_umg_route_nudge_when_repo_has_unreal_signal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "dummy.uproject").write_text("", encoding="utf-8")
+            msg, domains = route_nudge.message_for_prompt(
+                "Implement a UMG inventory widget.", cwd=tmpdir
+            )
+
+        self.assertEqual(domains, ["umg"])
+        self.assertIn("/umg", msg)
+
+    def test_umg_route_nudge_is_gated_without_unreal_repo_signal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            msg, domains = route_nudge.message_for_prompt(
+                "Implement a UMG inventory widget.", cwd=tmpdir
+            )
+
+        self.assertEqual(domains, ["default"])
+        self.assertNotIn("/umg", msg)
+        self.assertNotIn("UMG", msg)
+
     def test_default_nudge_routes_even_a_tiny_write_to_builder(self):
         old = os.environ.get("DINNER_EXECUTION_MODE")
         os.environ.pop("DINNER_EXECUTION_MODE", None)
@@ -617,13 +694,9 @@ class TestDefaultSessionRouting(unittest.TestCase):
             self.assertIsNotNone(route)
             message, domains = route
             self.assertEqual(domains, ["default"])
-            self.assertIn(
-                "every structured Edit/Write implementation-file write must go through "
-                "Codex Builder",
-                message,
-            )
+            self.assertIn("Everything else goes through Codex Builder", message)
             self.assertIn("delegate workflow now", message)
-            self.assertNotIn("may stay inline", message)
+            self.assertIn("may stay inline (trivial fast-path, ADR-0012)", message)
         finally:
             if old is None:
                 os.environ.pop("DINNER_EXECUTION_MODE", None)
@@ -634,13 +707,14 @@ class TestDefaultSessionRouting(unittest.TestCase):
         # The desired UX starts from an ordinary request, not a ritual command.
         # If the generic path regresses to the former UE-only nudge, this becomes
         # None and the automatic Codex route disappears for most repositories.
-        route = route_nudge.message_for_prompt("Implement a local date formatter.")
-        self.assertIsNotNone(route)
-        message, domains = route
-        self.assertEqual(domains, ["default"])
-        self.assertIn("single-purpose LOW change must run the delegate workflow now", message)
-        self.assertIn("without asking the user to type /delegate", message)
-        self.assertIn("dispatch Codex Builder", message)
+        with mock.patch.dict(os.environ, {"DINNER_EXECUTION_MODE": ""}):
+            route = route_nudge.message_for_prompt("Implement a local date formatter.")
+            self.assertIsNotNone(route)
+            message, domains = route
+            self.assertEqual(domains, ["default"])
+            self.assertIn("a single-purpose LOW change runs the delegate workflow now", message)
+            self.assertIn("no need to ask for /delegate", message)
+            self.assertIn("goes through Codex Builder", message)
 
     def test_multi_subsystem_ue_work_adds_architect_signal_without_direct_dispatch(self):
         route = route_nudge.message_for_prompt(
@@ -2091,7 +2165,7 @@ class TestBuildFromHandoff(unittest.TestCase):
                 name = "bails"
 
                 def invoke(self, role, prompt, cfg):
-                    return Turn(text="```verdicts\ngate 1: status=blocked tier=LOW panel=BLOCK\n```\n")
+                    return Turn(text="```verdicts\ngate 1: status=blocked tier=LOW\n```\n")
 
             backend = _Bails()
             out = Orchestrator(
@@ -2111,7 +2185,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         sc = Scenario(
             handoffs=[handoff],
             results=[
-                "bailed\n```verdicts\ngate 1: status=blocked tier=LOW panel=BLOCK\n```\n",
+                "bailed\n```verdicts\ngate 1: status=blocked tier=LOW\n```\n",
                 "```verdicts\ngate 1: status=completed tier=LOW panel=PASS\n```\n",
             ],
             changesets=[[], [Change(path="feat.py", content="x = 1\n")]],
@@ -2126,6 +2200,30 @@ class TestBuildFromHandoff(unittest.TestCase):
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertEqual(out.cycles, 2)  # retried exactly once
+
+    def test_built_reports_completed_and_remaining_gates_after_high_gate(self):
+        handoff = (
+            "# H\n```tiers\ngate 1: HIGH\ngate 2: LOW\n```\n"
+            "```scope\nfeat.py\n```\n"
+        )
+        result = "```verdicts\ngate 1: status=completed tier=HIGH panel=PASS\n```\n"
+        sc = Scenario(
+            handoffs=[handoff],
+            results=[result],
+            changesets=[[Change(path="feat.py", content="x = 1\n")]],
+            reviews=[],
+        )
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            _git_init(repo)
+            (repo / bus.HANDOFF).write_text(handoff, encoding="utf-8")
+            cfg = _cfg(repo)
+            mock = MockBackend(sc)
+            out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
+            self.assertEqual(out.status, BUILT, out.reason)
+            self.assertEqual(out.completed_gates, ["1"])
+            self.assertEqual(out.remaining_gates, ["2"])
+            self.assertEqual(out.review_required_gate, "1")
 
     def test_missing_verdict_after_real_in_scope_delta_recovers_without_reimplementation(self):
         # This is the ProjectTetra failure shape: the real Builder changed an

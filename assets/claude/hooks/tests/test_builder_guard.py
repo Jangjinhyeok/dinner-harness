@@ -124,6 +124,24 @@ class BuilderGuardPaths(unittest.TestCase):
             [path],
         )
 
+    def test_expanded_infra_paths_are_not_trivial_fast_path_targets(self):
+        base = Path(__file__).resolve().parents[4]
+        claude_home = Path("C:/nonexistent-claude-home-for-this-check")
+        for relative_path in [
+            "install.py",
+            "refresh.py",
+            "check.py",
+            "adapters/codex.py",
+            "assets/codex/AGENTS.md",
+            "content/rules/agent-routing.md",
+            "content/roles/ROLE_BUILDER.md",
+            "content/instructions/CLAUDE.md",
+        ]:
+            self.assertTrue(
+                builder_guard._is_infra_path(base / relative_path, base, claude_home),
+                relative_path,
+            )
+
     def test_trivial_edit_to_settings_json_is_blocked(self):
         self.assertEqual(
             builder_guard.guarded_paths(

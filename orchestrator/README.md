@@ -26,14 +26,27 @@ roles / two CLI engines, not two interactive terminals**. Because the harness
 mandates self-contained HANDOFF/RESULT, turns are **stateless** (each reads the
 bus + repo fresh), so no session-resume is needed.
 
-Two entry points:
-- **`run`** — fully headless: the controller drives *both* Architect and Builder
-  (`claude -p` / `codex exec`) through the whole loop.
-- **`build`** — single-shot Builder pass from an existing `HANDOFF.md` (no headless
-  Architect). This is what an **interactive Claude Architect auto-dispatches** after
-  an in-session HANDOFF approval (orchestrated single-pane — the default pairing's
-  flow); it runs the Codex Builder + the hard safety net, then the in-session Claude
-  reviews `RESULT.md`. See `roles/ROLE_ARCHITECT.md` "Builder 자동 dispatch".
+Two entry points, with different support tiers:
+- **`build`** — **Primary / production.** Single-shot Builder pass from an existing
+  `HANDOFF.md` (no headless Architect). This is what an **interactive Claude
+  Architect auto-dispatches** after an in-session HANDOFF approval (orchestrated
+  single-pane — the default pairing's flow); it runs the Codex Builder + the hard
+  safety net, then the in-session Claude reviews `RESULT.md` and, for a HIGH gate,
+  a human signs off. **HIGH acceptance authority is the Claude diff review + human
+  sign-off, not the Builder's self-reported panel** — `run_from_handoff()` treats
+  the verdict-based tier gate as advisory (emit-only) for exactly this reason. See
+  `roles/ROLE_ARCHITECT.md` "Builder 자동 dispatch".
+- **`run`** — **Experimental.** Fully headless: the controller drives *both*
+  Architect and Builder (`claude -p` / `codex exec`) through the whole loop with no
+  human or Claude reviewer in between gates. Because that topology has no other
+  reviewer, `run()` keeps the verdict-based tier gate **hard** — a HIGH gate's
+  acceptance rests entirely on the Builder's own self-reported `panel`. This is a
+  materially weaker guarantee than `build`'s, especially when the Builder vendor
+  has no jury skill available (Codex — `adversarial-review` is in
+  `harness.toml [targets.codex].skills_drop`), in which case the self-report is an
+  unverified single self-review. Prefer a Claude-vendor Builder for `run()`'s HIGH
+  gates, or treat a Codex-Builder `run()` HIGH result as needing additional human
+  scrutiny before accepting it. See `controller.py`'s `_build_and_gate` docstring.
 
 For interactive use, launch ordinary `claude` from the work repository. Its default
 Builder-first guard routes implementation edits to the `build` path; only
@@ -225,11 +238,15 @@ A fence that names a large ignored directory can also hit the existing
 `max_files` ceiling. And a block is a **refusal, not a rollback**: an
 out-of-fence deletion is reported, not undone.
 
-- **Tier-gate enforcement** — effective tier = the higher of the Architect's
-  declared tier and the Builder's self-reported tier; a **missing/garbled
-  ```tiers``` fence makes every gate HIGH**. Any `FAIL`/`BLOCK` panel fails any
-  tier; a HIGH gate needs an explicit `panel=PASS`; a declared gate with no
-  verdict — or no gates at all — fails closed.
+- **Tier-gate enforcement (`run()` only — hard)** — effective tier = the higher of
+  the Architect's declared tier and the Builder's self-reported tier; a
+  **missing/garbled ```tiers``` fence makes every gate HIGH**. Any `FAIL`/`BLOCK`
+  panel fails any tier; a HIGH gate needs an explicit `panel=PASS`; a declared gate
+  with no verdict — or no gates at all — fails closed. **In `build`/
+  `run_from_handoff()` (the primary path) this same gate is advisory
+  (emit-only)** — a HIGH gate's real acceptance authority is the dispatching
+  Claude session's diff review plus human sign-off, not this panel value. See
+  "Two entry points" above.
 - **END boundary, tier-driven** — the Architect review runs **first**; on `DONE`
   a **LOW** cycle auto-completes (result reported, no human gate, per
   autonomy-policy), while a **HIGH** cycle stops for a human end sign-off before

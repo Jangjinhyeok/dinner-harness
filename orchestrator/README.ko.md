@@ -26,15 +26,26 @@ degraded로 표시합니다(`CODEX-RECON.md`). orchestrator는 이 pairing을 �
 HANDOFF/RESULT가 self-contained여야 하므로 각 turn은 repo와 bus를 매번 새로
 읽는 stateless 실행입니다. session resume은 필요 없습니다.
 
-진입점은 두 가지입니다.
+진입점은 두 가지이며, 지원 등급이 다릅니다.
 
-- **`run`** — 완전 headless 모드. controller가 Architect와 Builder 모두를 전체
-  loop 동안 실행합니다.
-- **`build`** — 기존 `HANDOFF.md`로 Builder만 한 번 실행합니다. interactive Claude
-  Architect가 세션 안에서 HANDOFF를 승인받은 뒤 auto-dispatch하는 기본
-  orchestrated single-pane 경로입니다. Codex Builder와 hard safety net이 실행되고,
-  같은 Claude 세션이 `RESULT.md`를 검토합니다. 상세는
-  `roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"를 참조하세요.
+- **`build`** — **Primary / production.** 기존 `HANDOFF.md`로 Builder만 한 번
+  실행합니다. interactive Claude Architect가 세션 안에서 HANDOFF를 승인받은 뒤
+  auto-dispatch하는 기본 orchestrated single-pane 경로입니다. Codex Builder와
+  hard safety net이 실행되고, 같은 Claude 세션이 `RESULT.md`를 검토하며 HIGH
+  게이트는 사람이 서명합니다. **HIGH 수용 권한은 Builder의 자기보고 panel이
+  아니라 Claude의 diff 리뷰 + 사람 종단 서명입니다** — `run_from_handoff()`는
+  바로 이 이유로 verdict 기반 tier gate를 advisory(emit-only)로 취급합니다.
+  상세는 `roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"를 참조하세요.
+- **`run`** — **Experimental.** 완전 headless 모드. controller가 Architect와
+  Builder 모두를 전체 loop 동안 사람이나 Claude의 게이트 사이 리뷰 없이
+  실행합니다. 그 topology엔 다른 리뷰어가 없어서 `run()`은 verdict 기반 tier
+  gate를 **hard**로 유지합니다 — HIGH 게이트의 수용이 전적으로 Builder의
+  자기보고 `panel`에 의존합니다. 이는 `build`보다 명백히 약한 보증이며, 특히
+  Builder vendor에 jury skill이 없을 때(Codex — `adversarial-review`는
+  `harness.toml [targets.codex].skills_drop`) 자기보고는 검증되지 않은
+  단일 self-review에 불과합니다. `run()`의 HIGH 게이트엔 Claude vendor
+  Builder를 쓰거나, Codex Builder의 `run()` HIGH 결과는 추가 사람 검토가
+  필요하다고 보는 걸 권장합니다.
 
 interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한다. 기본 Builder-first
 guard가 구현 edit을 `build` 경로로 보내며, `claude-direct.cmd`만 Claude 직접 수정 escape를 연다.
@@ -189,10 +200,14 @@ write는 여전히 보이지 않으므로 **scope 축**은 닫지 않습니다. 
 `max_files` ceiling에 걸릴 수 있습니다. 또한 block은 rollback이 아니라 **거부**입니다.
 out-of-fence deletion은 보고되지만 되돌려지지 않습니다.
 
-- **Tier-gate enforcement** — effective tier는 Architect 선언과 Builder self-report 중 더
-  높은 값입니다. ` ```tiers ` fence가 누락되거나 깨지면 모든 gate가 HIGH입니다. 모든
-  tier에서 panel `FAIL`/`BLOCK`은 fail이고, HIGH는 명시적 `panel=PASS`가 필요합니다.
-  선언된 gate에 verdict가 없거나 gate가 전혀 없어도 fail-closed 합니다.
+- **Tier-gate enforcement (`run()` only — hard)** — effective tier는 Architect 선언과
+  Builder self-report 중 더 높은 값입니다. ` ```tiers ` fence가 누락되거나 깨지면 모든
+  gate가 HIGH입니다. 모든 tier에서 panel `FAIL`/`BLOCK`은 fail이고, HIGH는 명시적
+  `panel=PASS`가 필요합니다. 선언된 gate에 verdict가 없거나 gate가 전혀 없어도
+  fail-closed 합니다. **`build`/`run_from_handoff()` (primary path)에서는 이 gate가
+  advisory(emit-only)**입니다 — HIGH gate의 실제 수용 권한은 이 panel 값이 아니라
+  dispatch한 Claude session의 diff review와 사람 종단 서명에 있습니다. 위의
+  "진입점은 두 가지" 절을 참조하세요.
 - **tier-driven END boundary** — Architect review가 먼저 실행됩니다. `DONE`이면 LOW cycle은
   autonomy-policy에 따라 report만 남기고 자동 완료되며, HIGH cycle은 변경 수용 전에
   human end sign-off에서 멈춥니다. Architect가 거부한 cycle에 사람이 sign-off하지 않습니다.

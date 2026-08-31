@@ -140,7 +140,7 @@ agent는 기능별 `codex/*` 등 새 delivery branch를 만들거나, branch를 
 
 그리고 기본 모드에서 **Codex Builder는 사람이 여는 세션이 아니라 인터랙티브 Claude(Architect)가 `orchestrate.py build`로 dispatch하는 headless `codex exec` 호출**(single-pane)이다 — 이때 아래 "헤드리스 orchestration 모드" 규약을 따른다. 통신은 프로젝트 루트의 `HANDOFF.md`(Architect→Builder)·`RESULT.md`(Builder→Architect)·`INPUT.md`(사용자→Builder, 선택) 파일로 한다.
 
-기본 auto-dispatch는 원본 repository에서 실행한다. Architect는 dispatch 전에 baseline commit으로 tree를 clean하게 두고 `py -3 "<CODEX_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>`를 실행한 뒤, 같은 repository의 RESULT·diff를 검토한다. `<CODEX_HOME>`은 설치된 Codex home(기본 `~/.codex`)의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환하며 `cd`, `&&`, pipe, redirection을 붙이지 않는다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로 Builder 실행 중 해당 tree를 편집하지 않는다.
+기본 auto-dispatch는 원본 repository에서 실행한다. baseline commit은 protocol 요구사항이 아니다 — controller의 snapshot delta(ADR-0007)가 tracked 기존 dirt를 이미 상쇄한다(untracked 중요 파일이 있다면 선택적으로 커밋 권장). Architect는 `py -3 "<CODEX_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>`를 실행한 뒤, 같은 repository의 RESULT·diff를 검토한다. `<CODEX_HOME>`은 설치된 Codex home(기본 `~/.codex`)의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환하며 `cd`, `&&`, pipe, redirection을 붙이지 않는다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로 Builder 실행 중 해당 tree를 편집하지 않는다.
 
 **진입**: Codex엔 Claude의 path-매칭 자동 inject가 없다. 사용자가 `architect 모드`/`builder 모드`라고 **명시 선언**하거나 HANDOFF.md/RESULT.md를 직접 가리키면 아래 해당 역할 규약대로 동작한다(advisory). 작은 작업(한두 줄·단일 파일·질문)은 모드 없이 일반 진행.
 

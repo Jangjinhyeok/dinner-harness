@@ -71,10 +71,11 @@ exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
 
 [targets.codex]
-# codex target: portable subset only (Cycle 2, D1/D7/D8). Plain-text templates only; no skip-if-exists.
-# Claude-only machinery (agents, hooks, roles, agent-routing, _mode) is dropped by this adapter
-# — a design decision (newer Codex supports hooks/agents but the semantics don't fully map; see
-# CODEX-RECON.md), accounted for in CODEX-COVERAGE.md. MCP is out of scope (no source; D5).
+# codex target: Cycle 3 adapter v2 — agents and hooks are ported natively (see
+# CODEX-COVERAGE.md D3/D4), and roles are curated into AGENTS.md (D6). Only
+# agent-routing.md and rules/_mode/ (Claude-only path-matching conditional
+# inject) are actually dropped — Codex has no equivalent mechanism. MCP is out
+# of scope (no source; D5). Full accounting: CODEX-COVERAGE.md.
 shared_dirs = ["agents"]
 
 copy = [

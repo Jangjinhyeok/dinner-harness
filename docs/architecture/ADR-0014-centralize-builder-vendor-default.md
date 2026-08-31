@@ -113,3 +113,18 @@ since `AGENTS.md` is not JSON). Switching the default becomes: edit one line in
   hand-edit AGENTS.md separately):** rejected — the whole point was to remove manual
   sync entirely; leaving one file out defeats it and is a worse asymmetry than today's
   fully-manual six.
+
+## Addendum (2026-08-31): scope clarification
+
+`harness.toml`'s `builder_vendor` is a **rendered-documentation default only** — it
+is read by `adapters/claude.py`/`adapters/codex.py` at install/render time, never by
+`orchestrator/config.py` or `orchestrate.py` at runtime. `Config.builder_vendor` and
+`orchestrate.py`'s `--builder` argparse default are separate hardcoded Python
+literals; switching `harness.toml`'s value and re-rendering changes what the six
+documents' dispatch examples show, but does not by itself change what
+`orchestrate.py build`/`run` does when invoked without an explicit `--builder` flag.
+This was always this ADR's actual scope (see "Decision": "the literal `--builder
+codex` in all six canonical documents"), but the surrounding prose's "single source
+of truth" framing invited a broader reading. Pass `--builder <BUILDER_VENDOR>`
+explicitly — as every rendered document already does — rather than relying on
+`orchestrate.py`'s own default to follow `harness.toml`.

@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Curation / catalog check
+        run: py -3 check.py --no-install
+
+      - name: Full offline test suite
+        run: py -3 -m unittest discover -s . -p "test_*.py"

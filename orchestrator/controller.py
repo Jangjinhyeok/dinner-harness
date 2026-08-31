@@ -77,15 +77,22 @@ class Outcome:
     log: list[str] = field(default_factory=list)
     receipt_path: Optional[Path] = None
     receipt_id: str = ""
+    completed_gates: list[str] = field(default_factory=list)
+    remaining_gates: list[str] = field(default_factory=list)
+    review_required_gate: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #
 # Prompt builders (self-contained per the harness "HANDOFF self-contained" rule)
 # --------------------------------------------------------------------------- #
 _TIER_RULE = (
-    "Risk tier per autonomy-policy: HIGH = network replication / save or "
-    "serialization format / live config or feature flags / data migration / "
-    "security-sensitive / anything irreversible. Conservative OR; if ambiguous, HIGH."
+    "Risk tier per autonomy-policy: HIGH = network replication / RPC / net "
+    "serialization / relevancy / bandwidth / save or serialization format / "
+    "persistent data back-compat / live config or feature flags / data "
+    "migration or schema change / security-sensitive (auth, permission, "
+    "crypto, trust boundary, anti-cheat) / public API or ABI / build or "
+    "packaging pipeline / anything irreversible. Conservative OR; if "
+    "ambiguous, HIGH."
 )
 
 
@@ -106,23 +113,23 @@ def design_prompt(goal: str, prior_result: str, cycle: int) -> str:
 def build_prompt(handoff_text: str, handoff_name: str) -> str:
     return (
         "You are the BUILDER in a Two-CLI workflow. Implement the HANDOFF below.\n"
-        "YOUR VERY FIRST ACTION IS TO WRITE THE FILE EDITS the HANDOFF requires — "
-        "do that now, before running ANY other command. Do NOT run a verification, "
-        "build, test, or exploratory command first; make the edits, THEN verify. "
-        "You have workspace-write access at the working directory and CAN create "
-        "and edit files there.\n"
-        "Never conclude the workspace is read-only. A failing command is NOT proof "
-        "you cannot write — a verification often fails for reasons unrelated to "
-        "write access: your edits are not in place yet, or the interpreter it names "
-        "is unavailable in this sandbox. In particular, on this machine the `py` "
-        "launcher frequently exits with 'no installed runtime' (exit 112) inside "
-        "the sandbox even though writing works fine: if a verify command using "
-        "`py`/`py -3` fails that way, DO NOT infer read-only — just make your edits "
-        "and re-run the check with `python` or `python3` instead. If any probe "
-        "makes you think you cannot write, that impression is WRONG — attempt the "
-        "edit anyway; never report you cannot write without having actually tried. "
-        "Never end with an empty changeset and never revert your edits over a "
-        "failing verification.\n"
+        "Normal workflow: inspect the relevant files, understand what needs to "
+        "change, make the edits, then verify — read/search/inspection before "
+        "editing is expected and fine. You have workspace-write access at the "
+        "working directory and CAN create and edit files there.\n"
+        "Never conclude the workspace is read-only until you have actually "
+        "attempted an in-scope write/edit operation. A failing verification "
+        "command is NOT proof you cannot write — it often fails for reasons "
+        "unrelated to write access: your edits are not in place yet, or the "
+        "interpreter it names is unavailable in this sandbox. In particular, on "
+        "this machine the `py` launcher frequently exits with 'no installed "
+        "runtime' (exit 112) inside the sandbox even though writing works fine: "
+        "if a verify command using `py`/`py -3` fails that way, DO NOT infer "
+        "read-only — just make your edits and re-run the check with `python` or "
+        "`python3` instead. Only an actual attempted write can prove read-only; "
+        "never report you cannot write without having actually tried. Never end "
+        "with an empty changeset and never revert your edits over a failing "
+        "verification.\n"
         "This is a NON-INTERACTIVE, headless run. Do NOT ask for confirmation, do "
         "NOT wait for approval, and do NOT just summarize the plan: execute each "
         "eligible gate now, autonomously, in one turn; after a completed HIGH gate, "
@@ -714,8 +721,17 @@ class Orchestrator:
         self._log.append(msg)
         self._log_fn(msg)
 
-    def _outcome(self, status: str, cycle: int, reason: str = "") -> Outcome:
-        return Outcome(status=status, cycles=cycle, reason=reason, log=list(self._log))
+    def _outcome(
+        self, status: str, cycle: int, reason: str = "",
+        *, completed_gates: Optional[list[str]] = None,
+        remaining_gates: Optional[list[str]] = None,
+        review_required_gate: Optional[str] = None,
+    ) -> Outcome:
+        return Outcome(
+            status=status, cycles=cycle, reason=reason, log=list(self._log),
+            completed_gates=completed_gates or [], remaining_gates=remaining_gates or [],
+            review_required_gate=review_required_gate,
+        )
 
     def run(self) -> Outcome:
         cfg = self.cfg
@@ -1195,6 +1211,15 @@ class Orchestrator:
         auto-dispatch build path sets it advisory (emit-only) because the
         in-session Claude review + HIGH human sign-off own that judgment, and a
         headless Codex does not reliably emit the machine ```verdicts``` fence.
+
+        When the Builder vendor has no jury skill available (Codex, since
+        ``adversarial-review`` sits in ``harness.toml [targets.codex].skills_drop``),
+        run()'s hard gate on a HIGH verdict is trusting an unverified self-report
+        with no compensating review — unlike an interactive Codex session, which
+        gets explicit per-gate human review (see AGENTS.md's degraded-mode
+        section). Prefer a Claude-vendor Builder for run()'s HIGH gates, or treat
+        a Codex-Builder run() HIGH result as needing additional human scrutiny
+        before accepting it.
         """
         cfg = self.cfg
 
@@ -1397,12 +1422,24 @@ class Orchestrator:
                 attempt,
                 f"builder bailed with no implementation after {attempt} attempt(s)",
             )
+        completed = sorted({v.gate for v in verdicts})
+        remaining = sorted(set(tiers) - set(completed))
+        last_gate = completed[-1] if completed else None
+        review_required = (
+            last_gate
+            if remaining and last_gate and tier_for(tiers, last_gate) == busmod.TIER_HIGH
+            else None
+        )
         note = (
             "HIGH gate present — in-session human sign-off required before merge/apply"
             if has_high else "all-LOW"
         )
         self._emit(f"[build] BUILT ({note}) — RESULT.md written, awaiting in-session review")
-        return self._outcome(BUILT, attempt, note)
+        return self._outcome(
+            BUILT, attempt, note,
+            completed_gates=completed, remaining_gates=remaining,
+            review_required_gate=review_required,
+        )
 
 
 def _receipt_status(outcome: Outcome) -> str:
