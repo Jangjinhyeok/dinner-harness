@@ -80,10 +80,13 @@ class GateTier:
 
 
 def parse_tiers(handoff_text: str) -> dict[str, str]:
-    """Parse the ```tiers``` fence -> {gate_key: LOW|HIGH}.
+    """Parse the ```tiers``` fence -> {gate_key: LOW|HIGH} (risk tier only).
 
-    Lines look like ``gate 1: LOW`` / ``2: HIGH``. Unknown/garbled tier ->
-    HIGH (fail-closed). A missing fence yields {} (caller treats every gate as
+    Lines look like ``gate 1: LOW`` / ``2: HIGH`` (bare — unchanged since
+    before this function supported anything else) or ``gate 1: risk=LOW
+    compute=NORMAL`` (KV form — see :func:`parse_compute_tiers` for the
+    compute half of the same line). Unknown/garbled risk -> HIGH
+    (fail-closed). A missing fence yields {} (caller treats every gate as
     HIGH via :func:`tier_for`).
     """
     body = extract_fence(handoff_text, "tiers")
@@ -97,7 +100,12 @@ def parse_tiers(handoff_text: str) -> dict[str, str]:
         if ":" not in line:
             continue
         label, _, val = line.partition(":")
-        tier = val.strip().upper()
+        val = val.strip()
+        if "=" in val:
+            kv = {k.lower(): v for k, v in _KV_RE.findall(val)}
+            tier = (kv.get("risk", "") or "").upper()
+        else:
+            tier = val.upper()
         out[_gate_key(label)] = TIER_HIGH if tier not in (TIER_LOW, TIER_HIGH) else tier
     return out
 
@@ -105,6 +113,54 @@ def parse_tiers(handoff_text: str) -> dict[str, str]:
 def tier_for(tiers: dict[str, str], gate: str) -> str:
     """Look up a gate's tier, defaulting to HIGH (fail-closed)."""
     return tiers.get(_gate_key(gate), TIER_HIGH)
+
+
+COMPUTE_LOW = "LOW"
+COMPUTE_NORMAL = "NORMAL"
+COMPUTE_HIGH = "HIGH"
+_VALID_COMPUTE = (COMPUTE_LOW, COMPUTE_NORMAL, COMPUTE_HIGH)
+
+
+def parse_compute_tiers(handoff_text: str) -> dict[str, str]:
+    """Parse the ``compute=`` value from the ```tiers``` fence's KV form ->
+    {gate_key: LOW|NORMAL|HIGH}. A gate written in the old bare risk-only
+    form, or carrying an unrecognized/garbled compute value, is simply absent
+    from the returned dict — :func:`effective_compute` resolves the default
+    (NORMAL, or HIGH when risk is HIGH), not this function. This keeps
+    ``parse_tiers`` the single place risk is judged fail-closed, and this
+    function purely observational for compute.
+    """
+    body = extract_fence(handoff_text, "tiers")
+    out: dict[str, str] = {}
+    if not body:
+        return out
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        label, _, val = line.partition(":")
+        val = val.strip()
+        if "=" not in val:
+            continue
+        kv = {k.lower(): v for k, v in _KV_RE.findall(val)}
+        compute = (kv.get("compute", "") or "").upper()
+        if compute in _VALID_COMPUTE:
+            out[_gate_key(label)] = compute
+    return out
+
+
+def effective_compute(tiers: dict[str, str], compute_tiers: dict[str, str], gate: str) -> str:
+    """The compute tier that actually governs profile resolution for one gate:
+    risk HIGH always forces effective compute HIGH (ADR-0020 — risk HIGH ->
+    challenger_high -> builder_high regardless of what compute was declared);
+    otherwise the declared compute tier, defaulting to NORMAL when missing or
+    garbled (ADR-0020: "compute ambiguity/missing -> NORMAL", distinct from
+    risk's own "ambiguity -> HIGH" fail-closed default).
+    """
+    if tier_for(tiers, gate) == TIER_HIGH:
+        return COMPUTE_HIGH
+    compute = compute_tiers.get(_gate_key(gate), COMPUTE_NORMAL)
+    return compute if compute in _VALID_COMPUTE else COMPUTE_NORMAL
 
 
 @dataclass

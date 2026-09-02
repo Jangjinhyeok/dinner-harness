@@ -106,10 +106,12 @@ LOW-only by construction.
    # PowerShell tool
    Start-Process powershell -ArgumentList "-NoExit","-File","<CLAUDE_HOME>/watch-builder.ps1"
    # Bash tool
-   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR> --handoff HANDOFF_DELEGATE.md
+   py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --handoff HANDOFF_DELEGATE.md
    ```
    Replace `<CLAUDE_HOME>` and `<ABSOLUTE_REPO_PATH>` with their absolute
-   runtime paths. `--builder <BUILDER_VENDOR>` is centrally managed by `harness.toml`'s `[vars].builder_vendor` (ADR-0014) — flip it there and reinstall to switch. Do not prepend `cd` or append a pipe/redirection: the exact
+   runtime paths. Vendor/model come from `content/routing.toml`'s active preset
+   (ADR-0020) — to force a specific vendor, append `--builder claude`/`--builder codex`.
+   Do not prepend `cd` or append a pipe/redirection: the exact
    direct invocation is the narrow permission-allowlisted dispatch path.
    `--handoff HANDOFF_DELEGATE.md` keeps a persistent `HANDOFF.md` (if any)
    untouched.

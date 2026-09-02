@@ -179,13 +179,13 @@ path이므로 기존 의미대로만 사용한다.
 
 ### Cross-vendor 역할 분담
 
-Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**이며, 기본 페어링은 **Claude = Architect, Codex = Builder**다(token economy 근거·예시 페어링·vendor 스위치 메커니즘·scope 한계·cross-vendor 주의사항 → `~/.claude/rules/two-cli-reference.md` "Cross-vendor 역할 분담").
+Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**이며, 기본 페어링은 **Claude = Architect, Codex = Builder**다(token economy 근거·예시 페어링·vendor 스위치 메커니즘·scope 한계·cross-vendor 주의사항 → `~/.claude/rules/two-cli-reference.md` "Cross-vendor 역할 분담"). Builder의 구체적 vendor/model/effort 배정(logical profile → routing preset → concrete mapping, risk/compute tier 관계, HIGH challenge flow) → `~/.claude/rules/routing-reference.md`.
 
 통신은 변함없이 `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트) — 이 **파일이 vendor-neutral 버스**다. 기본 dispatch는 원본 repository에서 실행한다. 런타임 IPC나 MCP는 필요 없다.
 
 **Builder 자동 dispatch (기본 페어링)**: Claude=Architect 기본 페어링에선 사람이 Codex 터미널로 수동 전환할 필요가 없다. Architect(Claude)가 HANDOFF.md를 쓰고 in-session 승인을 받으면 곧바로 dispatch한다. Baseline commit은 protocol 요구사항이 아니다 — controller의 before/after `git status` snapshot delta(ADR-0007)가 tracked 상태의 기존 dirt를 두 snapshot 모두에 포함시켜 이미 상쇄하므로, dispatch 전에 clean commit을 강제할 필요가 없다. 다만 커밋되지 않은 **untracked** 중요 파일은 Builder나 이후 작업으로 유실될 rollback 위험이 남으므로, 그런 파일이 있다면 사용자 판단으로 선택적으로 커밋해 두는 것을 권장한다(강제 아님 — §6의 명시 승인 없는 auto-commit 금지와 정합).
 
-이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>` 형태로 **Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다. `--builder <BUILDER_VENDOR>`는 `harness.toml`의 `[vars].builder_vendor`에서 중앙 관리된다(ADR-0014) — 스위치 방법·scope 한계는 위 참조 문서.
+이어 반드시 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real` 형태로 **Builder를 자동 dispatch**한다(headless). `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다. 이 직접 호출 형태만 Claude permission allowlist가 허용한다. vendor/model은 `content/routing.toml`의 active preset이 정한다(ADR-0020) — 특정 vendor를 명시 override하려면 `--builder claude`/`--builder codex`를 붙인다(runtime override; HIGH gate는 arbitrary model downgrade를 거부하고 vendor override만 허용한다). 상세는 위 참조 문서.
 
 원본 repository의 RESULT.md + `git diff`를 **같은 세션이 직접 리뷰**한다. ADR-0007의 before/after snapshot delta가 Builder turn 변경만 판정하므로, dispatch 중에는 해당 repository를 편집하지 않는다. orchestrator의 controller-side safety net(scope/secret)이 hard gate로 작동하고(Codex Builder hook은 advisory이므로 이게 유일한 자동 방어선), tier-gate는 advisory이며 판정은 in-session 리뷰 + HIGH 사람 종단 서명이 담당한다. `BLOCKED`/에러면 자동 진행하지 않고 수동 fallback. 상세는 `~/.claude/roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"와 `orchestrator/README.md`의 in-place dispatch 절. (역방향·동일 vendor 2세션은 수동. cross-vendor 시 주의사항은 위 참조 문서.)
 

@@ -32,6 +32,11 @@ from .safety import Change
 
 ROLE_ARCHITECT = "architect"
 ROLE_BUILDER = "builder"
+# Read-only challenger dispatch (ADR-0020 correction 5). Both backends default
+# non-ROLE_BUILDER challenger turns to read-only behavior. ClaudeBackend also
+# clears any inherited DINNER_EXECUTION_MODE=direct below so its builder_guard
+# hook stays active even when the parent process is a direct-edit session.
+ROLE_CHALLENGER = "challenger"
 
 _SANDBOX_HEADER_RE = re.compile(r"^\s*sandbox:\s*([a-z-]+)")
 _SESSION_HEADER_DIVIDER_RE = re.compile(r"^-{4,}\s*$")
@@ -291,6 +296,9 @@ class ClaudeBackend(Backend):
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
+        effort = cfg.architect_effort if role == ROLE_ARCHITECT else cfg.builder_effort
+        if effort:
+            argv += ["--effort", effort]
         env = None
         # A Builder edits files autonomously; without a non-interactive
         # permission posture the headless turn would stall on approval.
@@ -306,6 +314,9 @@ class ClaudeBackend(Backend):
             # implementation. The controller-side net (safety.py) remains the
             # deterministic gate regardless of vendor.
             env = {**os.environ, "DINNER_EXECUTION_MODE": "direct"}
+        elif role == ROLE_CHALLENGER:
+            env = {**os.environ}
+            env.pop("DINNER_EXECUTION_MODE", None)
         return _run(argv, cfg, stdin_text=prompt, env=env)
 
 
@@ -346,6 +357,9 @@ class CodexBackend(Backend):
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
+        effort = cfg.architect_effort if role == ROLE_ARCHITECT else cfg.builder_effort
+        if effort:
+            argv += ["-c", f"model_reasoning_effort={effort}"]
         try:
             return _run(
                 argv,

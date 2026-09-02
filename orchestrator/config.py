@@ -62,6 +62,12 @@ class Config:
     builder_vendor: str = "codex"     # codex | claude
     architect_model: str = ""         # "" = vendor default
     builder_model: str = ""
+    architect_effort: str = ""        # "" = vendor/profile default; low|medium|high|xhigh|max
+    builder_effort: str = ""
+    # "" = use routing.toml's own declared [routing].preset; an explicit
+    # --routing-preset CLI override (wired in a later gate) takes precedence.
+    # See docs/architecture/ADR-0020-routing-preset-architecture.md.
+    routing_preset: str = ""
 
     # --- backend -----------------------------------------------------------
     backend: str = "mock"             # mock | real
@@ -95,12 +101,17 @@ class Config:
 
     def validate(self) -> list[str]:
         problems: list[str] = []
-        if self.architect_vendor not in ("codex", "claude"):
+        if self.architect_vendor not in ("", "codex", "claude"):
             problems.append(f"architect_vendor invalid: {self.architect_vendor!r}")
-        if self.builder_vendor not in ("codex", "claude"):
+        if self.builder_vendor not in ("", "codex", "claude"):
             problems.append(f"builder_vendor invalid: {self.builder_vendor!r}")
         if self.backend not in ("mock", "real"):
             problems.append(f"backend invalid: {self.backend!r}")
+        _valid_effort = ("", "low", "medium", "high", "xhigh", "max")
+        if self.architect_effort not in _valid_effort:
+            problems.append(f"architect_effort invalid: {self.architect_effort!r}")
+        if self.builder_effort not in _valid_effort:
+            problems.append(f"builder_effort invalid: {self.builder_effort!r}")
         # The scope_check handler resolves the fence as DINNER_HARNESS_HOME /
         # <basename>, so a handoff in a subdirectory would leave the controller
         # reading repo/specs/H.md while the handler looks for repo/H.md, finds

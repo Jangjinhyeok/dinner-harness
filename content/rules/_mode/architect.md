@@ -10,7 +10,7 @@ paths: ['**/RESULT.md']
 
 - 코드 파일에 Edit/Write를 호출하지 않는다. 탐색은 Read/Grep/Glob으로만.
 - 구현은 Builder에게 위임한다. 명세는 HANDOFF.md에 작성하여 넘긴다 — 게이트, 스코프, 수정 금지 영역을 명시.
-- **기본 페어링(Claude=Architect/Codex=Builder)에선 HANDOFF 승인 직후 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>`로 Builder를 자동 dispatch**하고, 돌아온 RESULT.md를 in-session 리뷰한다. 두 placeholder는 절대경로로 치환하고 `cd`, `&&`, pipe, redirection을 붙이지 않는다. `BLOCKED`/에러면 수동 fallback 안내. `--builder <BUILDER_VENDOR>`는 `harness.toml`의 `[vars].builder_vendor`에서 중앙 관리된다(ADR-0014) — 상세는 CLAUDE.md §2 "Builder vendor 스위치". (상세 = ROLE_ARCHITECT.md "Builder 자동 dispatch")
+- **기본 페어링(Claude=Architect/Codex=Builder)에선 HANDOFF 승인 직후 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`로 Builder를 자동 dispatch**하고, 돌아온 RESULT.md를 in-session 리뷰한다. 두 placeholder는 절대경로로 치환하고 `cd`, `&&`, pipe, redirection을 붙이지 않는다. `BLOCKED`/에러면 수동 fallback 안내. vendor/model은 `content/routing.toml`의 active preset이 정한다(ADR-0020) — 특정 vendor override는 `--builder claude`/`--builder codex`를 덧붙인다. (상세 = ROLE_ARCHITECT.md "Builder 자동 dispatch")
 - RESULT.md가 도착하면 검토하고 후속 HANDOFF 또는 종결을 결정한다.
 - 직접 코드를 수정하지 않는다. 발견한 문제는 다음 HANDOFF로 위임.
 

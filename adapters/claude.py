@@ -83,8 +83,6 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     dest_root = Path(dest_root)
     token = vars_cfg.get("username_token", "<USERNAME>")
     home_token = vars_cfg.get("claude_home_token", "<CLAUDE_HOME>")
-    builder_vendor_token = vars_cfg.get("builder_vendor_token", "<BUILDER_VENDOR>")
-    builder_vendor = vars_cfg.get("builder_vendor", "codex")
     exclude_dirs = set(target_cfg.get("exclude_dir_names", []))
     exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
     templated_dests = {dest_root / entry["dest"] for entry in target_cfg.get("template", [])}
@@ -109,7 +107,7 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     for entry in target_cfg.get("template", []):
         src = repo_root / entry["src"]
         dest = dest_root / entry["dest"]
-        text = src.read_text(encoding="utf-8").replace(token, username).replace(home_token, dest_root.as_posix()).replace(builder_vendor_token, builder_vendor)
+        text = src.read_text(encoding="utf-8").replace(token, username).replace(home_token, dest_root.as_posix())
         strip_keys = entry.get("strip_keys", [])
         merge = entry.get("merge", False)
         if dest.name.endswith(".json") and (strip_keys or merge):

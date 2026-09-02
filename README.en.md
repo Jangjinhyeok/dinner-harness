@@ -196,18 +196,18 @@ skips that axis.
 ### 7) Using only one vendor
 
 **Claude only (without Codex)**: Architect is already Claude by default, so only the
-Builder vendor changes. Set `[vars].builder_vendor` to `"claude"` in `harness.toml` and
-run `py -3 refresh.py --apply` to reinstall (ADR-0014) — the four documents that once
-had to be synchronized by hand are now rendered from one source of truth. The existing
+Builder routing preset changes. Set `[routing].preset` to `"claude_only"` in
+`content/routing.toml` and run `py -3 refresh.py --apply` to reinstall (ADR-0020) —
+no changes to `controller.py` or the HANDOFF format are needed. The existing
 code already injects `DINNER_EXECUTION_MODE=direct` into the subprocess environment so
 `ClaudeBackend` does not get blocked by its own `builder_guard` when it acts as Builder;
 no additional action is needed.
 
-**Note**: this setting only changes the dispatch example rendered into the documents
-above. Calling `orchestrate.py` directly without a `--builder` flag still uses the
-code-level default in `orchestrator/config.py` (currently `"codex"`) — `harness.toml`
-is not read at runtime. Using the `--builder <BUILDER_VENDOR>` form the rendered
-documents already show avoids the mismatch.
+**Note**: calling `orchestrate.py` directly without a `--builder` flag lets the active
+preset resolve each gate's vendor/model/effort (`orchestrator/routing.py`). To force a
+specific vendor, pass `--builder claude` or `--builder codex` as an explicit runtime
+override. See `~/.claude/rules/routing-reference.md` for the full preset/profile/
+override-precedence explanation.
 
 **Codex only (without Claude Code)**: Conversely, the axis that changes is the
 **Architect vendor** — when the interactive driver itself is opened with the Codex

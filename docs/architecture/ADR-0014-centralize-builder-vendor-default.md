@@ -128,3 +128,25 @@ codex` in all six canonical documents"), but the surrounding prose's "single sou
 of truth" framing invited a broader reading. Pass `--builder <BUILDER_VENDOR>`
 explicitly — as every rendered document already does — rather than relying on
 `orchestrate.py`'s own default to follow `harness.toml`.
+
+## Addendum (2026-09-02): superseded by routing presets
+
+The install-time `builder_vendor`/`builder_vendor_token` mechanism this ADR
+introduced has been removed (see
+`docs/architecture/ADR-0020-routing-preset-architecture.md`, Gate F1). The six
+canonical documents' dispatch examples no longer carry a `--builder <...>`
+placeholder at all — the active routing preset in `content/routing.toml`
+resolves each gate's builder vendor/model/effort at dispatch time
+(`orchestrator/routing.py`), and `harness.toml [vars]` no longer has a
+`builder_vendor`/`builder_vendor_token` entry. `adapters/claude.py` and
+`adapters/codex.py` no longer perform that token substitution.
+
+Switching to Claude-only is now: edit `content/routing.toml`'s
+`[routing].preset` to `"claude_only"`, then `py -3 refresh.py --apply` — one
+config file, not one `harness.toml` var. `Config.builder_vendor` and
+`orchestrate.py`'s `--builder` flag are unchanged and still work exactly as
+before as an explicit low-level runtime override; this addendum only retires
+the install-time documentation-rendering half of what this ADR built. This
+ADR's own historical record (Context/Decision/Implementation
+Guidelines/Consequences/Alternatives above) is left as-is per this harness's
+addendum-only convention for accepted ADRs.

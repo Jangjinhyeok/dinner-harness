@@ -17,16 +17,17 @@ from __future__ import annotations
 
 import os
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
 from . import bus as busmod
+from . import routing
 from . import safety
 from .bus import Bus, parse_tiers, parse_verdicts, parse_control, tier_for
 from .config import Config
-from .receipt import BuildAudit
-from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER
+from .receipt import BuildAudit, content_hash, find_challenge_evidence
+from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER, ROLE_CHALLENGER, make_backend
 
 
 # --------------------------------------------------------------------------- #
@@ -62,6 +63,9 @@ BLOCKED = "BLOCKED"
 HELD = "HELD"            # a human declined a gate
 BUILT = "BUILT"         # single-shot build done; net+tier-gate passed, review owned in-session
 MAX_CYCLES = "MAX_CYCLES_EXCEEDED"
+# single-shot read-only challenger_high dispatch done; critique written to
+# CHALLENGE.md by the parent process (ADR-0020 correction 5)
+CHALLENGED = "CHALLENGED"
 
 # A headless Codex Builder occasionally self-misjudges its sandbox as read-only
 # and bails with no implementation (verified 2026-07-14: identical dispatch
@@ -157,6 +161,31 @@ def build_prompt(handoff_text: str, handoff_name: str) -> str:
         "gate 1: status=completed tier=LOW panel=PASS\n"
         "```\n"
         "status=completed|blocked, tier=LOW|HIGH, panel=PASS|FAIL|BLOCK."
+    )
+
+
+def challenge_prompt(draft_text: str, draft_name: str) -> str:
+    return (
+        "You are the CHALLENGER in a Two-CLI workflow — a read-only, independent "
+        "adversarial reviewer of a draft ADR/HANDOFF before any implementation "
+        "happens. You have NO write access: do not attempt to create, edit, or "
+        "delete any file, run no build/test/install command that mutates state, "
+        "and do not assume you can. Your only output is your final message, "
+        "which the calling process captures and stores as the critique record — "
+        "you do not write it to a file yourself.\n\n"
+        "Attack the design in the draft below as rigorously as you can. At minimum:\n"
+        "- Is the risk classification (LOW/HIGH) and compute tier justified, or "
+        "understated?\n"
+        "- What could make this change irreversible, break backward compatibility, "
+        "or affect a live/shared system in a way the draft doesn't address?\n"
+        "- What alternative approach did the draft not consider, and why might it "
+        "be better?\n"
+        "- What is the single most likely way this design goes wrong in practice?\n\n"
+        "Do not soften the critique to be agreeable. A challenge that finds nothing "
+        "wrong should say so explicitly and explain why the design withstands "
+        "scrutiny — not because attacking it is unnecessary.\n\n"
+        f"--- {draft_name} ---\n{draft_text}\n--- end ---\n\n"
+        "Write your critique as your final message now."
     )
 
 
@@ -716,6 +745,7 @@ class Orchestrator:
         self.human = human
         self._log_fn = log
         self._log: list[str] = []
+        self._resolved_builder_profile: dict = {}
 
     def _emit(self, msg: str) -> None:
         self._log.append(msg)
@@ -1335,10 +1365,149 @@ class Orchestrator:
             outcome=outcome.status,
             reason_code=_receipt_reason_code(outcome),
             attempts=outcome.cycles,
+            **self._resolved_builder_profile,
         )
         outcome.receipt_path = audit.terminal_path
         outcome.receipt_id = audit.dispatch_id if outcome.receipt_path is not None else ""
         return outcome
+
+    def run_challenge(self) -> Outcome:
+        """Single-shot read-only challenger_high dispatch against the current
+        handoff file (ADR-0020 correction 5). Writes CHALLENGE.md — the PARENT
+        process writes it from the captured Turn, the challenger subprocess
+        never touches the filesystem — and records challenge evidence the
+        primary build path's HIGH gate requires before dispatching builder_high.
+        """
+        cfg = self.cfg
+        handoff_name = cfg.handoff_name or busmod.HANDOFF
+        audit = BuildAudit(
+            audit_dir=Path(cfg.audit_dir), repo=Path(cfg.repo), handoff_name=handoff_name,
+            builder_vendor=cfg.builder_vendor, backend=cfg.backend, event="challenge_dispatch",
+        )
+        audit.attempted()
+        try:
+            outcome = self._run_challenge(audit)
+        except Exception:
+            audit.terminal(status="blocked", outcome="ERROR", reason_code="controller_error", attempts=0)
+            raise
+        audit.terminal(
+            status=_challenge_receipt_status(outcome),
+            outcome=outcome.status,
+            reason_code=_challenge_receipt_reason_code(outcome),
+            attempts=outcome.cycles,
+            **self._resolved_builder_profile,
+        )
+        outcome.receipt_path = audit.terminal_path
+        outcome.receipt_id = audit.dispatch_id if outcome.receipt_path is not None else ""
+        return outcome
+
+    def _run_challenge(self, audit: BuildAudit) -> Outcome:
+        cfg = self.cfg
+        bus = Bus(Path(cfg.repo))
+        draft_name = cfg.handoff_name or busmod.HANDOFF
+        draft_text = _read_bus(bus, draft_name)
+        if draft_text is None:
+            return self._outcome(BLOCKED, 0, f"cannot read {draft_name} as UTF-8 text")
+        if not draft_text.strip():
+            return self._outcome(BLOCKED, 0, f"no {draft_name} to challenge")
+        audit.set_handoff(draft_text)
+        try:
+            routing_config = routing.load_routing_config(routing.default_routing_path())
+            preset = cfg.routing_preset or routing.active_preset_name(routing_config)
+            profile = routing.resolve_profile(routing_config, preset, "challenger_high")
+        except routing.RoutingConfigError as exc:
+            return self._outcome(BLOCKED, 0, f"routing config error: {exc}")
+        self._emit(
+            f"[challenge] routing preset={preset!r} -> "
+            f"{profile.vendor}/{profile.model}/{profile.effort}"
+        )
+        self.cfg = replace(
+            cfg, builder_vendor=profile.vendor,
+            builder_model=profile.model, builder_effort=profile.effort,
+        )
+        self.builder = make_backend(profile.vendor)
+        self._resolved_builder_profile = {
+            "routing_preset": preset, "logical_profile": "challenger_high",
+            "model": profile.model, "effort": profile.effort,
+        }
+        turn = self.builder.invoke(ROLE_CHALLENGER, challenge_prompt(draft_text, draft_name), self.cfg)
+        if turn.error:
+            return self._outcome(BLOCKED, 1, f"challenger error: {turn.error}")
+        critique = turn.text
+        if not critique.strip():
+            return self._outcome(BLOCKED, 1, "challenger produced an empty critique")
+        bus.write("CHALLENGE.md", critique)
+        return self._outcome(CHALLENGED, 1, "challenge complete -- see CHALLENGE.md")
+
+    def _resolve_builder_profile(
+        self, handoff_text: str, tiers: dict[str, str], compute_tiers: dict[str, str],
+    ) -> Optional[Outcome]:
+        """Resolve which vendor/model/effort this dispatch actually uses, from
+        routing.toml (ADR-0020) — reassigns self.cfg/self.builder in place when
+        routing applies. Returns a terminal BLOCKED Outcome if the dispatch
+        must be refused (routing config error, a HIGH gate carrying an
+        explicit --builder-model/--builder-effort override, or a HIGH gate with
+        no matching challenger_high evidence for this exact handoff content —
+        ADR-0020 correction 5); returns None on success (self.cfg/self.builder
+        may or may not have changed).
+        """
+        cfg = self.cfg
+        first_gate = next(iter(tiers), "1")
+        is_high_risk = tier_for(tiers, first_gate) == busmod.TIER_HIGH
+        effective = busmod.effective_compute(tiers, compute_tiers, first_gate)
+        logical_role = {
+            busmod.COMPUTE_LOW: "builder_low",
+            busmod.COMPUTE_NORMAL: "builder_normal",
+            busmod.COMPUTE_HIGH: "builder_high",
+        }[effective]
+        try:
+            routing_config = routing.load_routing_config(routing.default_routing_path())
+            preset = cfg.routing_preset or routing.active_preset_name(routing_config)
+            if is_high_risk:
+                if cfg.builder_model or cfg.builder_effort:
+                    return self._outcome(
+                        BLOCKED, 0,
+                        "HIGH gate refuses an explicit --builder-model/--builder-effort "
+                        "override (ADR-0020) — use --routing-preset to pick a different "
+                        "preset instead",
+                    )
+                handoff_hash = content_hash(handoff_text)
+                if not find_challenge_evidence(Path(cfg.audit_dir), handoff_hash):
+                    return self._outcome(
+                        BLOCKED, 0,
+                        "HIGH gate has no matching challenger_high evidence for this "
+                        "exact handoff content (ADR-0020 correction 5) — run "
+                        "`orchestrate.py challenge` against it first",
+                    )
+                default_profile = routing.resolve_profile(routing_config, preset, "builder_high")
+                if cfg.builder_vendor and cfg.builder_vendor != default_profile.vendor:
+                    profile = routing.resolve_builder_high_for_vendor(routing_config, cfg.builder_vendor)
+                else:
+                    profile = default_profile
+            elif cfg.builder_vendor or cfg.builder_model or cfg.builder_effort:
+                profile = None  # explicit override present -> leave cfg/self.builder untouched
+            else:
+                profile = routing.resolve_profile(routing_config, preset, logical_role)
+        except routing.RoutingConfigError as exc:
+            return self._outcome(BLOCKED, 0, f"routing config error: {exc}")
+        if profile is not None:
+            self._emit(
+                f"[build] routing preset={preset!r} gate={first_gate!r} "
+                f"role={logical_role if not is_high_risk else 'builder_high'} -> "
+                f"{profile.vendor}/{profile.model}/{profile.effort}"
+            )
+            self.cfg = replace(
+                cfg, builder_vendor=profile.vendor,
+                builder_model=profile.model, builder_effort=profile.effort,
+            )
+            self.builder = make_backend(profile.vendor)
+            self._resolved_builder_profile = {
+                "routing_preset": preset,
+                "logical_profile": logical_role if not is_high_risk else "builder_high",
+                "model": profile.model,
+                "effort": profile.effort,
+            }
+        return None
 
     def _run_from_handoff(self, audit: BuildAudit) -> Outcome:
         """Single-shot Builder pass from an existing handoff file
@@ -1363,7 +1532,13 @@ class Orchestrator:
             return self._outcome(BLOCKED, 0, f"no {handoff_name} to build from")
         audit.set_handoff(handoff_text)
         tiers = parse_tiers(handoff_text)
+        compute_tiers = busmod.parse_compute_tiers(handoff_text)
         self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
+        if cfg.backend == "real":
+            blocked_routing = self._resolve_builder_profile(handoff_text, tiers, compute_tiers)
+            if blocked_routing is not None:
+                return blocked_routing
+            cfg = self.cfg
         # Advisory tier gate: the safety net still hard-blocks, but verdict gating
         # is emit-only here — the in-session Claude review owns acceptance.
         #
@@ -1469,4 +1644,32 @@ def _receipt_reason_code(outcome: Outcome) -> str:
         return "handoff_missing"
     if outcome.reason.startswith("builder error:"):
         return "builder_error"
+    return "blocked_other"
+
+
+def _challenge_receipt_status(outcome: Outcome) -> str:
+    """Map challenge outcomes to the small stable audit vocabulary."""
+    if outcome.status == CHALLENGED:
+        return "challenged"
+    if outcome.reason.startswith("challenger error: vendor turn timed out after "):
+        return "timeout"
+    return "blocked"
+
+
+def _challenge_receipt_reason_code(outcome: Outcome) -> str:
+    """Classify a challenge outcome without copying vendor-controlled error text to audit."""
+    if outcome.status == CHALLENGED:
+        return "challenge_complete"
+    if outcome.reason.startswith("challenger error: vendor turn timed out after "):
+        return "timeout"
+    if outcome.reason.startswith("cannot read "):
+        return "draft_unreadable"
+    if outcome.reason.startswith("no ") and outcome.reason.endswith(" to challenge"):
+        return "draft_missing"
+    if outcome.reason.startswith("challenger produced an empty critique"):
+        return "empty_critique"
+    if outcome.reason.startswith("routing config error:"):
+        return "routing_error"
+    if outcome.reason.startswith("challenger error:"):
+        return "challenger_error"
     return "blocked_other"

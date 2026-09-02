@@ -24,6 +24,7 @@ from orchestrator.controller import (
     Orchestrator,
     TerminalGate,
     BUILT,
+    CHALLENGED,
     DONE,
     HELD,
 )
@@ -84,8 +85,10 @@ def _build(args: argparse.Namespace) -> int:
     persistent doc can dispatch an alternate spec without clobbering it."""
     cfg = Config(
         repo=Path(args.repo).resolve(),
-        builder_vendor=args.builder,
+        builder_vendor=args.builder or "",
         builder_model=args.builder_model or "",
+        builder_effort=args.builder_effort or "",
+        routing_preset=args.routing_preset or "",
         backend=args.backend,
         timeout_s=args.timeout_s,
         handoff_name=args.handoff,
@@ -101,7 +104,9 @@ def _build(args: argparse.Namespace) -> int:
     if cfg.backend == "mock":
         builder = MockBackend(default_low_scenario(cfg.goal))
     else:
-        builder = make_backend(cfg.builder_vendor)
+        # An omitted --builder is resolved after the handoff's tier fence is read.
+        # Keep a valid bootstrap backend until _run_from_handoff replaces it.
+        builder = make_backend(cfg.builder_vendor or "codex")
 
     # run_from_handoff has no human gates and never invokes the architect slot;
     # pass the builder for both and an always-open gate.
@@ -118,6 +123,39 @@ def _build(args: argparse.Namespace) -> int:
     if outcome.status == BUILT:
         print(f"[result] {cfg.repo / 'RESULT.md'}")
     return 0 if outcome.status == BUILT else 1
+
+
+def _challenge(args: argparse.Namespace) -> int:
+    """Single-shot read-only challenger_high dispatch (ADR-0020 correction 5)."""
+    cfg = Config(
+        repo=Path(args.repo).resolve(),
+        routing_preset=args.routing_preset or "",
+        backend=args.backend,
+        timeout_s=args.timeout_s,
+        handoff_name=args.handoff,
+        audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
+    )
+    problems = cfg.validate()
+    if problems:
+        for p in problems:
+            print(f"config error: {p}", file=sys.stderr)
+        return 2
+
+    if cfg.backend == "mock":
+        challenger = MockBackend(default_low_scenario(cfg.goal))
+    else:
+        # Bootstrap placeholder; _run_challenge resolves and replaces this
+        # with the real vendor from routing.toml before invoking anything.
+        challenger = make_backend("codex")
+
+    print(f"[orchestrator] challenge backend={cfg.backend} repo={cfg.repo}")
+    outcome = Orchestrator(cfg, challenger, challenger, AutoApprove()).run_challenge()
+    print(f"\n[outcome] {outcome.status} after {outcome.cycles} cycle(s): {outcome.reason}")
+    if outcome.receipt_path is not None:
+        print(f"[receipt] {outcome.receipt_path} id={outcome.receipt_id}")
+    if outcome.status == CHALLENGED:
+        print(f"[challenge] {cfg.repo / 'CHALLENGE.md'}")
+    return 0 if outcome.status == CHALLENGED else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,8 +201,15 @@ def main(argv: list[str] | None = None) -> int:
                         "--repo root, no directory part (default: HANDOFF.md; "
                         "use e.g. HANDOFF_WEBVIEW.md when HANDOFF.md is "
                         "occupied by a persistent doc)")
-    b.add_argument("--builder", default="codex", choices=["codex", "claude"])
-    b.add_argument("--builder-model", default="")
+    b.add_argument("--builder", default=None, choices=["codex", "claude"],
+                   help="explicit vendor override; omit to let the active routing "
+                        "preset choose (see routing.toml / --routing-preset)")
+    b.add_argument("--builder-model", default=None,
+                   help="explicit model override; refused on a HIGH-tier gate (ADR-0020)")
+    b.add_argument("--builder-effort", default=None,
+                   help="explicit effort override; refused on a HIGH-tier gate (ADR-0020)")
+    b.add_argument("--routing-preset", default=None,
+                   help="override routing.toml's own [routing].preset for this dispatch only")
     b.add_argument("--backend", default="mock", choices=["mock", "real"])
     b.add_argument("--timeout-s", type=float, default=1800,
                    help="per headless Builder turn; timeout preserves worktree changes but blocks the build")
@@ -173,6 +218,22 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--net-dryrun", action="store_true",
                    help="run the safety net in dryrun (warn) instead of enforce")
     b.set_defaults(func=_build)
+
+    c = sub.add_parser(
+        "challenge",
+        help="single-shot read-only challenger_high dispatch against a draft "
+             "HANDOFF/ADR (ADR-0020 correction 5)",
+    )
+    c.add_argument("--repo", default=".", help="work repo holding the draft file (default: cwd)")
+    c.add_argument("--handoff", default="HANDOFF.md",
+                   help="draft file to challenge — a bare name in the --repo root")
+    c.add_argument("--routing-preset", default=None,
+                   help="override routing.toml's own [routing].preset for this dispatch only")
+    c.add_argument("--backend", default="mock", choices=["mock", "real"])
+    c.add_argument("--timeout-s", type=float, default=1800)
+    c.add_argument("--audit-dir",
+                   help="harness-side directory for content-free dispatch audit JSONL (default: harness runtime logs)")
+    c.set_defaults(func=_challenge)
 
     args = ap.parse_args(argv)
     return args.func(args)

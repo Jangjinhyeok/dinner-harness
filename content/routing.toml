@@ -1,0 +1,94 @@
+# dinner-harness routing config — the ONLY place concrete model/vendor/effort
+# literals may live (see docs/architecture/ADR-0020-routing-preset-architecture.md).
+# orchestrator/routing.py reads this file; it never falls back to a hardcoded
+# mapping if this file is missing or invalid — that failure is intentional
+# (ADR-0020 correction 1). Changing a concrete model here should never require
+# changing controller.py, HANDOFF format, or risk policy.
+#
+# Logical roles (must match exactly what orchestrator/controller.py dispatches):
+#   architect        — interactive-session recommended policy (primary path);
+#                       actually dispatched only by secondary/experimental
+#                       headless paths (orchestrate.py run). NOT dispatched by
+#                       the primary `orchestrate.py build` path, which runs
+#                       inside the user's own already-running interactive
+#                       Claude session (see ADR-0020 correction 3).
+#   challenger_high  — read-only HIGH-risk ADR/HANDOFF challenge (dispatch-controlled).
+#   builder_low      — dispatch-controlled, compute tier LOW.
+#   builder_normal   — dispatch-controlled, compute tier NORMAL.
+#   builder_high     — dispatch-controlled, compute tier HIGH (or any risk=HIGH gate).
+#   reviewer         — interactive-session recommended policy (primary path);
+#                       actually dispatched only by secondary/experimental paths.
+
+[routing]
+preset = "hybrid"
+
+# --- hybrid: current production default -------------------------------- #
+# Claude for high-leverage reasoning (Architect/Challenger/Reviewer), Codex
+# for token-heavy implementation (Builder). See ADR-0020 for the token-economy
+# rationale this mirrors from content/instructions/CLAUDE.md's cross-vendor
+# role assignment.
+
+[presets.hybrid.architect]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "medium"
+
+[presets.hybrid.challenger_high]
+vendor = "claude"
+model = "claude-opus-5"
+effort = "low"
+
+[presets.hybrid.builder_low]
+vendor = "codex"
+model = "gpt-5.6-luna"
+effort = "high"
+
+[presets.hybrid.builder_normal]
+vendor = "codex"
+model = "gpt-5.6-terra"
+effort = "medium"
+
+[presets.hybrid.builder_high]
+vendor = "codex"
+model = "gpt-5.6-sol"
+effort = "high"
+
+[presets.hybrid.reviewer]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "medium"
+
+# --- claude_only: no Codex in the loop ----------------------------------- #
+# Same role boundaries as hybrid (Architect/Challenger/Builder/Reviewer stay
+# separate, independent invocations — not single-agent mode), all resolved to
+# Claude models. Builder strength still scales with compute tier.
+
+[presets.claude_only.architect]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "medium"
+
+[presets.claude_only.challenger_high]
+vendor = "claude"
+model = "claude-opus-5"
+effort = "low"
+
+[presets.claude_only.builder_low]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "low"
+
+[presets.claude_only.builder_normal]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "medium"
+
+[presets.claude_only.builder_high]
+vendor = "claude"
+model = "claude-opus-5"
+effort = "low"
+
+[presets.claude_only.reviewer]
+vendor = "claude"
+model = "claude-sonnet-5"
+effort = "medium"

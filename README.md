@@ -250,17 +250,18 @@ Git 변경을 받은 뒤에는 `py -3 refresh.py`로 plan을 확인하고 `py -3
 ### 7) 단일 vendor만 사용하는 경우
 
 **Claude만 사용 (Codex 없이)**: Architect는 이미 기본값이 Claude라 바뀌는 건 Builder
-vendor뿐이다. `harness.toml`의 `[vars].builder_vendor`를 `"claude"`로 바꾸고 `py -3
-refresh.py --apply`로 재설치하면 끝이다(ADR-0014) — 예전엔 4개 문서를 손으로
-동기화해야 했지만 이제 한 곳에서 렌더링된다. `orchestrator/vendors.py`의
+routing preset뿐이다. `content/routing.toml`의 `[routing].preset`을 `"claude_only"`로
+바꾸고 `py -3 refresh.py --apply`로 재설치하면 끝이다(ADR-0020) — controller.py나
+HANDOFF 포맷을 건드릴 필요가 없다. `orchestrator/vendors.py`의
 `ClaudeBackend`가 Builder 역할일 때 자기 자신의 `builder_guard`에 막히지 않도록
 `DINNER_EXECUTION_MODE=direct`를 서브프로세스 환경에 심는 처리는 이미 코드로 되어
 있어 추가 조치가 필요 없다.
 
-**주의**: 이 설정은 위 문서들의 렌더된 dispatch 예시만 바꾼다. `orchestrate.py`를
-`--builder` 플래그 없이 직접 호출하면 `orchestrator/config.py`의 코드 기본값
-(`"codex"`)이 적용된다 — `harness.toml`은 런타임에 읽히지 않는다. 렌더된 문서가
-보여주는 `--builder <BUILDER_VENDOR>` 형태를 그대로 쓰면 문제없다.
+**주의**: `orchestrate.py`를 `--builder` 플래그 없이 직접 호출하면 active preset이
+매 게이트의 vendor/model/effort를 정한다(`orchestrator/routing.py`) — 특정 vendor를
+강제하려면 `--builder claude`나 `--builder codex`를 explicit runtime override로
+붙인다. routing preset·profile·override precedence의 전체 설명은
+`~/.claude/rules/routing-reference.md` 참조.
 
 **Codex만 사용 (Claude Code 없이)**: 반대로 바뀌는 축은 Architect vendor다 —
 인터랙티브 드라이버 자체를 Codex CLI로 열면 Architect 역할은 자동으로 Codex가

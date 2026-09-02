@@ -213,12 +213,10 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
         )
 
     # 5. templated files (plain text substitution only — no JSON handling needed here).
-    builder_vendor_token = vars_cfg.get("builder_vendor_token", "<BUILDER_VENDOR>")
-    builder_vendor = vars_cfg.get("builder_vendor", "codex")
     for entry in target_cfg.get("template", []):
         src = repo_root / entry["src"]
         dest = dest_root / entry["dest"]
-        text = src.read_text(encoding="utf-8").replace(builder_vendor_token, builder_vendor)
+        text = src.read_text(encoding="utf-8")
         plan.append(("template", dest))
         if not dry_run:
             dest.parent.mkdir(parents=True, exist_ok=True)

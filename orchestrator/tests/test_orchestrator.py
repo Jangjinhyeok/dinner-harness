@@ -24,6 +24,7 @@ import check
 import orchestrate
 import refresh
 from orchestrator import bus
+from orchestrator import routing
 from orchestrator.config import Config
 from orchestrator.controller import (
     AutoApprove,
@@ -36,10 +37,13 @@ from orchestrator.controller import (
     compute_has_high,
     enforce_tier_gates,
     BUILT,
+    CHALLENGED,
     DONE,
     BLOCKED,
     HELD,
 )
+from orchestrator import receipt
+from orchestrator.receipt import BuildAudit
 from orchestrator import safety
 from orchestrator import vendors
 from orchestrator.vendors import (
@@ -118,6 +122,56 @@ class TestVendorRunner(unittest.TestCase):
         argv, _ = run_mock.call_args.args
         self.assertEqual(
             argv[argv.index("--enable") + 1], "experimental_windows_sandbox")
+
+    @mock.patch("orchestrator.vendors._run")
+    def test_claude_backend_passes_builder_effort(self, run_mock: mock.Mock):
+        vendors.ClaudeBackend().invoke(
+            ROLE_BUILDER, "prompt", Config(builder_effort="high")
+        )
+
+        argv, _ = run_mock.call_args.args
+        self.assertEqual(argv[argv.index("--effort") + 1], "high")
+
+    @mock.patch("orchestrator.vendors._run")
+    def test_claude_backend_omits_default_builder_effort(self, run_mock: mock.Mock):
+        vendors.ClaudeBackend().invoke(ROLE_BUILDER, "prompt", Config())
+
+        argv, _ = run_mock.call_args.args
+        self.assertNotIn("--effort", argv)
+
+    @mock.patch("orchestrator.vendors._run")
+    def test_claude_challenger_clears_inherited_direct_mode(self, run_mock: mock.Mock):
+        with mock.patch.dict(os.environ, {"DINNER_EXECUTION_MODE": "direct"}):
+            vendors.ClaudeBackend().invoke(
+                vendors.ROLE_CHALLENGER, "prompt", Config()
+            )
+
+        argv, _ = run_mock.call_args.args
+        self.assertNotIn("--permission-mode", argv)
+        self.assertNotEqual(
+            run_mock.call_args.kwargs["env"].get("DINNER_EXECUTION_MODE"),
+            "direct",
+        )
+
+    @mock.patch("orchestrator.vendors._run")
+    def test_codex_backend_passes_builder_effort(self, run_mock: mock.Mock):
+        vendors.CodexBackend().invoke(
+            ROLE_BUILDER, "prompt", Config(builder_effort="medium")
+        )
+
+        argv, _ = run_mock.call_args.args
+        effort_index = argv.index("-c")
+        self.assertEqual(argv[effort_index + 1], "model_reasoning_effort=medium")
+
+    def test_config_rejects_invalid_builder_effort(self):
+        problems = Config(builder_effort="bogus").validate()
+
+        self.assertTrue(any("builder_effort" in problem for problem in problems))
+
+    def test_config_accepts_empty_builder_effort(self):
+        problems = Config(builder_effort="").validate()
+
+        self.assertFalse(any("effort" in problem for problem in problems))
 
     def test_sandbox_degraded_only_reports_mismatched_headers(self):
         cases = (
@@ -475,7 +529,7 @@ class TestBuilderFirstGuard(unittest.TestCase):
         delegate = (root / "content" / "skills" / "delegate" / "SKILL.md").read_text(encoding="utf-8")
         architect_cmd = (
             'py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
-            '"<ABSOLUTE_REPO_PATH>" --backend real --builder <BUILDER_VENDOR>'
+            '"<ABSOLUTE_REPO_PATH>" --backend real'
         )
         delegate_cmd = architect_cmd + " --handoff HANDOFF_DELEGATE.md"
         self.assertIn(architect_cmd, architect)
@@ -508,6 +562,46 @@ class TestBuilderFirstGuard(unittest.TestCase):
                 text,
                 rel,
             )
+
+    def test_reference_docs_are_wired_into_claude_install_manifest(self):
+        root = Path(__file__).resolve().parents[2]
+        harness_text = (root / "harness.toml").read_text(encoding="utf-8")
+        with (root / "harness.toml").open("rb") as f:
+            manifest = tomllib.load(f)
+        claude_copy_dests = {dest for _src, dest in manifest["targets"]["claude"]["copy"]}
+        self.assertIn("rules/two-cli-reference.md", claude_copy_dests)
+        self.assertIn("rules/routing-reference.md", claude_copy_dests)
+
+    def test_routing_reference_doc_exists_and_is_pointed_to(self):
+        root = Path(__file__).resolve().parents[2]
+        ref = root / "content" / "rules" / "routing-reference.md"
+        self.assertTrue(ref.is_file())
+        ref_text = ref.read_text(encoding="utf-8")
+        for needle in ("hybrid", "claude_only", "builder_low", "builder_normal",
+                       "builder_high", "challenger_high", "routing.toml"):
+            self.assertIn(needle, ref_text)
+        claude_md = (root / "content" / "instructions" / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("routing-reference.md", claude_md)
+
+    def test_no_install_time_builder_vendor_token_remains(self):
+        root = Path(__file__).resolve().parents[2]
+        for rel in (
+            "harness.toml",
+            "adapters/claude.py",
+            "adapters/codex.py",
+            "content/instructions/CLAUDE.md",
+            "content/roles/ROLE_ARCHITECT.md",
+            "content/rules/_mode/architect.md",
+            "content/rules/two-cli-reference.md",
+            "content/skills/delegate/SKILL.md",
+            "assets/claude/README.md",
+            "assets/codex/AGENTS.md",
+            "README.md",
+            "README.en.md",
+        ):
+            text = (root / rel).read_text(encoding="utf-8")
+            self.assertNotIn("<BUILDER_VENDOR>", text, rel)
+            self.assertNotIn("builder_vendor_token", text, rel)
 
     def test_direct_escape_launcher_and_manifest_are_installed(self):
         root = Path(__file__).resolve().parents[2] / "assets" / "claude"
@@ -927,6 +1021,59 @@ class TestBusParsing(unittest.TestCase):
 
 
 class TestTierGate(unittest.TestCase):
+    def test_parse_tiers_bare_form_is_unchanged(self):
+        self.assertEqual(
+            bus.parse_tiers("```tiers\ngate 1: LOW\n```\n"),
+            {"1": "LOW"},
+        )
+
+    def test_parse_tiers_kv_form_extracts_risk(self):
+        self.assertEqual(
+            bus.parse_tiers("```tiers\ngate 1: risk=LOW compute=NORMAL\n```\n"),
+            {"1": "LOW"},
+        )
+
+    def test_parse_compute_tiers_kv_form_extracts_compute(self):
+        self.assertEqual(
+            bus.parse_compute_tiers("```tiers\ngate 1: risk=LOW compute=NORMAL\n```\n"),
+            {"1": "NORMAL"},
+        )
+
+    def test_parse_compute_tiers_bare_form_is_empty(self):
+        self.assertEqual(
+            bus.parse_compute_tiers("```tiers\ngate 1: LOW\n```\n"),
+            {},
+        )
+
+    def test_effective_compute_missing_compute_defaults_to_normal(self):
+        self.assertEqual(
+            bus.effective_compute({"1": "LOW"}, {}, "1"),
+            bus.COMPUTE_NORMAL,
+        )
+        self.assertEqual(
+            bus.effective_compute({"1": "LOW"}, {"1": "bogus"}, "1"),
+            bus.COMPUTE_NORMAL,
+        )
+
+    def test_effective_compute_high_risk_forces_high(self):
+        self.assertEqual(
+            bus.effective_compute({"1": "HIGH"}, {"1": "LOW"}, "1"),
+            bus.COMPUTE_HIGH,
+        )
+
+    def test_effective_compute_low_risk_preserves_declared_high(self):
+        """Compute is returned independently; risk controls challenger need."""
+        self.assertEqual(
+            bus.effective_compute({"1": "LOW"}, {"1": "HIGH"}, "1"),
+            bus.COMPUTE_HIGH,
+        )
+
+    def test_parse_compute_tiers_ignores_invalid_compute(self):
+        self.assertNotIn(
+            "1",
+            bus.parse_compute_tiers("```tiers\ngate 1: risk=LOW compute=bogus\n```\n"),
+        )
+
     def test_high_without_pass_blocks(self):
         tiers = {"1": bus.TIER_HIGH}
         v = [bus.GateVerdict(gate="1", tier=bus.TIER_HIGH, panel=bus.PANEL_FAIL)]
@@ -1755,9 +1902,533 @@ class TestHumanGates(unittest.TestCase):
             self.assertEqual(out.status, HELD, out.reason)
 
 
+class TestBuildAuditChallengeEvidence(unittest.TestCase):
+    @staticmethod
+    def _audit(audit_dir: Path, *, event: str = "challenge_dispatch") -> BuildAudit:
+        audit = BuildAudit(
+            audit_dir=audit_dir,
+            repo=audit_dir,
+            handoff_name="HANDOFF.md",
+            builder_vendor="claude",
+            backend="real",
+            event=event,
+        )
+        audit.set_handoff("draft text")
+        return audit
+
+    def test_event_defaults_to_builder_dispatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit = BuildAudit(
+                audit_dir=audit_dir,
+                repo=audit_dir,
+                handoff_name="HANDOFF.md",
+                builder_vendor="claude",
+                backend="real",
+            )
+            audit.attempted()
+            record = json.loads(audit.path.read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(record["event"], "builder_dispatch")
+
+    def test_challenge_event_is_recorded(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit = self._audit(audit_dir)
+            audit.attempted()
+            record = json.loads(audit.path.read_text(encoding="utf-8").splitlines()[-1])
+            self.assertEqual(record["event"], "challenge_dispatch")
+
+    def test_content_hash_matches_digest(self):
+        value = "draft text"
+        self.assertEqual(receipt.content_hash(value), receipt._digest(value))
+
+    def test_find_challenge_evidence_matches_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit = self._audit(audit_dir)
+            audit.attempted()
+            audit.terminal(
+                status="challenged",
+                outcome="CHALLENGED",
+                reason_code="challenge_complete",
+                attempts=1,
+            )
+            self.assertTrue(
+                receipt.find_challenge_evidence(
+                    audit_dir, receipt.content_hash("draft text")
+                )
+            )
+
+    def test_find_challenge_evidence_rejects_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit = self._audit(audit_dir)
+            audit.attempted()
+            audit.terminal(
+                status="challenged",
+                outcome="CHALLENGED",
+                reason_code="challenge_complete",
+                attempts=1,
+            )
+            self.assertFalse(
+                receipt.find_challenge_evidence(
+                    audit_dir, receipt.content_hash("other text")
+                )
+            )
+
+    def test_find_challenge_evidence_ignores_builder_event(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit = self._audit(audit_dir, event="builder_dispatch")
+            audit.attempted()
+            audit.terminal(
+                status="challenged",
+                outcome="CHALLENGED",
+                reason_code="challenge_complete",
+                attempts=1,
+            )
+            self.assertFalse(
+                receipt.find_challenge_evidence(
+                    audit_dir, receipt.content_hash("draft text")
+                )
+            )
+
+    def test_find_challenge_evidence_is_false_when_audit_file_is_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(
+                receipt.find_challenge_evidence(
+                    Path(d) / "nonexistent", receipt.content_hash("draft text")
+                )
+            )
+
+    def test_find_challenge_evidence_ignores_non_object_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit_dir.mkdir(exist_ok=True)
+            (audit_dir / "build-audit.jsonl").write_text(
+                "[]\nnull\n\"text\"\n", encoding="utf-8"
+            )
+            self.assertFalse(
+                receipt.find_challenge_evidence(
+                    audit_dir, receipt.content_hash("draft text")
+                )
+            )
+
+    def test_find_challenge_evidence_ignores_invalid_utf8(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            audit_dir.mkdir(exist_ok=True)
+            (audit_dir / "build-audit.jsonl").write_bytes(b"\xff\xfe\n")
+            self.assertFalse(
+                receipt.find_challenge_evidence(
+                    audit_dir, receipt.content_hash("draft text")
+                )
+            )
+
+
+class TestChallenge(unittest.TestCase):
+    @staticmethod
+    def _audit(cfg: Config) -> BuildAudit:
+        return BuildAudit(
+            audit_dir=Path(cfg.audit_dir),
+            repo=Path(cfg.repo),
+            handoff_name=cfg.handoff_name,
+            builder_vendor=cfg.builder_vendor,
+            backend=cfg.backend,
+            event="challenge_dispatch",
+        )
+
+    @staticmethod
+    def _orchestrator(repo: Path, audit_dir: Path, *, routing_preset: str = ""):
+        cfg = Config(
+            repo=repo,
+            backend="real",
+            audit_dir=audit_dir,
+            routing_preset=routing_preset,
+        )
+        backend = mock.Mock(spec=Backend)
+        return cfg, Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
+
+    def test_run_challenge_writes_critique_and_returns_challenged(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, root / "audit")
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="critique text")
+
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                outcome = orchestrator._run_challenge(self._audit(cfg))
+
+            self.assertEqual(outcome.status, CHALLENGED)
+            self.assertEqual(
+                (repo / "CHALLENGE.md").read_text(encoding="utf-8"),
+                "critique text",
+            )
+
+    def test_challenger_returns_text_only_and_parent_writes_challenge_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, root / "audit")
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="parent-owned critique")
+
+            self.assertFalse((repo / "CHALLENGE.md").exists())
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                outcome = orchestrator._run_challenge(self._audit(cfg))
+
+            self.assertEqual(outcome.status, CHALLENGED)
+            backend.invoke.assert_called_once()
+            self.assertEqual(
+                (repo / "CHALLENGE.md").read_text(encoding="utf-8"),
+                "parent-owned critique",
+            )
+
+    def test_missing_draft_is_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            cfg, orchestrator = self._orchestrator(repo, root / "audit")
+
+            outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, BLOCKED)
+            self.assertIn("to challenge", outcome.reason)
+
+    def test_routing_config_error_is_blocked(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            _cfg_obj, orchestrator = self._orchestrator(
+                repo, root / "audit", routing_preset="nonexistent"
+            )
+
+            outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, BLOCKED)
+            self.assertIn("routing config error", outcome.reason)
+
+    def test_run_challenge_receipt_records_event_and_routing_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, audit_dir)
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="critique text")
+
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, CHALLENGED)
+            records = [
+                json.loads(line)
+                for line in (audit_dir / "build-audit.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(records[0]["event"], "challenge_dispatch")
+            self.assertEqual(records[-1]["status"], "challenged")
+            self.assertEqual(records[-1]["routing_preset"], "hybrid")
+            self.assertEqual(records[-1]["logical_profile"], "challenger_high")
+            self.assertEqual(records[-1]["model"], "claude-opus-5")
+            self.assertEqual(records[-1]["effort"], "low")
+
+
 class TestBuildFromHandoff(unittest.TestCase):
     """run_from_handoff: single-shot Builder pass from an on-disk HANDOFF.md
     (the interactive Architect's auto-dispatch path). No headless architect."""
+
+    def _resolve_builder_profile(self, **cfg_overrides):
+        audit_tmp = tempfile.TemporaryDirectory(prefix="dinner-harness-challenge-test-")
+        self.addCleanup(audit_tmp.cleanup)
+        options = {
+            "backend": "real",
+            "builder_vendor": "",
+            "audit_dir": Path(audit_tmp.name),
+        }
+        options.update(cfg_overrides)
+        cfg = _cfg(Path("."), **options)
+        original_builder = object()
+        orchestrator = Orchestrator(
+            cfg, original_builder, original_builder, AutoApprove(), log=lambda m: None
+        )
+        return orchestrator, original_builder
+
+    @staticmethod
+    def _record_challenge_evidence(orchestrator, handoff_text: str) -> None:
+        audit = BuildAudit(
+            audit_dir=Path(orchestrator.cfg.audit_dir),
+            repo=Path(orchestrator.cfg.repo),
+            handoff_name=orchestrator.cfg.handoff_name,
+            builder_vendor=orchestrator.cfg.builder_vendor,
+            backend=orchestrator.cfg.backend,
+            event="challenge_dispatch",
+        )
+        audit.set_handoff(handoff_text)
+        audit.attempted()
+        audit.terminal(
+            status="challenged",
+            outcome=CHALLENGED,
+            reason_code="challenge_complete",
+            attempts=1,
+        )
+
+    def test_receipt_terminal_records_routing_metadata(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d) / "audit"
+            audit = BuildAudit(
+                audit_dir=audit_dir,
+                repo=Path(d),
+                handoff_name="HANDOFF.md",
+                builder_vendor="codex",
+                backend="real",
+            )
+            audit.set_handoff("HANDOFF text")
+            audit.attempted()
+            audit.terminal(
+                status="built",
+                outcome="BUILT",
+                reason_code="built_low",
+                attempts=1,
+                routing_preset="hybrid",
+                logical_profile="builder_normal",
+                model="gpt-5.6-terra",
+                effort="medium",
+            )
+            record = json.loads(audit.path.read_text(encoding="utf-8").splitlines()[-1])
+
+            self.assertEqual(record["routing_preset"], "hybrid")
+            self.assertEqual(record["logical_profile"], "builder_normal")
+            self.assertEqual(record["model"], "gpt-5.6-terra")
+            self.assertEqual(record["effort"], "medium")
+
+    def test_receipt_terminal_remains_content_free(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d) / "audit"
+            audit = BuildAudit(
+                audit_dir=audit_dir,
+                repo=Path(d),
+                handoff_name="HANDOFF.md",
+                builder_vendor="codex",
+                backend="real",
+            )
+            audit.set_handoff("HANDOFF text")
+            audit.attempted()
+            audit.terminal(
+                status="built",
+                outcome="BUILT",
+                reason_code="built_low",
+                attempts=1,
+                routing_preset="hybrid",
+                logical_profile="builder_normal",
+                model="gpt-5.6-terra",
+                effort="medium",
+            )
+            record = json.loads(audit.path.read_text(encoding="utf-8").splitlines()[-1])
+
+            self.assertEqual(
+                set(record),
+                {
+                    "schema", "timestamp", "dispatch_id", "event",
+                    "repo_sha256", "handoff_name_sha256", "builder_vendor",
+                    "backend", "orchestrator_sha256", "handoff_sha256", "status",
+                    "outcome", "reason_code", "attempts", "duration_ms",
+                    "routing_preset", "logical_profile", "model", "effort",
+                },
+            )
+
+    def test_resolved_builder_profile_metadata_is_recorded(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+
+        self.assertIsNone(outcome)
+        self.assertEqual(
+            orchestrator._resolved_builder_profile,
+            {
+                "routing_preset": "hybrid",
+                "logical_profile": "builder_normal",
+                "model": "gpt-5.6-terra",
+                "effort": "medium",
+            },
+        )
+
+    def test_explicit_builder_model_override_leaves_profile_metadata_empty(self):
+        orchestrator, _ = self._resolve_builder_profile(builder_model="existing-model")
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator._resolved_builder_profile, {})
+        make_backend.assert_not_called()
+
+    def test_real_low_normal_resolves_hybrid_builder_normal(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        routed_builder = object()
+        with mock.patch("orchestrator.controller.make_backend", return_value=routed_builder):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
+        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-terra")
+        self.assertEqual(orchestrator.cfg.builder_effort, "medium")
+        self.assertIs(orchestrator.builder, routed_builder)
+
+    def test_real_compute_low_resolves_hybrid_builder_low(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_LOW}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
+        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-luna")
+        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+
+    def test_real_compute_high_on_low_risk_resolves_hybrid_builder_high(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_HIGH}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
+        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
+        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+
+    def test_real_low_normal_resolves_claude_only_builder_normal(self):
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="claude_only")
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "claude")
+        self.assertEqual(orchestrator.cfg.builder_model, "claude-sonnet-5")
+        self.assertEqual(orchestrator.cfg.builder_effort, "medium")
+
+    def test_real_high_without_challenge_evidence_is_blocked(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+            )
+
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome.status, BLOCKED)
+        self.assertIn("no matching challenger_high evidence", outcome.reason)
+        make_backend.assert_not_called()
+
+    def test_real_high_without_override_resolves_hybrid_builder_high(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        self._record_challenge_evidence(orchestrator, "HANDOFF text")
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
+        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
+        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+
+    def test_real_high_challenge_evidence_for_changed_draft_is_blocked(self):
+        orchestrator, _ = self._resolve_builder_profile()
+        self._record_challenge_evidence(orchestrator, "HANDOFF text")
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text changed",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+            )
+
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome.status, BLOCKED)
+        self.assertIn("no matching challenger_high evidence", outcome.reason)
+        make_backend.assert_not_called()
+
+    def test_real_high_with_builder_model_override_is_blocked(self):
+        orchestrator, _ = self._resolve_builder_profile(builder_model="custom-model")
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+            )
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome.status, BLOCKED)
+        self.assertIn("override", outcome.reason)
+        make_backend.assert_not_called()
+
+    def test_real_high_with_builder_effort_override_is_blocked(self):
+        orchestrator, _ = self._resolve_builder_profile(builder_effort="xhigh")
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+            )
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome.status, BLOCKED)
+        self.assertIn("override", outcome.reason)
+        make_backend.assert_not_called()
+
+    def test_real_high_claude_vendor_uses_claude_builder_high_profile(self):
+        orchestrator, _ = self._resolve_builder_profile(builder_vendor="claude")
+        self._record_challenge_evidence(orchestrator, "HANDOFF text")
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()):
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_vendor, "claude")
+        self.assertEqual(orchestrator.cfg.builder_model, "claude-opus-5")
+        self.assertEqual(orchestrator.cfg.builder_effort, "low")
+
+    def test_real_low_explicit_model_override_preserves_builder(self):
+        orchestrator, original_builder = self._resolve_builder_profile(
+            builder_model="existing-model"
+        )
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_model, "existing-model")
+        self.assertIs(orchestrator.builder, original_builder)
+        make_backend.assert_not_called()
+
+    def test_real_unknown_preset_is_blocked_as_routing_config_error(self):
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="nonexistent")
+        with mock.patch("orchestrator.controller.make_backend") as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_LOW}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNotNone(outcome)
+        self.assertEqual(outcome.status, BLOCKED)
+        self.assertIn("routing config error", outcome.reason)
+        make_backend.assert_not_called()
 
     def test_built_from_existing_handoff(self):
         if not _git_available():
@@ -4259,6 +4930,244 @@ class TestBuildFromHandoff(unittest.TestCase):
             mock = MockBackend(sc)
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BUILT, out.reason)
+
+
+class TestRouting(unittest.TestCase):
+    def test_repo_routing_config_resolves_all_profiles(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        config = routing.load_routing_config(repo_root / "content" / "routing.toml")
+        roles = (
+            "architect",
+            "challenger_high",
+            "builder_low",
+            "builder_normal",
+            "builder_high",
+            "reviewer",
+        )
+
+        for preset in ("hybrid", "claude_only"):
+            for role in roles:
+                routing.resolve_profile(config, preset, role)
+
+    def test_hybrid_builder_normal_uses_expected_profile(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        config = routing.load_routing_config(repo_root / "content" / "routing.toml")
+        profile = routing.resolve_profile(config, "hybrid", "builder_normal")
+
+        self.assertEqual(profile.vendor, "codex")
+        self.assertEqual(profile.model, "gpt-5.6-terra")
+        self.assertEqual(profile.effort, "medium")
+
+    def test_claude_only_uses_claude_for_all_roles(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        config = routing.load_routing_config(repo_root / "content" / "routing.toml")
+        roles = (
+            "architect",
+            "challenger_high",
+            "builder_low",
+            "builder_normal",
+            "builder_high",
+            "reviewer",
+        )
+
+        for role in roles:
+            profile = routing.resolve_profile(config, "claude_only", role)
+            self.assertEqual(profile.vendor, "claude")
+
+    def test_harness_wires_routing_config_for_both_targets(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((repo_root / "harness.toml").read_text(encoding="utf-8"))
+        routing_copy = ["content/routing.toml", "routing.toml"]
+
+        self.assertIn(routing_copy, manifest["targets"]["claude"]["copy"])
+        self.assertIn(routing_copy, manifest["targets"]["codex"]["copy"])
+
+    @staticmethod
+    def _write_routing(directory: Path, text: str) -> Path:
+        path = directory / "routing.toml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_load_and_resolve_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_routing(
+                Path(directory),
+                '[routing]\npreset = "hybrid"\n\n'
+                '[presets.hybrid.builder_normal]\n'
+                'vendor = "codex"\nmodel = "gpt-5.6-terra"\n'
+                'effort = "medium"\n',
+            )
+            config = routing.load_routing_config(path)
+
+        profile = routing.resolve_profile(config, "hybrid", "builder_normal")
+
+        self.assertEqual(
+            profile,
+            routing.ModelProfile(vendor="codex", model="gpt-5.6-terra", effort="medium"),
+        )
+
+    def test_missing_file_raises_without_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "does-not-exist.toml"
+            with self.assertRaises(routing.RoutingConfigError):
+                routing.load_routing_config(path)
+
+    def test_invalid_toml_raises(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_routing(Path(directory), "[routing\npreset = 'hybrid'\n")
+            with self.assertRaises(routing.RoutingConfigError):
+                routing.load_routing_config(path)
+
+    def test_malformed_routing_table_raises(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_routing(
+                Path(directory), 'routing = "hybrid"\n\n[presets]\n'
+            )
+            with self.assertRaises(routing.RoutingConfigError):
+                routing.load_routing_config(path)
+
+    def test_malformed_preset_table_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {"hybrid": "not-a-table"},
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "hybrid", "builder_normal")
+
+    def test_non_string_profile_values_raise(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {
+                "hybrid": {
+                    "builder_normal": {
+                        "vendor": "codex",
+                        "model": 123,
+                        "effort": "medium",
+                    },
+                },
+            },
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "hybrid", "builder_normal")
+
+    def test_active_preset_name_reads_declared_preset(self):
+        self.assertEqual(
+            routing.active_preset_name({"routing": {"preset": "hybrid"}}),
+            "hybrid",
+        )
+
+    def test_missing_preset_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {"hybrid": {"builder_normal": {}}},
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "nonexistent", "builder_normal")
+
+    def test_missing_logical_role_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {"hybrid": {"builder_normal": {}}},
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "hybrid", "nonexistent_role")
+
+    def test_missing_required_key_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {
+                "hybrid": {
+                    "builder_normal": {"vendor": "codex", "model": "gpt-5.6-terra"},
+                },
+            },
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "hybrid", "builder_normal")
+
+    def test_invalid_vendor_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {
+                "hybrid": {
+                    "builder_normal": {
+                        "vendor": "gpt",
+                        "model": "gpt-5.6-terra",
+                        "effort": "medium",
+                    },
+                },
+            },
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_profile(config, "hybrid", "builder_normal")
+
+    def test_resolve_builder_high_for_vendor_searches_all_presets(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {
+                "hybrid": {
+                    "builder_high": {
+                        "vendor": "codex",
+                        "model": "gpt-5.6-sol",
+                        "effort": "high",
+                    },
+                },
+                "claude_only": {
+                    "builder_high": {
+                        "vendor": "claude",
+                        "model": "claude-opus-5",
+                        "effort": "high",
+                    },
+                },
+            },
+        }
+
+        profile = routing.resolve_builder_high_for_vendor(config, "claude")
+
+        self.assertEqual(
+            profile,
+            routing.ModelProfile(vendor="claude", model="claude-opus-5", effort="high"),
+        )
+
+    def test_resolve_builder_high_for_vendor_missing_raises(self):
+        config = {
+            "routing": {"preset": "hybrid"},
+            "presets": {
+                "hybrid": {
+                    "builder_high": {
+                        "vendor": "codex",
+                        "model": "gpt-5.6-sol",
+                        "effort": "high",
+                    },
+                },
+            },
+        }
+
+        with self.assertRaises(routing.RoutingConfigError):
+            routing.resolve_builder_high_for_vendor(config, "claude")
+
+    def test_default_routing_path_prefers_dev_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            content_path = root / "content" / "routing.toml"
+            content_path.parent.mkdir()
+            content_path.write_text("", encoding="utf-8")
+            (root / "routing.toml").write_text("", encoding="utf-8")
+
+            self.assertEqual(routing.default_routing_path(root), content_path)
+
+    def test_default_routing_path_uses_installed_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            installed_path = root / "routing.toml"
+            installed_path.write_text("", encoding="utf-8")
+
+            self.assertEqual(routing.default_routing_path(root), installed_path)
 
 
 if __name__ == "__main__":
