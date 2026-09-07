@@ -86,6 +86,9 @@ secondary/experimental인 fully-headless `orchestrate.py run`뿐이다(이 경�
 
 ```
 Draft ADR/HANDOFF
+  → round-cap checkpoint (max_challenge_rounds, 기본 3 — 상한 도달 시 vendor
+    호출 전에 BLOCKED, --acknowledge-challenge-round-cap 없이는 자동 재도전 불가;
+    ADR-0021)
   → read-only challenger (challenger_high profile, 독립 invocation)
   → parent-owned CHALLENGE.md + evidence (orchestrator가 저장, challenger 자신이 아님)
   → interactive Architect가 읽고 Accept / Reject / Partially Accept 판정
@@ -100,6 +103,10 @@ Challenger는 **read-only invocation**이다 — critique 파일이나 repositor
 부모 프로세스가 `CHALLENGE.md`에 기록한다). Challenger와 동일 모델이 나중에
 Builder로 쓰이더라도 반드시 **독립 invocation**이어야 한다 — 같은 context를
 이어받지 않는다.
+
+**독립 invocation과 라운드 상한은 상충하지 않는다** — 상한은 몇 번째 호출인지
+세는 계측일 뿐, 매 호출이 독립적이라는 보장 자체는 그대로 유지된다. 상세는
+ADR-0021 참조.
 
 ## 8. Preset 전환
 

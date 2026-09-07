@@ -167,3 +167,46 @@ def find_challenge_evidence(audit_dir: Path, handoff_hash: str) -> bool:
         ):
             return True
     return False
+
+
+def count_consecutive_challenge_rounds(audit_dir: Path, handoff_name: str) -> int:
+    """Count consecutive challenge_dispatch/"challenged" terminal records for
+    this handoff filename, scanning backward from the newest record until a
+    builder_dispatch record (any status) breaks the streak — a
+    builder_dispatch record only exists once a HIGH gate actually left the
+    challenge loop for a real build attempt, so it is the natural boundary
+    between one challenge saga and the next re-use of the same recurring
+    filename. A non-"challenged" challenge_dispatch record (blocked/timeout,
+    including a prior round-cap block) is skipped -- neither counted nor
+    streak-breaking -- so a blocked checkpoint call can never be replayed to
+    reset the counter. Missing/unreadable audit_dir/log returns 0 (fail-open:
+    this is a token-economy guardrail, not a security gate -- see ADR-0021).
+    """
+    path = audit_dir / _AUDIT_FILENAME
+    if not path.is_file():
+        return 0
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return 0
+    target_hash = _digest(handoff_name)
+    count = 0
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        if record.get("status") == "attempted":
+            continue
+        if record.get("handoff_name_sha256") != target_hash:
+            continue
+        if record.get("event") == "builder_dispatch":
+            break
+        if record.get("event") == "challenge_dispatch" and record.get("status") == "challenged":
+            count += 1
+    return count

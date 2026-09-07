@@ -2025,6 +2025,55 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 )
             )
 
+    def test_count_consecutive_challenge_rounds_is_zero_without_audit_log(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(Path(d), "HANDOFF.md"), 0)
+
+    def test_count_consecutive_challenge_rounds_counts_challenged_terminals(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            for _ in range(3):
+                audit = self._audit(audit_dir)
+                audit.attempted()
+                audit.terminal(status="challenged", outcome=CHALLENGED,
+                               reason_code="challenge_complete", attempts=1)
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 3)
+
+    def test_count_consecutive_challenge_rounds_stops_at_builder_dispatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            before = self._audit(audit_dir)
+            before.terminal(status="challenged", outcome=CHALLENGED,
+                            reason_code="challenge_complete", attempts=1)
+            builder = self._audit(audit_dir, event="builder_dispatch")
+            builder.terminal(status="blocked", outcome=BLOCKED,
+                             reason_code="blocked_other", attempts=0)
+            after = self._audit(audit_dir)
+            after.terminal(status="challenged", outcome=CHALLENGED,
+                           reason_code="challenge_complete", attempts=1)
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 1)
+
+    def test_count_consecutive_challenge_rounds_skips_blocked_challenges(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            for status in ("challenged", "blocked", "challenged"):
+                audit = self._audit(audit_dir)
+                audit.terminal(status=status, outcome=status.upper(),
+                               reason_code="challenge_complete", attempts=1)
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 2)
+
+    def test_count_consecutive_challenge_rounds_ignores_other_handoff_names(self):
+        with tempfile.TemporaryDirectory() as d:
+            audit_dir = Path(d)
+            other = BuildAudit(audit_dir, audit_dir, "OTHER.md", "claude", "real",
+                               event="challenge_dispatch")
+            other.terminal(status="challenged", outcome=CHALLENGED,
+                           reason_code="challenge_complete", attempts=1)
+            current = self._audit(audit_dir)
+            current.terminal(status="challenged", outcome=CHALLENGED,
+                             reason_code="challenge_complete", attempts=1)
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 1)
+
 
 class TestChallenge(unittest.TestCase):
     @staticmethod
@@ -2048,6 +2097,14 @@ class TestChallenge(unittest.TestCase):
         )
         backend = mock.Mock(spec=Backend)
         return cfg, Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
+
+    @staticmethod
+    def _record_challenged_rounds(cfg: Config, count: int) -> None:
+        for _ in range(count):
+            audit = TestChallenge._audit(cfg)
+            audit.attempted()
+            audit.terminal(status="challenged", outcome=CHALLENGED,
+                           reason_code="challenge_complete", attempts=1)
 
     def test_run_challenge_writes_critique_and_returns_challenged(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2141,6 +2198,59 @@ class TestChallenge(unittest.TestCase):
             self.assertEqual(records[-1]["logical_profile"], "challenger_high")
             self.assertEqual(records[-1]["model"], "claude-opus-5")
             self.assertEqual(records[-1]["effort"], "low")
+
+    def test_round_cap_blocks_without_invoking_challenger(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, root / "audit")
+            self._record_challenged_rounds(cfg, cfg.max_challenge_rounds)
+
+            outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, BLOCKED)
+            self.assertIn("challenge round cap reached", outcome.reason)
+            orchestrator.builder.invoke.assert_not_called()
+
+    def test_round_cap_acknowledgement_invokes_challenger_and_records_receipt(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            audit_dir = root / "audit"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, audit_dir)
+            cfg.acknowledge_challenge_round_cap = True
+            self._record_challenged_rounds(cfg, cfg.max_challenge_rounds)
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="critique text")
+
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, CHALLENGED)
+            backend.invoke.assert_called_once()
+            record = json.loads((audit_dir / "build-audit.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+            self.assertTrue(record["round_cap_acknowledged"])
+
+    def test_round_cap_allows_challenger_below_threshold(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / bus.HANDOFF).write_text("# draft\n", encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(repo, root / "audit")
+            self._record_challenged_rounds(cfg, cfg.max_challenge_rounds - 1)
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="critique text")
+
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                outcome = orchestrator.run_challenge()
+
+            self.assertEqual(outcome.status, CHALLENGED)
+            backend.invoke.assert_called_once()
 
 
 class TestBuildFromHandoff(unittest.TestCase):

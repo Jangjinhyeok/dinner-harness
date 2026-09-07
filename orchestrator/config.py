@@ -69,6 +69,10 @@ class Config:
     # See docs/architecture/ADR-0020-routing-preset-architecture.md.
     routing_preset: str = ""
 
+    # --- challenge round cap (ADR-0021) --------------------------------------
+    max_challenge_rounds: int = 3
+    acknowledge_challenge_round_cap: bool = False
+
     # --- backend -----------------------------------------------------------
     backend: str = "mock"             # mock | real
     timeout_s: float = 1800           # per headless vendor turn
@@ -125,6 +129,8 @@ class Config:
             )
         if self.max_cycles < 1:
             problems.append("max_cycles must be >= 1")
+        if self.max_challenge_rounds < 0:
+            problems.append(f"max_challenge_rounds invalid: {self.max_challenge_rounds!r}")
         if self.timeout_s <= 0:
             problems.append("timeout_s must be > 0")
         if self.audit_dir.exists() and not self.audit_dir.is_dir():

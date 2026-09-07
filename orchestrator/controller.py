@@ -26,7 +26,7 @@ from . import routing
 from . import safety
 from .bus import Bus, parse_tiers, parse_verdicts, parse_control, tier_for
 from .config import Config
-from .receipt import BuildAudit, content_hash, find_challenge_evidence
+from .receipt import BuildAudit, content_hash, count_consecutive_challenge_rounds, find_challenge_evidence
 from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER, ROLE_CHALLENGER, make_backend
 
 
@@ -1411,6 +1411,17 @@ class Orchestrator:
         if not draft_text.strip():
             return self._outcome(BLOCKED, 0, f"no {draft_name} to challenge")
         audit.set_handoff(draft_text)
+        rounds_so_far = count_consecutive_challenge_rounds(Path(cfg.audit_dir), draft_name)
+        if rounds_so_far >= cfg.max_challenge_rounds and not cfg.acknowledge_challenge_round_cap:
+            return self._outcome(
+                BLOCKED, 0,
+                f"challenge round cap reached ({rounds_so_far} consecutive "
+                f"CHALLENGED rounds >= {cfg.max_challenge_rounds}) for "
+                f"{draft_name} -- choose one: (1) split the HANDOFF into "
+                f"smaller HIGH gates, (2) re-run with "
+                f"--acknowledge-challenge-round-cap to proceed accepting "
+                f"residual risk, (3) revisit the design before challenging again"
+            )
         try:
             routing_config = routing.load_routing_config(routing.default_routing_path())
             preset = cfg.routing_preset or routing.active_preset_name(routing_config)
@@ -1430,6 +1441,8 @@ class Orchestrator:
             "routing_preset": preset, "logical_profile": "challenger_high",
             "model": profile.model, "effort": profile.effort,
         }
+        if rounds_so_far >= cfg.max_challenge_rounds:
+            self._resolved_builder_profile["round_cap_acknowledged"] = True
         turn = self.builder.invoke(ROLE_CHALLENGER, challenge_prompt(draft_text, draft_name), self.cfg)
         if turn.error:
             return self._outcome(BLOCKED, 1, f"challenger error: {turn.error}")
@@ -1672,4 +1685,6 @@ def _challenge_receipt_reason_code(outcome: Outcome) -> str:
         return "routing_error"
     if outcome.reason.startswith("challenger error:"):
         return "challenger_error"
+    if outcome.reason.startswith("challenge round cap reached"):
+        return "challenge_round_cap"
     return "blocked_other"

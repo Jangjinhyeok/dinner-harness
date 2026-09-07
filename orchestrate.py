@@ -134,6 +134,8 @@ def _challenge(args: argparse.Namespace) -> int:
         timeout_s=args.timeout_s,
         handoff_name=args.handoff,
         audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
+        max_challenge_rounds=args.max_challenge_rounds,
+        acknowledge_challenge_round_cap=args.acknowledge_challenge_round_cap,
     )
     problems = cfg.validate()
     if problems:
@@ -233,6 +235,13 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--timeout-s", type=float, default=1800)
     c.add_argument("--audit-dir",
                    help="harness-side directory for content-free dispatch audit JSONL (default: harness runtime logs)")
+    c.add_argument("--max-challenge-rounds", type=int, default=3,
+                   help="block the next challenge before any vendor call once "
+                        "this many consecutive CHALLENGED rounds have piled up "
+                        "for this handoff filename (ADR-0021)")
+    c.add_argument("--acknowledge-challenge-round-cap", action="store_true",
+                   help="proceed past the round cap for this one dispatch; "
+                        "does not reset the counter (ADR-0021)")
     c.set_defaults(func=_challenge)
 
     args = ap.parse_args(argv)
