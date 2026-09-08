@@ -209,14 +209,17 @@ specific vendor, pass `--builder claude` or `--builder codex` as an explicit run
 override. See `~/.claude/rules/routing-reference.md` for the full preset/profile/
 override-precedence explanation.
 
-**Codex only (without Claude Code)**: Conversely, the axis that changes is the
-**Architect vendor** — when the interactive driver itself is opened with the Codex
-CLI, Codex automatically takes the Architect role, and Builder already defaults to
-`codex`, so there is no flag to change. The only prerequisite is that
-`~/.codex/orchestrate.py` exists; `py -3 install.py --target codex` installs it
-automatically (ADR-0013). See §8 "Architect vendor switch" in `~/.codex/AGENTS.md`
-for the detailed dispatch command and switch explanation. Codex has no automatic
-`_mode` file injection, so explicitly declare `architect mode`/`builder mode` each time.
+**Codex only (without Claude Code)**: Use interactive Codex as Architect/Reviewer,
+select `"codex_only"` in `content/routing.toml`'s `[routing].preset`, and install with
+`py -3 install.py --target codex --allow-live`. This includes
+`~/.codex/orchestrate.py` and the routing configuration (ADR-0013).
+The default `hybrid` still uses Claude for HIGH Challenger, so installing Codex alone
+is insufficient. For a one-off selection, pass `--routing-preset codex_only` to
+**both** `challenge` and `build`; `--builder codex` does not change Challenger.
+HIGH retains Codex Challenger → Architect adjudication → Codex Builder → Reviewer
+→ human sign-off. Presets do not change the running interactive session's model.
+See §8 in `~/.codex/AGENTS.md` for the dispatch command. Codex has no automatic
+`_mode` file injection, so explicitly declare `architect mode`/`builder mode`.
 
 Neither switch requires code changes — `ClaudeBackend` and `CodexBackend` in
 `orchestrator/vendors.py` already support the two roles symmetrically.

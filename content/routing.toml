@@ -92,3 +92,36 @@ effort = "low"
 vendor = "claude"
 model = "claude-sonnet-5"
 effort = "medium"
+
+# --- codex_only: no Claude Code in the loop ---
+# Independent HIGH Challenger; Builder tiers match hybrid. Safety gates are unchanged.
+
+[presets.codex_only.architect]
+vendor = "codex"
+model = "gpt-5.6-sol"
+effort = "high"
+
+[presets.codex_only.challenger_high]
+vendor = "codex"
+model = "gpt-5.6-sol"
+effort = "high"
+
+[presets.codex_only.builder_low]
+vendor = "codex"
+model = "gpt-5.6-luna"
+effort = "high"
+
+[presets.codex_only.builder_normal]
+vendor = "codex"
+model = "gpt-5.6-terra"
+effort = "medium"
+
+[presets.codex_only.builder_high]
+vendor = "codex"
+model = "gpt-5.6-sol"
+effort = "high"
+
+[presets.codex_only.reviewer]
+vendor = "codex"
+model = "gpt-5.6-sol"
+effort = "high"

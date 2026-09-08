@@ -2076,6 +2076,45 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
 
 
 class TestChallenge(unittest.TestCase):
+    def test_codex_only_challenge_unlocks_high_builder_without_claude(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            draft = "# HIGH draft\n"
+            (repo / bus.HANDOFF).write_text(draft, encoding="utf-8")
+            cfg, orchestrator = self._orchestrator(
+                repo, root / "audit", routing_preset="codex_only"
+            )
+            backend = mock.Mock(spec=Backend)
+            backend.invoke.return_value = Turn(text="independent critique")
+            with mock.patch("orchestrator.controller.make_backend", return_value=backend) as factory:
+                blocked = orchestrator._resolve_builder_profile(
+                    draft, {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+                )
+                self.assertEqual(blocked.status, BLOCKED)
+                factory.assert_not_called()
+                outcome = orchestrator.run_challenge()
+                self.assertEqual(outcome.status, CHALLENGED, outcome.reason)
+                factory.assert_called_once_with("codex")
+                self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
+                self.assertEqual(orchestrator.cfg.builder_effort, "high")
+                # Builder dispatch starts with the original config, not challenge overrides.
+                builder = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
+                resolved = builder._resolve_builder_profile(
+                    draft, {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_NORMAL}
+                )
+                self.assertIsNone(resolved)
+                self.assertEqual(factory.call_args_list, [mock.call("codex"), mock.call("codex")])
+                self.assertEqual(builder.cfg.builder_model, "gpt-5.6-sol")
+                stale = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
+                changed = stale._resolve_builder_profile(
+                    draft + "changed", {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
+                )
+                self.assertEqual(changed.status, BLOCKED)
+                self.assertIn("no matching challenger_high evidence", changed.reason)
+                self.assertEqual(factory.call_count, 2)
+
     @staticmethod
     def _audit(cfg: Config) -> BuildAudit:
         return BuildAudit(
@@ -5055,7 +5094,7 @@ class TestRouting(unittest.TestCase):
             "reviewer",
         )
 
-        for preset in ("hybrid", "claude_only"):
+        for preset in ("hybrid", "claude_only", "codex_only"):
             for role in roles:
                 routing.resolve_profile(config, preset, role)
 
@@ -5091,6 +5130,17 @@ class TestRouting(unittest.TestCase):
 
         self.assertIn(routing_copy, manifest["targets"]["claude"]["copy"])
         self.assertIn(routing_copy, manifest["targets"]["codex"]["copy"])
+
+    def test_codex_only_uses_codex_for_all_roles_and_preserves_builder_tiers(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        config = routing.load_routing_config(repo_root / "content" / "routing.toml")
+        self.assertEqual(routing.active_preset_name(config), "hybrid")
+        for role in ("architect", "challenger_high", "builder_low", "builder_normal", "builder_high", "reviewer"):
+            with self.subTest(role=role):
+                profile = routing.resolve_profile(config, "codex_only", role)
+                self.assertEqual(profile.vendor, "codex")
+                if role.startswith("builder_"):
+                    self.assertEqual(profile, routing.resolve_profile(config, "hybrid", role))
 
     @staticmethod
     def _write_routing(directory: Path, text: str) -> Path:

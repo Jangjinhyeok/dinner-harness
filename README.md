@@ -263,13 +263,17 @@ HANDOFF 포맷을 건드릴 필요가 없다. `orchestrator/vendors.py`의
 붙인다. routing preset·profile·override precedence의 전체 설명은
 `~/.claude/rules/routing-reference.md` 참조.
 
-**Codex만 사용 (Claude Code 없이)**: 반대로 바뀌는 축은 Architect vendor다 —
-인터랙티브 드라이버 자체를 Codex CLI로 열면 Architect 역할은 자동으로 Codex가
-맡고, Builder는 이미 기본값이 `codex`라 플래그를 바꿀 필요가 없다. 유일한 전제는
-`~/.codex/orchestrate.py`가 존재하는 것이며, `py -3 install.py --target codex`로
-설치하면 자동으로 갖춰진다(ADR-0013). 상세 dispatch 명령과 "Architect vendor
-스위치" 설명은 `~/.codex/AGENTS.md` §8 참조. Codex엔 `_mode` 파일 자동 inject가
-없으므로 `architect 모드`/`builder 모드`를 매번 명시 선언한다.
+**Codex만 사용 (Claude Code 없이)**: 인터랙티브 Codex에서 Architect/Reviewer를
+맡고, `content/routing.toml`의 `[routing].preset`을 `"codex_only"`로 선택한 뒤
+`py -3 install.py --target codex --allow-live`로 설치한다. 설치에는
+`~/.codex/orchestrate.py`와 routing 설정이 포함된다(ADR-0013).
+기본 `hybrid`는 HIGH Challenger가 Claude이므로 Codex 단독 사용에는 preset 선택도
+필요하다. 일회성 선택은 `challenge`와 `build` **양쪽에**
+`--routing-preset codex_only`를 붙인다. `--builder codex`만으로 Challenger는 바뀌지 않는다.
+HIGH는 Codex Challenger → Architect 판단 → Codex Builder → Reviewer → 사람 승인
+순서를 유지한다. 인터랙티브 세션의 모델은 preset이 자동 변경하지 않는다.
+상세 dispatch 명령은 `~/.codex/AGENTS.md` §8 참조. Codex엔 `_mode` 파일 자동
+inject가 없으므로 `architect 모드`/`builder 모드`를 명시 선언한다.
 
 두 스위치 모두 코드 변경이 필요 없다 — `orchestrator/vendors.py`의
 `ClaudeBackend`/`CodexBackend`가 이미 대칭 지원하기 때문이다.

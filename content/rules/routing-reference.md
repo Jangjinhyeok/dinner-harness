@@ -44,7 +44,7 @@ controller/workflow는 concrete model이 아니라 아래 **logical profile 이�
 
 ## 4. Presets
 
-현재 두 preset이 있다: `hybrid`(기본)와 `claude_only`. **concrete model
+현재 세 preset이 있다: `hybrid`(기본), `claude_only`, `codex_only`. **concrete model
 assignment는 configuration이지 workflow invariant가 아니다** — 아래 표의
 Luna/Terra/Sol/Sonnet/Opus는 현재 `content/routing.toml`의 값일 뿐, logical
 workflow 자체가 아니다. 모델이 바뀌면 이 표와 `routing.toml`만 바뀐다.
@@ -70,6 +70,22 @@ workflow 자체가 아니다. 모델이 바뀌면 이 표와 `routing.toml`만 �
 | builder_normal | claude | Claude Sonnet 5 | medium |
 | builder_high | claude | Claude Opus 5 | low |
 | reviewer | claude | Claude Sonnet 5 | medium |
+
+### 6.1. `codex_only`
+
+| Logical profile | Vendor | Model | Effort |
+|---|---|---|---|
+| architect | codex | GPT-5.6 Sol | high |
+| challenger_high | codex | GPT-5.6 Sol | high |
+| builder_low | codex | GPT-5.6 Luna | high |
+| builder_normal | codex | GPT-5.6 Terra | medium |
+| builder_high | codex | GPT-5.6 Sol | high |
+| reviewer | codex | GPT-5.6 Sol | high |
+
+Codex 단독 사용은 인터랙티브 세션도 Codex로 열고 이 preset을 선택한다.
+기본 `hybrid`의 HIGH Challenger는 Claude이므로 `--builder codex`만으로는 부족하다.
+일회성 선택은 `challenge`와 `build` 양쪽에 `--routing-preset codex_only`를 지정한다.
+HIGH challenge evidence와 사람 승인 요건은 동일하게 유지된다.
 
 **`architect`/`reviewer`는 dispatch-controlled가 아니다.** primary
 interactive path(`orchestrate.py build`)에서 이 두 profile은 **실제로
