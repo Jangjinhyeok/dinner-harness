@@ -174,8 +174,12 @@ def _write_hooks_json(dest_root, plan, dry_run, command_root=None):
     def command(name):
         script = (hooks_root / f"{name}.py").as_posix()
         argv = [Path(sys.executable).as_posix(), script]
-        # Always quote Windows paths, including a path with '&' but no spaces.
-        return " ".join(f'"{arg}"' for arg in argv) if os.name == "nt" else shlex.join(argv)
+        if os.name == "nt":
+            # Codex runs Windows hooks through PowerShell. Literal quoting avoids
+            # path expansion; explicit exit preserves the handler's block code 2.
+            quoted = " ".join("'" + arg.replace("'", "''") + "'" for arg in argv)
+            return "$ErrorActionPreference = 'Stop'; & " + quoted + "; exit $LASTEXITCODE"
+        return shlex.join(argv)
 
     data = {
         "hooks": {

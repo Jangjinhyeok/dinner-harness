@@ -2,8 +2,13 @@
 import json
 import os
 from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
 import tempfile
 import tomllib
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -31,6 +36,86 @@ class TestCodexInstallMigration(unittest.TestCase):
     def test_toml_roundtrip_preserves_exact_text(self):
         original = '\n한글 C:\\Users\\name\\test """ quote\n\tbackslash\\end'
         self.assertEqual(tomllib.loads("text = " + codex._toml_multiline(original))["text"], original)
+
+    @unittest.skipUnless(os.name == "nt", "PowerShell hook execution requires Windows")
+    def test_windows_hook_commands_preserve_literal_paths_stdin_and_exit_codes(self):
+        root = Path(self.temp.name) / "한글 space & $dollar 'quote'"
+        handlers = root / "hooks/handlers"
+        handlers.mkdir(parents=True)
+        codex._write_hooks_json(root, [], False)
+        groups = json.loads((root / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        for name, group in zip(("secret_scan", "scope_check"), groups):
+            script = handlers / (name + ".py")
+            script.write_text("import sys\ncode = int(sys.stdin.read())\nprint('fixture reached')\nsys.exit(code)\n")
+            for code in (0, 1, 2):
+                with self.subTest(handler=name, exit_code=code):
+                    result = subprocess.run(
+                        ["powershell.exe", "-NoProfile", "-Command", group["hooks"][0]["command"]],
+                        input=str(code), capture_output=True, text=True,
+                        encoding="utf-8", errors="replace", timeout=15,
+                    )
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    self.assertEqual(result.stdout.strip(), "fixture reached")
+                    self.assertEqual(result.stderr, "")
+
+        with mock.patch.object(codex, "sys", SimpleNamespace(executable=str(root / "missing-python.exe"))):
+            codex._write_hooks_json(root, [], False)
+        groups = json.loads((root / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        for group in groups:
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", group["hooks"][0]["command"]],
+                input="0", capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=15,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("CommandNotFoundException", result.stderr)
+            self.assertNotIn("fixture reached", result.stdout)
+
+    def test_posix_hook_commands_keep_shell_quoting(self):
+        self.dest.mkdir()
+        with mock.patch.object(codex, "os", SimpleNamespace(name="posix")):
+            codex._write_hooks_json(self.dest, [], False)
+        groups = json.loads((self.dest / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        for name, group in zip(("secret_scan", "scope_check"), groups):
+            self.assertEqual(shlex.split(group["hooks"][0]["command"]), [
+                Path(sys.executable).as_posix(),
+                (self.dest / "hooks/handlers" / (name + ".py")).as_posix(),
+            ])
+
+    @unittest.skipUnless(os.name == "nt", "PowerShell hook execution requires Windows")
+    def test_windows_generated_commands_preserve_handler_verdicts(self):
+        self.dest.mkdir()
+        for directory in ("handlers", "lib", "rules"):
+            shutil.copytree(ROOT / "assets/claude/hooks" / directory,
+                            self.dest / "hooks" / directory,
+                            ignore=shutil.ignore_patterns("__pycache__"))
+        codex._write_hooks_json(self.dest, [], False)
+        groups = json.loads((self.dest / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+        env = dict(os.environ, DINNER_HARNESS_HOME=str(self.dest),
+                   CLAUDE_SECRET_SCAN_MODE="enforce", CLAUDE_SCOPE_WHITELIST_MODE="dryrun",
+                   CLAUDE_SCOPE_FENCE=(self.dest / "allowed.txt").as_posix())
+        cases = [
+            (0, "Bash", {"command": "Write-Output harmless"}, 0),
+            (0, "Write", {"file_path": str(self.dest / ".env"), "content": "harmless fixture"}, 2),
+            (1, "apply_patch", {"command": "*** Begin Patch\n*** Add File: allowed.txt\n+harmless\n*** End Patch\n"}, 0),
+            (1, "apply_patch", {"command": "*** Begin Patch\n*** Add File: .codex/hooks.json\n+harmless\n*** End Patch\n"}, 2),
+        ]
+        for index, tool, tool_input, expected in cases:
+            name = ("secret_scan", "scope_check")[index]
+            payload = json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": str(self.dest)})
+            direct = [sys.executable, str(self.dest / "hooks/handlers" / (name + ".py"))]
+            wrapped = ["powershell.exe", "-NoProfile", "-Command", groups[index]["hooks"][0]["command"]]
+            for route, argv in (("direct", direct), ("generated", wrapped)):
+                with self.subTest(handler=name, route=route, expected=expected):
+                    result = subprocess.run(argv, input=payload, capture_output=True,
+                                            text=True, encoding="utf-8", errors="replace",
+                                            env=env, timeout=15)
+                    self.assertEqual(result.returncode, expected, result.stderr)
+                    if expected == 2:
+                        self.assertIn("[" + name + ":block]", result.stderr)
+        # Handlers inspect payloads; the proposed edits must never be applied.
+        self.assertFalse((self.dest / "allowed.txt").exists())
+        self.assertFalse((self.dest / ".env").exists())
 
     def test_agents_use_logical_policy_and_read_only_consult(self):
         self.render()
