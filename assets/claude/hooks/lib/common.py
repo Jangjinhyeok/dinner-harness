@@ -115,7 +115,10 @@ def log_event(hook_name: str, **fields: Any) -> None:
             "timestamp": _now_iso_z(),
             "hook_name": hook_name,
         }
-        record.update(fields)
+        # Free-form command/output/exception text can contain credentials or source.
+        # Keep classifications and locations, never copies of tool content.
+        record.update({key: value for key, value in fields.items()
+                       if key not in {"command", "excerpt", "message", "traceback", "reason"}})
         line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
         path = _LOGS_DIR / f"{hook_name}.log"
         with path.open("a", encoding="utf-8", newline="") as f:
@@ -222,8 +225,7 @@ def _append_error_log(
             "timestamp": _now_iso_z(),
             "handler": hook_name,
             "exception_type": exception_type,
-            "message": message,
-            "traceback": tb,
+            "message": "details omitted to avoid retaining sensitive tool content",
         }
         line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
         path = _LOGS_DIR / f"{hook_name}.error.log"
@@ -298,7 +300,7 @@ def run_handler(main_callable: Callable[[], None], *, hook_name: str) -> NoRetur
         label = "block" if crashed_closed else "internal_error"
         try:
             sys.stderr.write(
-                f"[{hook_name}:{label}] {type(exc).__name__}: {exc}"
+                f"[{hook_name}:{label}] {type(exc).__name__}: handler failed"
                 + (" — cannot vet this change, failing closed\n" if crashed_closed else "\n")
             )
         except Exception:

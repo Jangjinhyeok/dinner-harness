@@ -51,6 +51,8 @@ def _build_config(args: argparse.Namespace) -> Config:
 
 
 def _run(args: argparse.Namespace) -> int:
+    print("[experimental] legacy run uses explicit vendor/model options, not routing.toml; "
+          "review shares the architect slot. Prefer inline Codex or challenge/build.", file=sys.stderr)
     cfg = _build_config(args)
     problems = cfg.validate()
     if problems:
@@ -92,6 +94,7 @@ def _build(args: argparse.Namespace) -> int:
         backend=args.backend,
         timeout_s=args.timeout_s,
         handoff_name=args.handoff,
+        task_id=args.task_id or "",
         net_enforce=not args.net_dryrun,
         audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
     )
@@ -133,6 +136,7 @@ def _challenge(args: argparse.Namespace) -> int:
         backend=args.backend,
         timeout_s=args.timeout_s,
         handoff_name=args.handoff,
+        task_id=args.task_id or "",
         audit_dir=(Path(args.audit_dir).resolve() if args.audit_dir else Config().audit_dir),
         max_challenge_rounds=args.max_challenge_rounds,
         acknowledge_challenge_round_cap=args.acknowledge_challenge_round_cap,
@@ -170,10 +174,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Cross-vendor Two-CLI orchestrator.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    r = sub.add_parser("run", help="run the Architect<->Builder loop")
+    r = sub.add_parser("run", help="experimental legacy loop (no routing preset/effort support)",
+                       description="Experimental legacy loop: explicit vendors/models only; "
+                       "routing presets, role effort, and independent reviewer profiles are unsupported.")
     r.add_argument("--goal", required=True, help="what to build (the intent)")
     r.add_argument("--repo", default=".", help="work repo (default: cwd)")
-    r.add_argument("--architect", default="claude", choices=["codex", "claude"])
+    r.add_argument("--architect", default="codex", choices=["codex", "claude"])
     r.add_argument("--builder", default="codex", choices=["codex", "claude"])
     r.add_argument("--architect-model", default="")
     r.add_argument("--builder-model", default="")
@@ -198,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         help="single-shot Builder pass from an existing HANDOFF.md (no headless Architect)",
     )
     b.add_argument("--repo", default=".", help="work repo holding the handoff file (default: cwd)")
+    b.add_argument("--task-id", default="", help="task lineage shared with challenge; use a new ID when reusing a handoff filename for new work")
     b.add_argument("--handoff", default="HANDOFF.md",
                    help="handoff FILENAME to build from — a bare name in the "
                         "--repo root, no directory part (default: HANDOFF.md; "
@@ -227,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
              "HANDOFF/ADR (ADR-0020 correction 5)",
     )
     c.add_argument("--repo", default=".", help="work repo holding the draft file (default: cwd)")
+    c.add_argument("--task-id", default="", help="task lineage shared with build; stays unchanged across draft revisions")
     c.add_argument("--handoff", default="HANDOFF.md",
                    help="draft file to challenge — a bare name in the --repo root")
     c.add_argument("--routing-preset", default=None,

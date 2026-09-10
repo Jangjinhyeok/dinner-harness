@@ -1,6 +1,11 @@
 {
   "version": 1,
   "always_block": [
+    { "match": "exact",  "path": "config.toml" },
+    { "match": "exact",  "path": "hooks.json" },
+    { "match": "exact",  "path": "requirements.toml" },
+    { "match": "prefix", "path": "rules/" },
+    { "match": "prefix", "path": "agents/" },
     { "match": "exact",  "path": "settings.json" },
     { "match": "exact",  "path": "settings.local.json" },
     { "match": "prefix", "path": "hooks/handlers/" },

@@ -1,9 +1,8 @@
 """Controller-side deterministic safety net.
 
-The cross-vendor asymmetry: Claude Builder hooks are directly mediated, but a
-Codex 0.147.0 Builder's native hooks are advisory: PreToolUse exit 2 cannot
-veto an edit or deliver its block reason to the agent. So the net lives in the
-*controller* and runs regardless of which vendor built — by invoking the
+Native hooks and controller delta checks cover different boundaries. Historical
+CLI observations remain in CODEX-COVERAGE.md; they are not a permanent capability
+claim. The net runs regardless of which vendor built — by invoking the
 existing harness hook handlers verbatim as subprocesses, fed a synthesized
 PreToolUse payload per changed file. No handler code is modified or reimplemented.
 

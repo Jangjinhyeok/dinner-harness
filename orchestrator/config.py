@@ -48,18 +48,14 @@ class Config:
     # passing that name down, rather than letting the gate re-read this field and
     # tamper-check a file the loop never wrote.
     handoff_name: str = "HANDOFF.md"
+    task_id: str = ""  # explicit lineage when reusing a handoff filename
 
     # --- vendor <-> role mapping (bidirectional) ---------------------------
-    # Default: Claude architects, Codex builds. Builder is the token sink
-    # (many-file reads, diff generation, build/error iterate loops, large
-    # context), so it goes on the higher-quota plan (Codex); the lower-volume,
-    # higher-leverage Architect (reasoning, spec authoring, diff review) goes on
-    # the quota-constrained plan (Claude Pro). Rational placement once Claude is
-    # downgraded Max->Pro. Note: a Codex Builder does NOT fire the Claude
-    # scope_check / secret_scan hooks, so the controller-side net (safety.py) is
-    # load-bearing in this default, not just the reverse pairing.
-    architect_vendor: str = "claude"  # codex | claude
-    builder_vendor: str = "codex"     # codex | claude
+    # Inline sessions own their current model. build/challenge resolve concrete
+    # policy through routing.toml; explicit CLI overrides take precedence after
+    # validation. Legacy experimental run retains explicit vendor slots.
+    architect_vendor: str = "codex"  # legacy run default; inline session is independent
+    builder_vendor: str = ""         # empty = active routing preset for build
     architect_model: str = ""         # "" = vendor default
     builder_model: str = ""
     architect_effort: str = ""        # "" = vendor/profile default; low|medium|high|xhigh|max
@@ -75,6 +71,7 @@ class Config:
 
     # --- backend -----------------------------------------------------------
     backend: str = "mock"             # mock | real
+    output_schema: Path | None = None  # controller-owned Codex final-response contract
     timeout_s: float = 1800           # per headless vendor turn
 
     # --- loop control ------------------------------------------------------

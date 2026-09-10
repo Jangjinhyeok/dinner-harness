@@ -1,5 +1,5 @@
 # dinner-harness routing config — the ONLY place concrete model/vendor/effort
-# literals may live (see docs/architecture/ADR-0020-routing-preset-architecture.md).
+# policy lives (backend vendor identifiers remain valid in code).
 # orchestrator/routing.py reads this file; it never falls back to a hardcoded
 # mapping if this file is missing or invalid — that failure is intentional
 # (ADR-0020 correction 1). Changing a concrete model here should never require
@@ -7,22 +7,46 @@
 #
 # Logical roles (must match exactly what orchestrator/controller.py dispatches):
 #   architect        — interactive-session recommended policy (primary path);
-#                       actually dispatched only by secondary/experimental
-#                       headless paths (orchestrate.py run). NOT dispatched by
+#                       not applied by legacy experimental `run`. NOT dispatched by
 #                       the primary `orchestrate.py build` path, which runs
 #                       inside the user's own already-running interactive
-#                       Claude session (see ADR-0020 correction 3).
+#                       Codex or Claude session.
 #   challenger_high  — read-only HIGH-risk ADR/HANDOFF challenge (dispatch-controlled).
 #   builder_low      — dispatch-controlled, compute tier LOW.
 #   builder_normal   — dispatch-controlled, compute tier NORMAL.
 #   builder_high     — dispatch-controlled, compute tier HIGH (or any risk=HIGH gate).
 #   reviewer         — interactive-session recommended policy (primary path);
-#                       actually dispatched only by secondary/experimental paths.
+#                       native reviewer agents also use this policy; legacy run does not.
 
 [routing]
-preset = "hybrid"
+preset = "codex_only"
 
-# --- hybrid: current production default -------------------------------- #
+[native_agents]
+architect = "architect"
+planner = "architect"
+code-reviewer = "reviewer"
+cpp-reviewer = "reviewer"
+tdd-guide = "reviewer"
+performance-analyst = "reviewer"
+cpp-build-resolver = "builder_normal"
+gameplay-programmer = "builder_normal"
+network-programmer = "builder_normal"
+tools-programmer = "builder_normal"
+ui-programmer = "builder_normal"
+unity-specialist = "builder_normal"
+unreal-specialist = "builder_normal"
+
+[presets.hybrid.vendor_fallbacks]
+codex = "codex_only"
+claude = "claude_only"
+
+[presets.claude_only.vendor_fallbacks]
+codex = "codex_only"
+
+[presets.codex_only.vendor_fallbacks]
+claude = "claude_only"
+
+# --- hybrid: Claude reasoning with Codex implementation ----------------- #
 # Claude for high-leverage reasoning (Architect/Challenger/Reviewer), Codex
 # for token-heavy implementation (Builder). See ADR-0020 for the token-economy
 # rationale this mirrors from content/instructions/CLAUDE.md's cross-vendor
@@ -93,23 +117,24 @@ vendor = "claude"
 model = "claude-sonnet-5"
 effort = "medium"
 
-# --- codex_only: no Claude Code in the loop ---
-# Independent HIGH Challenger; Builder tiers match hybrid. Safety gates are unchanged.
+# --- codex_only: default, no Claude Code in the loop ---
+# Independent HIGH Challenger; Luna/Terra/Astra scale delegated compute by tier.
+# Safety gates are unchanged.
 
 [presets.codex_only.architect]
 vendor = "codex"
-model = "gpt-5.6-sol"
-effort = "high"
+model = "gpt-6-astra"
+effort = "medium"
 
 [presets.codex_only.challenger_high]
 vendor = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 effort = "high"
 
 [presets.codex_only.builder_low]
 vendor = "codex"
 model = "gpt-5.6-luna"
-effort = "high"
+effort = "medium"
 
 [presets.codex_only.builder_normal]
 vendor = "codex"
@@ -118,7 +143,7 @@ effort = "medium"
 
 [presets.codex_only.builder_high]
 vendor = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 effort = "high"
 
 [presets.codex_only.reviewer]

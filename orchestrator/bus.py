@@ -14,6 +14,7 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -169,6 +170,145 @@ class GateVerdict:
     status: str = ""
     tier: str = TIER_HIGH
     panel: str = ""  # PASS | FAIL | BLOCK | "" (not run)
+    self_review: str = "not_run"
+    verification_claim: str = "not_run"
+
+
+class ContractError(ValueError):
+    """A handoff or result cannot safely identify the work performed."""
+
+
+def gate_order(gate: str) -> int:
+    if not re.fullmatch(r"[1-9][0-9]*", gate):
+        raise ContractError(f"invalid gate ID: {gate!r}")
+    return int(gate)
+
+
+def dispatch_gates(handoff_text: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Validate declarations and select the numeric prefix through the first HIGH.
+
+    A new build starts from the declared gates; callers must supply a new handoff
+    for remaining work. Stale RESULT files are never completion evidence.
+    """
+    bodies = _fence_re("tiers").findall(handoff_text)
+    if len(bodies) != 1:
+        raise ContractError("exactly one tiers fence is required")
+    seen = set()
+    for raw in bodies[0].splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        label, separator, value = line.partition(":")
+        match = re.fullmatch(r"(?:gate\s*)?([1-9][0-9]*)", label.strip(), re.I)
+        if not separator or not match:
+            raise ContractError("invalid gate declaration")
+        key = match[1]
+        if key in seen:
+            raise ContractError(f"duplicate gate {key}")
+        seen.add(key)
+        if "=" in value:
+            pairs = _KV_RE.findall(value)
+            keys = [k.lower() for k, _ in pairs]
+            if len(keys) != len(set(keys)) or set(keys) - {"risk", "compute"}:
+                raise ContractError(f"ambiguous fields for gate {key}")
+            if _KV_RE.sub("", value).strip():
+                raise ContractError(f"malformed fields for gate {key}")
+    if not seen:
+        raise ContractError("no gates declared")
+    tiers = parse_tiers(handoff_text)
+    compute = parse_compute_tiers(handoff_text)
+    selected = {}
+    for gate in sorted(tiers, key=gate_order):
+        selected[gate] = tiers[gate]
+        if tiers[gate] == TIER_HIGH:
+            break
+    return selected, {g: compute[g] for g in selected if g in compute}
+
+
+RESULT_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["schema_version", "summary", "gates"],
+    "properties": {
+        "schema_version": {"type": "integer", "enum": [1]},
+        "summary": {"type": "string"},
+        "gates": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["gate", "status", "tier", "self_review", "verification_claim"],
+            "properties": {
+                "gate": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+                "status": {"type": "string", "enum": ["completed", "blocked", "pending", "needs_review"]},
+                "tier": {"type": "string", "enum": ["LOW", "HIGH"]},
+                "self_review": {"type": "string", "enum": ["pass", "fail", "not_run"]},
+                "verification_claim": {"type": "string", "enum": ["pass", "fail", "not_run"]},
+            },
+        }},
+    },
+}
+
+
+def parse_build_result(text: str, *, compatibility: bool = False) -> list[GateVerdict]:
+    """JSON is the Codex contract; Markdown is an explicit legacy adapter."""
+    if compatibility and not text.lstrip().startswith("{"):
+        if len(_fence_re("verdicts").findall(text)) != 1:
+            raise ContractError("exactly one compatibility verdicts fence is required")
+        return parse_verdicts(text)
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError) as exc:
+        raise ContractError("invalid result JSON") from exc
+    if not isinstance(data, dict) or set(data) != {"schema_version", "summary", "gates"}:
+        raise ContractError("invalid result fields")
+    if type(data["schema_version"]) is not int or data["schema_version"] != 1:
+        raise ContractError("unsupported result schema")
+    if not isinstance(data["summary"], str) or not isinstance(data["gates"], list):
+        raise ContractError("invalid summary or gates")
+    verdicts = []
+    fields = {"gate", "status", "tier", "self_review", "verification_claim"}
+    for entry in data["gates"]:
+        if not isinstance(entry, dict) or set(entry) != fields:
+            raise ContractError("invalid gate result fields")
+        if any(not isinstance(value, str) for value in entry.values()):
+            raise ContractError("gate result fields must be strings")
+        if entry["tier"] not in (TIER_LOW, TIER_HIGH):
+            raise ContractError("invalid result tier")
+        if any(entry[k] not in ("pass", "fail", "not_run") for k in ("self_review", "verification_claim")):
+            raise ContractError("invalid review or verification claim")
+        verdicts.append(GateVerdict(**entry))
+    return verdicts
+
+
+def validate_results(verdicts: list[GateVerdict], selected: dict[str, str]) -> None:
+    seen = set()
+    for verdict in verdicts:
+        gate_order(verdict.gate)
+        if verdict.gate in seen or verdict.gate not in selected:
+            raise ContractError(f"duplicate or undeclared gate {verdict.gate}")
+        seen.add(verdict.gate)
+        if verdict.status not in ("completed", "blocked", "pending", "needs_review"):
+            raise ContractError(f"invalid gate status: {verdict.status!r}")
+    if seen != set(selected):
+        raise ContractError("missing verdict for dispatched gate(s)")
+    stopped = False
+    for verdict in sorted(verdicts, key=lambda v: gate_order(v.gate)):
+        if stopped and verdict.status == "completed":
+            raise ContractError("completed gate after an incomplete dependency")
+        stopped |= verdict.status != "completed"
+
+
+def render_result(text: str, verdicts: list[GateVerdict], *, net_status: str) -> str:
+    try:
+        data = json.loads(text)
+        summary = data.get("summary", "") if isinstance(data, dict) else text
+        if not isinstance(summary, str):
+            summary = text
+    except ValueError:
+        summary = text
+    lines = ["# Build result", "", summary, "", f"Controller scope/secret checks: {net_status}",
+             "Independent implementation review: not_run", "Human acceptance: pending", "",
+             "Builder verification values below are self-reports, not executed-check evidence.", ""]
+    for v in sorted(verdicts, key=lambda v: gate_order(v.gate)):
+        lines.append(f"- Gate {v.gate}: {v.status}; risk={v.tier}; self_review={v.self_review}; verification_claim={v.verification_claim}")
+    return "\n".join(lines) + "\n"
 
 
 _KV_RE = re.compile(r"(\w+)\s*=\s*([^\s]+)")

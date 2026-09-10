@@ -41,6 +41,7 @@ from lib.common import (  # noqa: E402  (sys.path insert above)
     exit_allow,
     exit_block,
     exit_warn,
+    exit_no_verdict,
     get_cwd,
     get_env_override,
     log_event,
@@ -141,6 +142,16 @@ def _install_home_posix() -> str:
 
 
 _INSTALL_HOME_POSIX = _install_home_posix()
+
+
+def _protected_roots(cwd: Path) -> list[str]:
+    """Protect actual installs and the explicit project security directory."""
+    codex_home = Path(os.environ.get("CODEX_HOME") or str(Path.home() / ".codex"))
+    return list(dict.fromkeys([
+        _INSTALL_HOME_POSIX,
+        _drive_lower(codex_home.resolve(strict=False).as_posix()).rstrip("/"),
+        _drive_lower((cwd / ".codex").resolve(strict=False).as_posix()).rstrip("/"),
+    ]))
 
 
 def _classify_pattern(spec: str) -> str:
@@ -250,6 +261,8 @@ def _glob_to_regex(pattern: str) -> str:
 
 def _matches(abs_path: str, pattern: Pattern) -> bool:
     target = pattern.normalized
+    if os.name == "nt":
+        abs_path, target = abs_path.casefold(), target.casefold()
     if pattern.match_type == "exact":
         return abs_path == target
     if pattern.match_type == "prefix":
@@ -269,11 +282,10 @@ def _matches(abs_path: str, pattern: Pattern) -> bool:
     return False
 
 
-def _load_always_block() -> list[Pattern]:
+def _load_always_block(cwd: Optional[Path] = None) -> list[Pattern]:
     """Load ``rules/scope_protect.json`` and return its ``always_block``
-    list as normalised Pattern entries. On any error returns ``[]`` and
-    logs ``error_internal`` — caller treats this as fail-open for the
-    always-block layer (the scope-codeblock layer still runs).
+    list as normalised Pattern entries. An unavailable/invalid ruleset has
+    no safe verdict: interactive fallback is advisory, controller mode blocks.
     """
     try:
         with _RULES_PATH.open("r", encoding="utf-8") as f:
@@ -285,10 +297,13 @@ def _load_always_block() -> list[Pattern]:
             decision="error_internal",
             reason=f"ruleset load failed: {type(exc).__name__}: {exc}",
         )
-        return []
+        exit_no_verdict(_HOOK_NAME, "scope ruleset could not be loaded")
 
+    entries = data.get("always_block") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not entries:
+        exit_no_verdict(_HOOK_NAME, "scope ruleset is missing protection entries")
     out: list[Pattern] = []
-    for entry in data.get("always_block", []) or []:
+    for entry in entries:
         match_type = entry.get("match")
         rel = entry.get("path", "") or ""
         if match_type not in {"exact", "prefix", "glob"} or not rel:
@@ -298,11 +313,12 @@ def _load_always_block() -> list[Pattern]:
                 decision="error_internal",
                 reason=f"unknown match type {match_type!r} for path {rel!r}",
             )
-            continue
+            exit_no_verdict(_HOOK_NAME, "scope ruleset contains an invalid protection entry")
         # Join the install prefix with the relative path. Both sides are
         # already canonical POSIX, so no resolve() is required.
-        normalized = _INSTALL_HOME_POSIX + "/" + rel.lstrip("/")
-        out.append(Pattern(raw=rel, normalized=normalized, match_type=match_type))
+        for root in _protected_roots(cwd or Path.cwd()):
+            normalized = root + "/" + rel.lstrip("/")
+            out.append(Pattern(raw=rel, normalized=normalized, match_type=match_type))
     return out
 
 
@@ -311,15 +327,9 @@ def _match_always_block(
 ) -> Optional[Pattern]:
     """Return the first matching always-block Pattern, else None.
 
-    Always-block applies only inside the harness install (Section 2 / 6.4) —
-    the same root the entries are anchored to, so the gate and the patterns
-    cannot disagree about which tree is being protected.
+    Entries are anchored to actual install roots and the explicit project
+    security directory, never to arbitrary project-root config files.
     """
-    if not (
-        abs_path == _INSTALL_HOME_POSIX
-        or abs_path.startswith(_INSTALL_HOME_POSIX + "/")
-    ):
-        return None
     for entry in entries:
         if _matches(abs_path, entry):
             return entry
@@ -432,7 +442,7 @@ def main() -> None:
     abs_paths = [_normalize_path(p, cwd) for p in raw_paths]
 
     # Always-block: any targeted path inside the harness home blocks the call.
-    always_entries = _load_always_block()
+    always_entries = _load_always_block(cwd)
     for abs_path in abs_paths:
         hit = _match_always_block(abs_path, always_entries)
         if hit is not None:

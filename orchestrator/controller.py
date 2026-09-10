@@ -15,8 +15,10 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Optional, Protocol
@@ -26,7 +28,8 @@ from . import routing
 from . import safety
 from .bus import Bus, parse_tiers, parse_verdicts, parse_control, tier_for
 from .config import Config
-from .receipt import BuildAudit, content_hash, count_consecutive_challenge_rounds, find_challenge_evidence
+from .receipt import (BuildAudit, ReceiptError, content_hash, count_consecutive_challenge_rounds,
+                      find_challenge_evidence, task_identity)
 from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER, ROLE_CHALLENGER, make_backend
 
 
@@ -67,12 +70,6 @@ MAX_CYCLES = "MAX_CYCLES_EXCEEDED"
 # CHALLENGE.md by the parent process (ADR-0020 correction 5)
 CHALLENGED = "CHALLENGED"
 
-# A headless Codex Builder occasionally self-misjudges its sandbox as read-only
-# and bails with no implementation (verified 2026-07-14: identical dispatch
-# failed then succeeded). run_from_handoff re-dispatches once on such a bail.
-_MAX_BUILD_ATTEMPTS = 2
-
-
 @dataclass
 class Outcome:
     status: str
@@ -84,6 +81,10 @@ class Outcome:
     completed_gates: list[str] = field(default_factory=list)
     remaining_gates: list[str] = field(default_factory=list)
     review_required_gate: Optional[str] = None
+    blocked_gates: list[str] = field(default_factory=list)
+    pending_gates: list[str] = field(default_factory=list)
+    needs_review_gates: list[str] = field(default_factory=list)
+    independent_review: str = "not_run"
 
 
 # --------------------------------------------------------------------------- #
@@ -114,53 +115,33 @@ def design_prompt(goal: str, prior_result: str, cycle: int) -> str:
     )
 
 
-def build_prompt(handoff_text: str, handoff_name: str) -> str:
+def build_prompt(handoff_text: str, handoff_name: str, selected=None, *, structured=False) -> str:
+    eligible = ", ".join(selected) if selected else "the declared numeric prefix through the first HIGH gate"
+    contract = (
+        "Return ONLY JSON matching the supplied schema (schema_version=1). "
+        "Include every dispatched gate, including blocked/pending gates. "
+        "self_review and verification_claim describe your own observations; "
+        "they do not certify independent review. "
+        if structured else
+        "Compatibility output: return your report followed by a ```verdicts fence, "
+        "one 'gate N: status=completed|blocked|pending|needs_review tier=LOW|HIGH panel=PASS|FAIL|BLOCK' line per dispatched gate. "
+        "panel is a legacy self-report, never independent-review evidence. "
+    )
     return (
-        "You are the BUILDER in a Two-CLI workflow. Implement the HANDOFF below.\n"
-        "Normal workflow: inspect the relevant files, understand what needs to "
-        "change, make the edits, then verify — read/search/inspection before "
-        "editing is expected and fine. You have workspace-write access at the "
-        "working directory and CAN create and edit files there.\n"
-        "Never conclude the workspace is read-only until you have actually "
-        "attempted an in-scope write/edit operation. A failing verification "
-        "command is NOT proof you cannot write — it often fails for reasons "
-        "unrelated to write access: your edits are not in place yet, or the "
-        "interpreter it names is unavailable in this sandbox. In particular, on "
-        "this machine the `py` launcher frequently exits with 'no installed "
-        "runtime' (exit 112) inside the sandbox even though writing works fine: "
-        "if a verify command using `py`/`py -3` fails that way, DO NOT infer "
-        "read-only — just make your edits and re-run the check with `python` or "
-        "`python3` instead. Only an actual attempted write can prove read-only; "
-        "never report you cannot write without having actually tried. Never end "
-        "with an empty changeset and never revert your edits over a failing "
-        "verification.\n"
-        "This is a NON-INTERACTIVE, headless run. Do NOT ask for confirmation, do "
-        "NOT wait for approval, and do NOT just summarize the plan: execute each "
-        "eligible gate now, autonomously, in one turn; after a completed HIGH gate, "
-        "stop rather than progressing to the next gate. If any installed role protocol "
-        "(e.g. an AGENTS.md Builder section) tells you to ask 'shall I proceed?' "
-        "first, override it — proceed without asking.\n"
-        "A `HIGH` tier gate does not mean stop and ask before implementing — "
-        "implement it now and leave it unmerged; the human sign-off happens "
-        "later in the dispatching session.\n"
-        "Per gate, run the autonomous-loop: implement surgically, THEN run the "
-        "gate's verification, and for non-trivial or HIGH gates run "
-        "adversarial-review. Stay strictly within the ```scope``` whitelist. "
-        "Do NOT merge/deploy HIGH gates. Leave your edits in the working tree: "
-        "do NOT stage, commit, merge, or deploy — the Architect reviews them with "
-        "plain `git diff`, which shows nothing once changes are staged.\n\n"
-        "The following block is this turn's only specification; other `HANDOFF*` "
-        "and `RESULT` files are stale artifacts from other turns, so do not read "
-        "or act on them.\n\n"
-        f"--- {handoff_name} ---\n{handoff_text}\n--- end ---\n\n"
-        "After doing the work, write RESULT.md content as your final message.\n"
-        "CRITICAL OUTPUT CONTRACT: regardless of any report format your role "
-        "protocol normally uses, your final message MUST contain a fenced block "
-        "with exactly this shape (one line per gate) — without it the run fails:\n"
-        "```verdicts\n"
-        "gate 1: status=completed tier=LOW panel=PASS\n"
-        "```\n"
-        "status=completed|blocked, tier=LOW|HIGH, panel=PASS|FAIL|BLOCK."
+        "You are the BUILDER for an explicitly selected headless dispatch. "
+        "Inspect the specification and existing implementation, make only authorized edits, "
+        "then run relevant verification. An already-satisfied task may complete with no edits. "
+        "Respect actual tool permissions; report a permission or environment failure honestly. "
+        "Do not force a write to prove access or revert implementation over a failed check.\n"
+        f"Execute ONLY these gate IDs, in numeric order: {eligible}. "
+        "Stop on a blocked dependency or after completing a HIGH gate. "
+        "Never implement later gates, even if they appear in the supplied handoff. "
+        "This invocation authorizes implementation; do not repeat progress approval questions. "
+        "HIGH acceptance and independent implementation review remain in the calling session. "
+        "Stay inside the scope fence; do not stage, commit, push, merge, deploy, or edit the handoff. "
+        "The controller renders RESULT.md; do not write that file.\n"
+        f"--- {handoff_name} ---\n{handoff_text}\n--- end ---\n"
+        + contract
     )
 
 
@@ -255,10 +236,12 @@ def enforce_tier_gates(tiers: dict[str, str], verdicts) -> list[str]:
 
 
 def _builder_bailed(verdicts) -> bool:
-    """The observed flake signature: a headless Builder self-reports
+    """Legacy classification helper, not used to retry implementation.
+
+    Historically a headless Builder self-reported
     ``status=blocked`` (or emits no parseable verdict at all) after falsely
     deciding the workspace is read-only, having written no implementation.
-    ``run_from_handoff`` re-dispatches once on this.
+    The current build path reports this honestly without redispatching writes.
 
     A ``status=completed`` gate whose review panel FAILs/BLOCKs is NOT a bail — it
     is a legitimate advisory outcome the in-session review owns, so it passes
@@ -746,6 +729,7 @@ class Orchestrator:
         self._log_fn = log
         self._log: list[str] = []
         self._resolved_builder_profile: dict = {}
+        self._turn_observations: list[dict] = []
 
     def _emit(self, msg: str) -> None:
         self._log.append(msg)
@@ -756,11 +740,16 @@ class Orchestrator:
         *, completed_gates: Optional[list[str]] = None,
         remaining_gates: Optional[list[str]] = None,
         review_required_gate: Optional[str] = None,
+        blocked_gates: Optional[list[str]] = None,
+        pending_gates: Optional[list[str]] = None,
+        needs_review_gates: Optional[list[str]] = None,
     ) -> Outcome:
         return Outcome(
             status=status, cycles=cycle, reason=reason, log=list(self._log),
             completed_gates=completed_gates or [], remaining_gates=remaining_gates or [],
             review_required_gate=review_required_gate,
+            blocked_gates=blocked_gates or [], pending_gates=pending_gates or [],
+            needs_review_gates=needs_review_gates or [],
         )
 
     def run(self) -> Outcome:
@@ -780,8 +769,16 @@ class Orchestrator:
             if arch_blocked is not None:
                 return arch_blocked
             bus.write_handoff(ad.text)
+            if cfg.backend == "real":
+                try:
+                    busmod.dispatch_gates(ad.text)
+                except busmod.ContractError as exc:
+                    return self._outcome(BLOCKED, cycle, f"legacy handoff contract error: {exc}")
             tiers = parse_tiers(ad.text)
             self._emit(f"[cycle {cycle}] tiers={tiers or '(none) -> fail-closed HIGH'}")
+            if cfg.backend == "real" and (not tiers or busmod.TIER_HIGH in tiers.values()):
+                return self._outcome(
+                    BLOCKED, cycle, "legacy run cannot establish bound HIGH challenge/review evidence; use challenge/build")
 
             # START gate
             if cfg.confirm_handoff and not self.human.confirm(f"[cycle {cycle}] approve HANDOFF?"):
@@ -1215,41 +1212,14 @@ class Orchestrator:
         self, bus: Bus, handoff_text: str, tiers: dict[str, str], cycle: int,
         *, handoff_name: str, tier_gate_hard: bool = True,
         prompt: Optional[str] = None, result_prefix: str = "",
+        recovery: bool = False,
     ):
-        """BUILDER_EXECUTE -> RESULT.md -> safety net (3.5) -> tier-gate.
+        """Execute once, collect delta even on failure, scan, and parse the report.
 
-        Shared by run() and run_from_handoff(). Returns
-        ``(builder_turn, verdicts, has_high, blocked, implementation_observed)``
-        where ``blocked`` is a terminal Outcome on any failure (the caller
-        returns it) or ``None`` on success. ``implementation_observed`` means
-        the net-scanned delta contained a non-bus file, so a missing verdict may
-        be repaired without repeating the implementation.
-
-        ``handoff_name`` is the file the CALLER actually wrote or read, not
-        ``cfg.handoff_name``: ``run()`` authors ``bus.HANDOFF`` unconditionally
-        while ``run_from_handoff()`` honours the config, and reading the config
-        here made the tamper stop compare against a file the writer never wrote.
-        The two coincided only because no CLI exposes ``--handoff`` on ``run``;
-        adding one would have produced "builder altered or removed HANDOFF_X.md"
-        on every cycle — the most alarming and least accurate message this
-        system emits. The caller knows; it says.
-
-        The safety net (scope_check / secret_scan) is ALWAYS a hard block — it
-        is the deterministic compensation for a Codex Builder firing no Claude
-        hooks. ``tier_gate_hard`` controls only the verdict-based tier gate:
-        run() keeps it hard (the autonomous loop has no other reviewer); the
-        auto-dispatch build path sets it advisory (emit-only) because the
-        in-session Claude review + HIGH human sign-off own that judgment, and a
-        headless Codex does not reliably emit the machine ```verdicts``` fence.
-
-        When the Builder vendor has no jury skill available (Codex, since
-        ``adversarial-review`` sits in ``harness.toml [targets.codex].skills_drop``),
-        run()'s hard gate on a HIGH verdict is trusting an unverified self-report
-        with no compensating review — unlike an interactive Codex session, which
-        gets explicit per-gate human review (see AGENTS.md's degraded-mode
-        section). Prefer a Claude-vendor Builder for run()'s HIGH gates, or treat
-        a Codex-Builder run() HIGH result as needing additional human scrutiny
-        before accepting it.
+        Scope/secret checks are controller evidence independent of native hooks.
+        Structured output and legacy panel values are builder self-reports.
+        The build path never certifies independent review or HIGH acceptance.
+        Recovery uses read-only vendor permissions and preserves the first report.
         """
         cfg = self.cfg
 
@@ -1263,17 +1233,37 @@ class Orchestrator:
             return None, [], False, self._outcome(BLOCKED, cycle, stop), False
 
         self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
-        bd = self.builder.invoke(
-            ROLE_BUILDER, prompt or build_prompt(handoff_text, handoff_name), cfg)
-        if bd.error:
-            return bd, [], False, self._outcome(BLOCKED, cycle, f"builder error: {bd.error}"), False
-        if result_prefix:
-            bd = Turn(
-                text=f"{result_prefix.rstrip()}\n\n{bd.text.lstrip()}",
-                changeset=bd.changeset,
-            )
-        bus.write_result(bd.text)
-        verdicts = parse_verdicts(bd.text)
+        structured = cfg.backend == "real" and cfg.builder_vendor == "codex"
+        with tempfile.TemporaryDirectory(prefix="dinner-output-") as directory:
+            invoke_cfg = cfg
+            if structured:
+                schema_path = Path(directory) / "result.schema.json"
+                schema_path.write_text(json.dumps(busmod.RESULT_SCHEMA), encoding="utf-8")
+                invoke_cfg = replace(cfg, output_schema=schema_path)
+            try:
+                bd = self.builder.invoke(
+                    "recovery" if recovery else ROLE_BUILDER,
+                    prompt or build_prompt(handoff_text, handoff_name, tiers, structured=structured), invoke_cfg)
+            except Exception as exc:
+                bd = Turn(error=f"vendor invocation failed ({type(exc).__name__})")
+        self._turn_observations.append({
+            "role": "recovery" if recovery else "builder", "dispatch_id": bd.dispatch_id,
+            "thread_id": bd.thread_id, "usage": bd.usage, "elapsed_s": bd.elapsed_s,
+            "retry_reason": "output_format" if recovery else "", "failed": bool(bd.error),
+        })
+        self._last_contract_error = ""
+        try:
+            verdicts = busmod.parse_build_result(bd.text, compatibility=not structured)
+            busmod.validate_results(verdicts, tiers)
+        except busmod.ContractError as exc:
+            verdicts = []
+            self._last_contract_error = str(exc)
+        report = busmod.render_result(bd.text, verdicts, net_status="pending")
+        report_error = False
+        try:
+            bus.write_result((result_prefix.rstrip() + "\n\n" if result_prefix else "") + report)
+        except (OSError, UnicodeError):
+            report_error = True
 
         changes, stop = self._builder_changes(
             cycle, bus, bd, ev, handoff_name, handoff_text, fence)
@@ -1320,6 +1310,24 @@ class Orchestrator:
                 )
             return bd, verdicts, False, self._outcome(BLOCKED, cycle, reason), False
 
+        implementation_observed = any(
+            change.path not in {busmod.RESULT, handoff_name} for change in changes
+        )
+        try:
+            bus.write_result((result_prefix.rstrip() + "\n\n" if result_prefix else "") +
+                             busmod.render_result(bd.text, verdicts, net_status="pass" if cfg.net_enforce else "advisory"))
+        except (OSError, UnicodeError):
+            report_error = True
+        if report_error:
+            return bd, verdicts, False, self._outcome(
+                BLOCKED, cycle, "RESULT write failed; delta checks completed"), implementation_observed
+        if bd.error:
+            return bd, verdicts, False, self._outcome(
+                BLOCKED, cycle, f"builder error: {bd.error}; partial edits={implementation_observed}; delta checks completed"), implementation_observed
+        if recovery and implementation_observed:
+            return bd, verdicts, False, self._outcome(
+                BLOCKED, cycle, "read-only result recovery changed implementation"), True
+
         # tier-gate enforcement
         gate_reasons = enforce_tier_gates(tiers, verdicts)
         if gate_reasons:
@@ -1345,6 +1353,7 @@ class Orchestrator:
             handoff_name=handoff_name,
             builder_vendor=cfg.builder_vendor,
             backend=cfg.backend,
+            task_id=task_identity(Path(cfg.repo), handoff_name, cfg.task_id),
         )
         audit.attempted()
         try:
@@ -1365,6 +1374,10 @@ class Orchestrator:
             outcome=outcome.status,
             reason_code=_receipt_reason_code(outcome),
             attempts=outcome.cycles,
+            execution_path="headless_build", turns=self._turn_observations,
+            independent_review="not_run", completed_gates=outcome.completed_gates,
+            blocked_gates=outcome.blocked_gates, pending_gates=outcome.pending_gates,
+            needs_review_gates=outcome.needs_review_gates,
             **self._resolved_builder_profile,
         )
         outcome.receipt_path = audit.terminal_path
@@ -1383,6 +1396,7 @@ class Orchestrator:
         audit = BuildAudit(
             audit_dir=Path(cfg.audit_dir), repo=Path(cfg.repo), handoff_name=handoff_name,
             builder_vendor=cfg.builder_vendor, backend=cfg.backend, event="challenge_dispatch",
+            task_id=task_identity(Path(cfg.repo), handoff_name, cfg.task_id),
         )
         audit.attempted()
         try:
@@ -1390,13 +1404,17 @@ class Orchestrator:
         except Exception:
             audit.terminal(status="blocked", outcome="ERROR", reason_code="controller_error", attempts=0)
             raise
-        audit.terminal(
-            status=_challenge_receipt_status(outcome),
-            outcome=outcome.status,
-            reason_code=_challenge_receipt_reason_code(outcome),
-            attempts=outcome.cycles,
-            **self._resolved_builder_profile,
-        )
+        try:
+            audit.terminal(
+                status=_challenge_receipt_status(outcome),
+                outcome=outcome.status,
+                reason_code=_challenge_receipt_reason_code(outcome),
+                attempts=outcome.cycles,
+                required=outcome.status == CHALLENGED,
+                **self._resolved_builder_profile,
+            )
+        except ReceiptError:
+            return self._outcome(BLOCKED, outcome.cycles, "required challenge evidence could not be recorded")
         outcome.receipt_path = audit.terminal_path
         outcome.receipt_id = audit.dispatch_id if outcome.receipt_path is not None else ""
         return outcome
@@ -1411,7 +1429,17 @@ class Orchestrator:
         if not draft_text.strip():
             return self._outcome(BLOCKED, 0, f"no {draft_name} to challenge")
         audit.set_handoff(draft_text)
-        rounds_so_far = count_consecutive_challenge_rounds(Path(cfg.audit_dir), draft_name)
+        try:
+            routing_config = routing.load_routing_config(routing.default_routing_path())
+            preset = cfg.routing_preset or routing.active_preset_name(routing_config)
+            profile = routing.resolve_profile(routing_config, preset, "challenger_high")
+            audit.policy_hash = routing.policy_digest(routing_config, preset)
+            rounds_so_far = count_consecutive_challenge_rounds(
+                Path(cfg.audit_dir), draft_name, repo=Path(cfg.repo),
+                task_id=audit.task_id, policy_hash=audit.policy_hash,
+            )
+        except (routing.RoutingConfigError, ReceiptError) as exc:
+            return self._outcome(BLOCKED, 0, f"routing config or evidence error: {exc}")
         if rounds_so_far >= cfg.max_challenge_rounds and not cfg.acknowledge_challenge_round_cap:
             return self._outcome(
                 BLOCKED, 0,
@@ -1422,12 +1450,6 @@ class Orchestrator:
                 f"--acknowledge-challenge-round-cap to proceed accepting "
                 f"residual risk, (3) revisit the design before challenging again"
             )
-        try:
-            routing_config = routing.load_routing_config(routing.default_routing_path())
-            preset = cfg.routing_preset or routing.active_preset_name(routing_config)
-            profile = routing.resolve_profile(routing_config, preset, "challenger_high")
-        except routing.RoutingConfigError as exc:
-            return self._outcome(BLOCKED, 0, f"routing config error: {exc}")
         self._emit(
             f"[challenge] routing preset={preset!r} -> "
             f"{profile.vendor}/{profile.model}/{profile.effort}"
@@ -1436,7 +1458,9 @@ class Orchestrator:
             cfg, builder_vendor=profile.vendor,
             builder_model=profile.model, builder_effort=profile.effort,
         )
-        self.builder = make_backend(profile.vendor)
+        if cfg.backend == "real":
+            self.builder = make_backend(profile.vendor)
+        audit.builder_vendor = profile.vendor
         self._resolved_builder_profile = {
             "routing_preset": preset, "logical_profile": "challenger_high",
             "model": profile.model, "effort": profile.effort,
@@ -1450,183 +1474,146 @@ class Orchestrator:
         if not critique.strip():
             return self._outcome(BLOCKED, 1, "challenger produced an empty critique")
         bus.write("CHALLENGE.md", critique)
+        self._resolved_builder_profile["challenge_result_hash"] = content_hash(critique)
+        self._resolved_builder_profile["execution_path"] = "headless_challenge"
         return self._outcome(CHALLENGED, 1, "challenge complete -- see CHALLENGE.md")
 
     def _resolve_builder_profile(
         self, handoff_text: str, tiers: dict[str, str], compute_tiers: dict[str, str],
     ) -> Optional[Outcome]:
-        """Resolve which vendor/model/effort this dispatch actually uses, from
-        routing.toml (ADR-0020) — reassigns self.cfg/self.builder in place when
-        routing applies. Returns a terminal BLOCKED Outcome if the dispatch
-        must be refused (routing config error, a HIGH gate carrying an
-        explicit --builder-model/--builder-effort override, or a HIGH gate with
-        no matching challenger_high evidence for this exact handoff content —
-        ADR-0020 correction 5); returns None on success (self.cfg/self.builder
-        may or may not have changed).
-        """
+        """Resolve the entire selected dispatch, never only the first gate."""
         cfg = self.cfg
-        first_gate = next(iter(tiers), "1")
-        is_high_risk = tier_for(tiers, first_gate) == busmod.TIER_HIGH
-        effective = busmod.effective_compute(tiers, compute_tiers, first_gate)
+        gates = sorted(tiers, key=busmod.gate_order) or ["1"]
+        is_high_risk = any(tier_for(tiers, gate) == busmod.TIER_HIGH for gate in gates)
+        weights = {busmod.COMPUTE_LOW: 0, busmod.COMPUTE_NORMAL: 1, busmod.COMPUTE_HIGH: 2}
+        effective = max(
+            (busmod.effective_compute(tiers, compute_tiers, gate) for gate in gates),
+            key=weights.get,
+        )
         logical_role = {
             busmod.COMPUTE_LOW: "builder_low",
             busmod.COMPUTE_NORMAL: "builder_normal",
             busmod.COMPUTE_HIGH: "builder_high",
         }[effective]
         try:
-            routing_config = routing.load_routing_config(routing.default_routing_path())
-            preset = cfg.routing_preset or routing.active_preset_name(routing_config)
-            if is_high_risk:
-                if cfg.builder_model or cfg.builder_effort:
-                    return self._outcome(
-                        BLOCKED, 0,
-                        "HIGH gate refuses an explicit --builder-model/--builder-effort "
-                        "override (ADR-0020) — use --routing-preset to pick a different "
-                        "preset instead",
-                    )
-                handoff_hash = content_hash(handoff_text)
-                if not find_challenge_evidence(Path(cfg.audit_dir), handoff_hash):
-                    return self._outcome(
-                        BLOCKED, 0,
-                        "HIGH gate has no matching challenger_high evidence for this "
-                        "exact handoff content (ADR-0020 correction 5) — run "
-                        "`orchestrate.py challenge` against it first",
-                    )
-                default_profile = routing.resolve_profile(routing_config, preset, "builder_high")
-                if cfg.builder_vendor and cfg.builder_vendor != default_profile.vendor:
-                    profile = routing.resolve_builder_high_for_vendor(routing_config, cfg.builder_vendor)
-                else:
-                    profile = default_profile
-            elif cfg.builder_vendor or cfg.builder_model or cfg.builder_effort:
-                profile = None  # explicit override present -> leave cfg/self.builder untouched
-            else:
-                profile = routing.resolve_profile(routing_config, preset, logical_role)
-        except routing.RoutingConfigError as exc:
+            config = routing.load_routing_config(routing.default_routing_path())
+            preset = cfg.routing_preset or routing.active_preset_name(config)
+            policy_hash = routing.policy_digest(config, preset)
+            profile = (routing.resolve_profile_for_vendor(config, preset, logical_role, cfg.builder_vendor)
+                       if cfg.builder_vendor else routing.resolve_profile(config, preset, logical_role))
+            # HIGH must retain the configured minimum profile. Repeating that exact
+            # model/effort explicitly is allowed; an unverified substitution is not.
+            if is_high_risk and ((cfg.builder_model and cfg.builder_model != profile.model) or
+                                 (cfg.builder_effort and cfg.builder_effort != profile.effort)):
+                return self._outcome(BLOCKED, 0, "HIGH override does not match the configured minimum profile")
+            task = task_identity(Path(cfg.repo), cfg.handoff_name or busmod.HANDOFF, cfg.task_id)
+            if is_high_risk and not find_challenge_evidence(
+                Path(cfg.audit_dir), content_hash(handoff_text), repo=Path(cfg.repo),
+                task_id=task, policy_hash=policy_hash,
+            ):
+                return self._outcome(
+                    BLOCKED, 0, "HIGH gate has no matching challenger_high evidence for this "
+                    "repo/task/handoff/policy; run orchestrate.py challenge first",
+                )
+            profile = routing.validate_profile(routing.ModelProfile(
+                vendor=profile.vendor, model=cfg.builder_model or profile.model,
+                effort=cfg.builder_effort or profile.effort,
+            ))
+        except (routing.RoutingConfigError, ValueError) as exc:
             return self._outcome(BLOCKED, 0, f"routing config error: {exc}")
-        if profile is not None:
-            self._emit(
-                f"[build] routing preset={preset!r} gate={first_gate!r} "
-                f"role={logical_role if not is_high_risk else 'builder_high'} -> "
-                f"{profile.vendor}/{profile.model}/{profile.effort}"
-            )
-            self.cfg = replace(
-                cfg, builder_vendor=profile.vendor,
-                builder_model=profile.model, builder_effort=profile.effort,
-            )
-            self.builder = make_backend(profile.vendor)
-            self._resolved_builder_profile = {
-                "routing_preset": preset,
-                "logical_profile": logical_role if not is_high_risk else "builder_high",
-                "model": profile.model,
-                "effort": profile.effort,
-            }
+        self._emit(f"[build] preset={preset} gates={gates} role={logical_role} -> "
+                   f"{profile.vendor}/{profile.model}/{profile.effort}")
+        self.cfg = replace(cfg, builder_vendor=profile.vendor,
+                           builder_model=profile.model, builder_effort=profile.effort)
+        self.builder = make_backend(profile.vendor)
+        self._resolved_builder_profile = {
+            "routing_preset": preset, "logical_profile": logical_role,
+            "model": profile.model, "effort": profile.effort,
+            "override_fields": [name for name, value in (
+                ("vendor", cfg.builder_vendor), ("model", cfg.builder_model),
+                ("effort", cfg.builder_effort)) if value],
+            "policy_hash": policy_hash, "account_access": "unknown",
+        }
         return None
 
     def _run_from_handoff(self, audit: BuildAudit) -> Outcome:
-        """Single-shot Builder pass from an existing handoff file
-        (``cfg.handoff_name``, default HANDOFF.md).
+        """Execute the declared numeric prefix through the first HIGH gate.
 
-        The interactive Architect (Claude) already wrote and got human approval
-        for the handoff; this drives only the Builder (Codex) turn + controller
-        safety net + tier-gate, writes RESULT.md, and returns. ARCHITECT_REVIEW
-        and the HIGH end sign-off are owned by the in-session Architect — not
-        re-run headless here (that is what makes the in-session review the gate).
+        No prior RESULT is treated as completion state. Submit a revised handoff
+        containing remaining work for another explicitly selected dispatch.
         """
         cfg = self.cfg
         bus = Bus(Path(cfg.repo))
         handoff_name = cfg.handoff_name or busmod.HANDOFF
         handoff_text = _read_bus(bus, handoff_name)
         if handoff_text is None:
-            # A handoff we cannot decode is a spec we cannot dispatch. On a
-            # Korean Windows box a Notepad "ANSI" save lands in cp949, and this
-            # read is the one the orchestrator did not author.
             return self._outcome(BLOCKED, 0, f"cannot read {handoff_name} as UTF-8 text")
         if not handoff_text.strip():
             return self._outcome(BLOCKED, 0, f"no {handoff_name} to build from")
         audit.set_handoff(handoff_text)
-        tiers = parse_tiers(handoff_text)
-        compute_tiers = busmod.parse_compute_tiers(handoff_text)
-        self._emit(f"[build] tiers={tiers or '(none) -> fail-closed HIGH'}")
+        try:
+            tiers, compute_tiers = busmod.dispatch_gates(handoff_text)
+        except busmod.ContractError as exc:
+            return self._outcome(BLOCKED, 0, f"handoff contract error: {exc}")
+        all_tiers = parse_tiers(handoff_text)
+        self._emit(f"[build] dispatched gate IDs={list(tiers)}")
         if cfg.backend == "real":
             blocked_routing = self._resolve_builder_profile(handoff_text, tiers, compute_tiers)
             if blocked_routing is not None:
                 return blocked_routing
             cfg = self.cfg
-        # Advisory tier gate: the safety net still hard-blocks, but verdict gating
-        # is emit-only here — the in-session Claude review owns acceptance.
-        #
-        # Retry-once: a headless Codex Builder occasionally bails with no
-        # implementation (status=blocked / no verdict) after falsely deciding the
-        # workspace is read-only; a single re-dispatch clears it (_builder_bailed).
-        # A completed gate whose review panel FAILs/BLOCKs is a real advisory
-        # outcome, not a bail — it passes through. A safety-net block
-        # (scope/secret) is deterministic and is NEVER retried.
-        has_high = False
-        attempt = 0
-        for attempt in range(1, _MAX_BUILD_ATTEMPTS + 1):
-            bd, verdicts, has_high, blocked, implementation_observed = self._build_and_gate(
-                bus, handoff_text, tiers, cycle=attempt,
-                handoff_name=handoff_name, tier_gate_hard=False,
+        audit.builder_vendor = cfg.builder_vendor
+        attempt = 1
+        bd, verdicts, has_high, blocked, observed = self._build_and_gate(
+            bus, handoff_text, tiers, cycle=attempt,
+            handoff_name=handoff_name, tier_gate_hard=False,
+        )
+        if blocked is not None:
+            return blocked
+        if self._last_contract_error:
+            # Recovery has read-only tool permissions and never reimplements work.
+            self._emit("[build] output_format failure; one read-only recovery attempt")
+            attempt += 1
+            original_report = bus.read(busmod.RESULT)
+            recovery_prompt = (
+                "Read-only result-format recovery. Do not edit any file or rerun implementation. "
+                "Inspect the preserved RESULT.md and current diff. Report every dispatched gate "
+                f"ID: {', '.join(tiers)}. If completion cannot be established, mark blocked. "
+                "Return JSON matching the supplied schema if present; otherwise return a "
+                "legacy verdicts fence. Do not claim independent review.\n"
+                f"--- {handoff_name} ---\n{handoff_text}"
+            )
+            _, verdicts, has_high, blocked, _ = self._build_and_gate(
+                bus, handoff_text, tiers, cycle=attempt, handoff_name=handoff_name,
+                tier_gate_hard=False, prompt=recovery_prompt,
+                result_prefix=original_report, recovery=True,
             )
             if blocked is not None:
-                return blocked  # safety net (scope/secret) tripped — hard block
-            if not _builder_bailed(verdicts):
-                break  # builder completed (advisory panel verdicts pass through)
-            if not verdicts and implementation_observed:
-                self._emit(
-                    f"[build] attempt {attempt}: implementation passed the net but "
-                    "the verdict fence is missing -- recovering verdict only"
-                )
-                recovery_attempt = attempt + 1
-                _recovery, verdicts, has_high, blocked, recovery_implementation_observed = self._build_and_gate(
-                    bus, handoff_text, tiers, cycle=recovery_attempt,
-                    handoff_name=handoff_name, tier_gate_hard=False,
-                    prompt=verdict_recovery_prompt(handoff_text, handoff_name), result_prefix=bd.text,
-                )
-                if blocked is not None:
-                    return blocked
-                if recovery_implementation_observed:
-                    return self._outcome(
-                        BLOCKED,
-                        recovery_attempt,
-                        "builder verdict recovery changed implementation",
-                    )
-                if _builder_bailed(verdicts):
-                    return self._outcome(
-                        BLOCKED,
-                        recovery_attempt,
-                        f"builder verdict recovery failed after {recovery_attempt} attempt(s)",
-                    )
-                attempt = recovery_attempt
-                break
-            if attempt < _MAX_BUILD_ATTEMPTS:
-                self._emit(
-                    f"[build] attempt {attempt}: builder bailed with no "
-                    "implementation (likely a false read-only) — retrying once"
-                )
-        if _builder_bailed(verdicts):
-            return self._outcome(
-                BLOCKED,
-                attempt,
-                f"builder bailed with no implementation after {attempt} attempt(s)",
-            )
-        completed = sorted({v.gate for v in verdicts})
-        remaining = sorted(set(tiers) - set(completed))
-        last_gate = completed[-1] if completed else None
-        review_required = (
-            last_gate
-            if remaining and last_gate and tier_for(tiers, last_gate) == busmod.TIER_HIGH
-            else None
+                return blocked
+            if self._last_contract_error:
+                return self._outcome(BLOCKED, attempt, "output format recovery failed")
+        completed = sorted((v.gate for v in verdicts if v.status == "completed"), key=busmod.gate_order)
+        blocked_gates = sorted((v.gate for v in verdicts if v.status == "blocked"), key=busmod.gate_order)
+        explicitly_reviewing = {v.gate for v in verdicts if v.status == "needs_review"}
+        pending = sorted(set(all_tiers) - set(completed) - set(blocked_gates) - explicitly_reviewing,
+                         key=busmod.gate_order)
+        needs_review = sorted(
+            {v.gate for v in verdicts if v.status == "needs_review" or
+             (v.status == "completed" and (tier_for(tiers, v.gate) == busmod.TIER_HIGH or
+                                         v.tier == busmod.TIER_HIGH))},
+            key=busmod.gate_order,
         )
-        note = (
-            "HIGH gate present — in-session human sign-off required before merge/apply"
-            if has_high else "all-LOW"
-        )
-        self._emit(f"[build] BUILT ({note}) — RESULT.md written, awaiting in-session review")
+        remaining = sorted(set(all_tiers) - set(completed), key=busmod.gate_order)
+        incomplete = any(v.status in ("blocked", "pending") for v in verdicts)
+        note = ("partial or blocked work; review RESULT.md" if incomplete else
+                "implementation reported; independent review and human HIGH acceptance remain pending"
+                if needs_review else "implementation reported; awaiting in-session review")
         return self._outcome(
-            BUILT, attempt, note,
+            BLOCKED if incomplete else BUILT, attempt, note,
             completed_gates=completed, remaining_gates=remaining,
-            review_required_gate=review_required,
+            blocked_gates=blocked_gates, pending_gates=pending,
+            needs_review_gates=needs_review,
+            review_required_gate=needs_review[0] if needs_review else None,
         )
 
 

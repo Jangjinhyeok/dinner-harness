@@ -80,14 +80,6 @@ def _match(text: str):
     return None, None
 
 
-def _excerpt(text: str, m: "re.Match") -> str:
-    start = text.rfind("\n", 0, m.start()) + 1
-    end = text.find("\n", m.end())
-    if end == -1:
-        end = len(text)
-    return text[start:end].strip()[:300]
-
-
 def main() -> None:
     payload = read_hook_input()
 
@@ -102,18 +94,11 @@ def main() -> None:
     if not name:
         exit_allow()  # success / no strong failure signal — capture nothing
 
-    cmd = ""
-    tool_input = payload.get("tool_input")
-    if isinstance(tool_input, dict):
-        cmd = str(tool_input.get("command", ""))[:200]
-
     log_event(
         _HOOK_NAME,
         event=_EVENT,
         decision="capture",
         signal=name,
-        command=cmd,
-        excerpt=_excerpt(text, m),
         cwd=str(get_cwd(payload)),
         session=str(payload.get("session_id") or "default"),
     )

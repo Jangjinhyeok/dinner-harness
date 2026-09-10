@@ -84,15 +84,34 @@ _GIT_ISOLATION = {
     "GIT_CONFIG_NOSYSTEM": "1",
 }
 _SAVED_ENV: dict = {}
+_BACKEND_GUARDS = [
+    mock.patch(target, side_effect=AssertionError("offline tests must explicitly mock real backend creation"))
+    for target in ("orchestrator.controller.make_backend", "orchestrate.make_backend")
+]
+
+
+def _policy_profile(role, preset="codex_only"):
+    return routing.resolve_profile(routing.load_routing_config(routing.default_routing_path()), preset, role)
+
+
+def _challenge_binding(cfg):
+    policy = routing.load_routing_config(routing.default_routing_path())
+    preset = cfg.routing_preset or routing.active_preset_name(policy)
+    return dict(task_id=receipt.task_identity(Path(cfg.repo), cfg.handoff_name, cfg.task_id),
+                policy_hash=routing.policy_digest(policy, preset))
 
 
 def setUpModule():
+    for guard in _BACKEND_GUARDS:
+        guard.start()
     for k, v in _GIT_ISOLATION.items():
         _SAVED_ENV[k] = os.environ.get(k)
         os.environ[k] = v
 
 
 def tearDownModule():
+    for guard in reversed(_BACKEND_GUARDS):
+        guard.stop()
     for k, old in _SAVED_ENV.items():
         if old is None:
             os.environ.pop(k, None)
@@ -114,14 +133,15 @@ class TestVendorRunner(unittest.TestCase):
         self.assertIn("--output-format", argv)
         self.assertEqual(argv[argv.index("--output-format") + 1], "text")
 
-    @mock.patch("orchestrator.vendors._run")
-    def test_codex_builder_enables_windows_workspace_sandbox(self, run_mock: mock.Mock):
+    @mock.patch("orchestrator.vendors._run", return_value=Turn())
+    def test_codex_builder_requests_windows_workspace_sandbox_without_legacy_flag(self, run_mock: mock.Mock):
         with mock.patch.object(vendors.sys, "platform", "win32"):
             vendors.CodexBackend().invoke(ROLE_BUILDER, "prompt", Config())
 
         argv, _ = run_mock.call_args.args
-        self.assertEqual(
-            argv[argv.index("--enable") + 1], "experimental_windows_sandbox")
+        self.assertEqual(argv[argv.index("--sandbox") + 1], "workspace-write")
+        self.assertNotIn("--enable", argv)
+        self.assertNotIn("experimental_windows_sandbox", argv)
 
     @mock.patch("orchestrator.vendors._run")
     def test_claude_backend_passes_builder_effort(self, run_mock: mock.Mock):
@@ -147,13 +167,13 @@ class TestVendorRunner(unittest.TestCase):
             )
 
         argv, _ = run_mock.call_args.args
-        self.assertNotIn("--permission-mode", argv)
+        self.assertEqual(argv[argv.index("--permission-mode") + 1], "plan")
         self.assertNotEqual(
             run_mock.call_args.kwargs["env"].get("DINNER_EXECUTION_MODE"),
             "direct",
         )
 
-    @mock.patch("orchestrator.vendors._run")
+    @mock.patch("orchestrator.vendors._run", return_value=Turn())
     def test_codex_backend_passes_builder_effort(self, run_mock: mock.Mock):
         vendors.CodexBackend().invoke(
             ROLE_BUILDER, "prompt", Config(builder_effort="medium")
@@ -173,47 +193,32 @@ class TestVendorRunner(unittest.TestCase):
 
         self.assertFalse(any("effort" in problem for problem in problems))
 
-    def test_sandbox_degraded_only_reports_mismatched_headers(self):
-        cases = (
-            ("sandbox: workspace-write\n", "workspace-write", None),
-            ("sandbox: read-only\n", "workspace-write", "experimental_windows_sandbox"),
-            ("sandbox: workspace-write [workdir, /tmp, $TMPDIR]\n", "workspace-write", None),
-            ("working on the requested files\n", "workspace-write", None),
-        )
+    def test_codex_sandbox_request_is_not_claimed_as_runtime_verification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = Config(audit_dir=Path(directory))
+            with mock.patch("orchestrator.vendors._run", return_value=Turn()):
+                vendors.CodexBackend().invoke(ROLE_BUILDER, "prompt", cfg)
+            markers = list(cfg.audit_dir.glob("watch-builder-*.json"))
+            self.assertEqual(len(markers), 1)
+            record = json.loads(markers[0].read_text(encoding="utf-8"))
+            self.assertEqual(record["sandbox_requested"], "workspace-write")
+            self.assertEqual(record["sandbox_verified"], "not_run")
 
-        for line, requested, expected in cases:
-            with self.subTest(line=line):
-                result = vendors.sandbox_degraded(line, requested)
-                if expected is None:
-                    self.assertIsNone(result)
-                else:
-                    self.assertIn(expected, result)
+    def test_codex_read_only_roles_never_request_write_sandbox(self):
+        for role in (vendors.ROLE_CHALLENGER, vendors.ROLE_REVIEWER, vendors.ROLE_RECOVERY):
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                with mock.patch("orchestrator.vendors._run", return_value=Turn()) as runner:
+                    vendors.CodexBackend().invoke(role, "prompt", Config(audit_dir=Path(directory)))
+                argv = runner.call_args.args[0]
+                self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
 
-    def test_sandbox_degraded_aborts_inside_the_session_header(self):
-        checker = vendors._HeaderAbortCheck(
-            lambda line: vendors.sandbox_degraded(line, "workspace-write")
-        )
-
-        self.assertIsNone(checker("OpenAI Codex v0.147.0\n"))
-        self.assertIsNone(checker("--------\n"))
-        message = checker("sandbox: read-only\n")
-
-        self.assertIsNotNone(message)
-        self.assertIn("Codex sandbox degraded", message)
-
-    def test_sandbox_degraded_ignores_prompt_echo_after_the_session_header(self):
-        checker = vendors._HeaderAbortCheck(
-            lambda line: vendors.sandbox_degraded(line, "workspace-write")
-        )
-
-        for line in (
-            "Reading prompt from stdin...\n",
-            "--------\n",
-            "sandbox: workspace-write [workdir, /tmp, $TMPDIR]\n",
-            "--------\n",
-        ):
-            self.assertIsNone(checker(line))
-        self.assertIsNone(checker("sandbox: read-only\n"))
+    def test_codex_uses_json_events_without_natural_language_header_checker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch("orchestrator.vendors._run", return_value=Turn()) as runner:
+                vendors.CodexBackend().invoke(ROLE_BUILDER, "prompt", Config(audit_dir=Path(directory)))
+        self.assertTrue(runner.call_args.kwargs["json_events"])
+        self.assertNotIn("abort_check", runner.call_args.kwargs)
+        self.assertIn("--json", runner.call_args.args[0])
 
     def test_stdin_text_reaches_the_child_and_is_captured(self):
         stdin_text = "prompt delivered through stdin\n"
@@ -296,24 +301,17 @@ class TestBuildPrompt(unittest.TestCase):
 
     def test_high_gate_clause_requires_implementation_before_later_sign_off(self):
         prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
-
-        self.assertIn(
-            "A `HIGH` tier gate does not mean stop and ask before implementing — "
-            "implement it now and leave it unmerged; the human sign-off happens "
-            "later in the dispatching session.",
-            prompt,
-        )
-        self.assertIn(
-            "after a completed HIGH gate, stop rather than progressing to the next gate.",
-            prompt,
-        )
+        self.assertIn("This invocation authorizes implementation", prompt)
+        self.assertIn("HIGH acceptance and independent implementation review remain in the calling session", prompt)
+        self.assertIn("after completing a HIGH gate", prompt)
+        self.assertIn("Never implement later gates", prompt)
 
     def test_names_the_dispatched_handoff_and_ignores_stale_bus_artifacts(self):
         prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
 
         self.assertIn("--- HANDOFF_DELEGATE.md ---", prompt)
         self.assertNotIn("--- HANDOFF.md ---", prompt)
-        self.assertIn("other `HANDOFF*` and `RESULT` files are stale artifacts", prompt)
+        self.assertIn("The controller renders RESULT.md; do not write that file", prompt)
 
     def test_clears_stale_result_before_the_builder_turn(self):
         class _ResultBus:
@@ -525,43 +523,21 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
     def test_architect_and_delegate_document_an_unpiped_absolute_dispatch_shape(self):
         root = Path(__file__).resolve().parents[2]
-        architect = (root / "content" / "roles" / "ROLE_ARCHITECT.md").read_text(encoding="utf-8")
-        delegate = (root / "content" / "skills" / "delegate" / "SKILL.md").read_text(encoding="utf-8")
-        architect_cmd = (
-            'py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
-            '"<ABSOLUTE_REPO_PATH>" --backend real'
-        )
-        delegate_cmd = architect_cmd + " --handoff HANDOFF_DELEGATE.md"
-        self.assertIn(architect_cmd, architect)
-        self.assertIn(delegate_cmd, delegate)
-        self.assertNotIn("cd &&", architect)
-        self.assertNotIn("| tail", architect)
-        self.assertNotIn("| head", architect)
-
-        for rel in (
-            "content/instructions/CLAUDE.md",
-            "content/rules/_mode/architect.md",
-            "assets/claude/README.md",
-        ):
+        reference = (root / "content/rules/two-cli-reference.md").read_text(encoding="utf-8")
+        command = 'py -3 "<HARNESS_HOME>/orchestrate.py" build --repo "<REPO>" --backend real'
+        self.assertIn(command, reference)
+        for rel in ("content/roles/ROLE_ARCHITECT.md", "content/skills/delegate/SKILL.md"):
             text = (root / rel).read_text(encoding="utf-8")
-            self.assertIn(architect_cmd, text, rel)
-            self.assertNotIn("~/.claude/orchestrate.py build", text, rel)
-
-        readme = (root / "README.en.md").read_text(encoding="utf-8")
-        direct_section = readme.split("### 2) Calling the orchestrator directly (optional)", 1)[1]
-        direct_section = direct_section.split("### 3)", 1)[0]
-        self.assertIn('py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath"', direct_section)
-        self.assertNotIn("<CLAUDE_HOME>", direct_section)
-        self.assertNotIn("<ABSOLUTE_REPO_PATH>", direct_section)
-
-        for rel in ("orchestrator/README.md", "orchestrator/README.ko.md"):
+            self.assertIn("two-cli-reference.md", text)
+        for line in reference.splitlines():
+            if line.startswith("py -3 "):
+                self.assertNotIn("|", line)
+                self.assertNotIn("&&", line)
+        # Vendor-specific compatibility entrypoints still keep explicit absolute arguments.
+        for rel in ("content/instructions/CLAUDE.md", "assets/claude/README.md"):
             text = (root / rel).read_text(encoding="utf-8")
-            self.assertIn("$repoPath = (Get-Location).Path -replace '\\\\', '/'", text, rel)
-            self.assertIn(
-                'py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real',
-                text,
-                rel,
-            )
+            self.assertIn('py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
+                          '"<ABSOLUTE_REPO_PATH>" --backend real', text)
 
     def test_reference_docs_are_wired_into_claude_install_manifest(self):
         root = Path(__file__).resolve().parents[2]
@@ -1912,9 +1888,16 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
             builder_vendor="claude",
             backend="real",
             event=event,
+            task_id=receipt.task_identity(audit_dir, "HANDOFF.md"),
+            policy_hash="test-policy",
         )
         audit.set_handoff("draft text")
         return audit
+
+    @staticmethod
+    def _binding(audit_dir):
+        return dict(repo=audit_dir, task_id=receipt.task_identity(audit_dir, "HANDOFF.md"),
+                    policy_hash="test-policy")
 
     def test_event_defaults_to_builder_dispatch(self):
         with tempfile.TemporaryDirectory() as d:
@@ -1951,11 +1934,11 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 status="challenged",
                 outcome="CHALLENGED",
                 reason_code="challenge_complete",
-                attempts=1,
+                attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
             )
             self.assertTrue(
                 receipt.find_challenge_evidence(
-                    audit_dir, receipt.content_hash("draft text")
+                    audit_dir, receipt.content_hash("draft text"), **self._binding(audit_dir)
                 )
             )
 
@@ -1968,11 +1951,11 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 status="challenged",
                 outcome="CHALLENGED",
                 reason_code="challenge_complete",
-                attempts=1,
+                attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
             )
             self.assertFalse(
                 receipt.find_challenge_evidence(
-                    audit_dir, receipt.content_hash("other text")
+                    audit_dir, receipt.content_hash("other text"), **self._binding(audit_dir)
                 )
             )
 
@@ -1985,11 +1968,11 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 status="challenged",
                 outcome="CHALLENGED",
                 reason_code="challenge_complete",
-                attempts=1,
+                attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
             )
             self.assertFalse(
                 receipt.find_challenge_evidence(
-                    audit_dir, receipt.content_hash("draft text")
+                    audit_dir, receipt.content_hash("draft text"), **self._binding(audit_dir)
                 )
             )
 
@@ -1997,7 +1980,7 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertFalse(
                 receipt.find_challenge_evidence(
-                    Path(d) / "nonexistent", receipt.content_hash("draft text")
+                    Path(d) / "nonexistent", receipt.content_hash("draft text"), **self._binding(Path(d))
                 )
             )
 
@@ -2005,12 +1988,12 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             audit_dir = Path(d)
             audit_dir.mkdir(exist_ok=True)
-            (audit_dir / "build-audit.jsonl").write_text(
-                "[]\nnull\n\"text\"\n", encoding="utf-8"
+            (audit_dir / "receipt-corrupt.json").write_text(
+                "[]\n", encoding="utf-8"
             )
             self.assertFalse(
                 receipt.find_challenge_evidence(
-                    audit_dir, receipt.content_hash("draft text")
+                    audit_dir, receipt.content_hash("draft text"), **self._binding(audit_dir)
                 )
             )
 
@@ -2018,16 +2001,16 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             audit_dir = Path(d)
             audit_dir.mkdir(exist_ok=True)
-            (audit_dir / "build-audit.jsonl").write_bytes(b"\xff\xfe\n")
+            (audit_dir / "receipt-corrupt.json").write_bytes(b"\xff\xfe\n")
             self.assertFalse(
                 receipt.find_challenge_evidence(
-                    audit_dir, receipt.content_hash("draft text")
+                    audit_dir, receipt.content_hash("draft text"), **self._binding(audit_dir)
                 )
             )
 
     def test_count_consecutive_challenge_rounds_is_zero_without_audit_log(self):
         with tempfile.TemporaryDirectory() as d:
-            self.assertEqual(receipt.count_consecutive_challenge_rounds(Path(d), "HANDOFF.md"), 0)
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(Path(d), "HANDOFF.md", **self._binding(Path(d))), 0)
 
     def test_count_consecutive_challenge_rounds_counts_challenged_terminals(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2036,22 +2019,22 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 audit = self._audit(audit_dir)
                 audit.attempted()
                 audit.terminal(status="challenged", outcome=CHALLENGED,
-                               reason_code="challenge_complete", attempts=1)
-            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 3)
+                               reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md", **self._binding(audit_dir)), 3)
 
-    def test_count_consecutive_challenge_rounds_stops_at_builder_dispatch(self):
+    def test_count_consecutive_challenge_rounds_stops_at_successful_builder_dispatch(self):
         with tempfile.TemporaryDirectory() as d:
             audit_dir = Path(d)
             before = self._audit(audit_dir)
             before.terminal(status="challenged", outcome=CHALLENGED,
-                            reason_code="challenge_complete", attempts=1)
+                            reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
             builder = self._audit(audit_dir, event="builder_dispatch")
-            builder.terminal(status="blocked", outcome=BLOCKED,
-                             reason_code="blocked_other", attempts=0)
+            builder.terminal(status="built", outcome=BUILT,
+                             reason_code="built_low", attempts=1)
             after = self._audit(audit_dir)
             after.terminal(status="challenged", outcome=CHALLENGED,
-                           reason_code="challenge_complete", attempts=1)
-            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 1)
+                           reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md", **self._binding(audit_dir)), 1)
 
     def test_count_consecutive_challenge_rounds_skips_blocked_challenges(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2059,20 +2042,21 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
             for status in ("challenged", "blocked", "challenged"):
                 audit = self._audit(audit_dir)
                 audit.terminal(status=status, outcome=status.upper(),
-                               reason_code="challenge_complete", attempts=1)
-            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 2)
+                               reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md", **self._binding(audit_dir)), 2)
 
     def test_count_consecutive_challenge_rounds_ignores_other_handoff_names(self):
         with tempfile.TemporaryDirectory() as d:
             audit_dir = Path(d)
             other = BuildAudit(audit_dir, audit_dir, "OTHER.md", "claude", "real",
-                               event="challenge_dispatch")
+                               event="challenge_dispatch", task_id="other-task", policy_hash="test-policy")
+            other.set_handoff("draft text")
             other.terminal(status="challenged", outcome=CHALLENGED,
-                           reason_code="challenge_complete", attempts=1)
+                           reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
             current = self._audit(audit_dir)
             current.terminal(status="challenged", outcome=CHALLENGED,
-                             reason_code="challenge_complete", attempts=1)
-            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md"), 1)
+                             reason_code="challenge_complete", attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"))
+            self.assertEqual(receipt.count_consecutive_challenge_rounds(audit_dir, "HANDOFF.md", **self._binding(audit_dir)), 1)
 
 
 class TestChallenge(unittest.TestCase):
@@ -2097,8 +2081,8 @@ class TestChallenge(unittest.TestCase):
                 outcome = orchestrator.run_challenge()
                 self.assertEqual(outcome.status, CHALLENGED, outcome.reason)
                 factory.assert_called_once_with("codex")
-                self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
-                self.assertEqual(orchestrator.cfg.builder_effort, "high")
+                self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("challenger_high").model)
+                self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("challenger_high").effort)
                 # Builder dispatch starts with the original config, not challenge overrides.
                 builder = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
                 resolved = builder._resolve_builder_profile(
@@ -2106,7 +2090,7 @@ class TestChallenge(unittest.TestCase):
                 )
                 self.assertIsNone(resolved)
                 self.assertEqual(factory.call_args_list, [mock.call("codex"), mock.call("codex")])
-                self.assertEqual(builder.cfg.builder_model, "gpt-5.6-sol")
+                self.assertEqual(builder.cfg.builder_model, _policy_profile("builder_high").model)
                 stale = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
                 changed = stale._resolve_builder_profile(
                     draft + "changed", {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
@@ -2124,6 +2108,7 @@ class TestChallenge(unittest.TestCase):
             builder_vendor=cfg.builder_vendor,
             backend=cfg.backend,
             event="challenge_dispatch",
+            **_challenge_binding(cfg),
         )
 
     @staticmethod
@@ -2141,9 +2126,11 @@ class TestChallenge(unittest.TestCase):
     def _record_challenged_rounds(cfg: Config, count: int) -> None:
         for _ in range(count):
             audit = TestChallenge._audit(cfg)
+            audit.set_handoff((cfg.repo / cfg.handoff_name).read_text(encoding="utf-8"))
             audit.attempted()
             audit.terminal(status="challenged", outcome=CHALLENGED,
-                           reason_code="challenge_complete", attempts=1)
+                           reason_code="challenge_complete", attempts=1, required=True,
+                           challenge_result_hash=receipt.content_hash("critique"))
 
     def test_run_challenge_writes_critique_and_returns_challenged(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2210,7 +2197,7 @@ class TestChallenge(unittest.TestCase):
             outcome = orchestrator.run_challenge()
 
             self.assertEqual(outcome.status, BLOCKED)
-            self.assertIn("routing config error", outcome.reason)
+            self.assertIn("routing config or evidence error", outcome.reason)
 
     def test_run_challenge_receipt_records_event_and_routing_metadata(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2233,10 +2220,10 @@ class TestChallenge(unittest.TestCase):
             ]
             self.assertEqual(records[0]["event"], "challenge_dispatch")
             self.assertEqual(records[-1]["status"], "challenged")
-            self.assertEqual(records[-1]["routing_preset"], "hybrid")
+            self.assertEqual(records[-1]["routing_preset"], "codex_only")
             self.assertEqual(records[-1]["logical_profile"], "challenger_high")
-            self.assertEqual(records[-1]["model"], "claude-opus-5")
-            self.assertEqual(records[-1]["effort"], "low")
+            self.assertEqual(records[-1]["model"], _policy_profile("challenger_high").model)
+            self.assertEqual(records[-1]["effort"], _policy_profile("challenger_high").effort)
 
     def test_round_cap_blocks_without_invoking_challenger(self):
         with tempfile.TemporaryDirectory() as d:
@@ -2321,6 +2308,7 @@ class TestBuildFromHandoff(unittest.TestCase):
             builder_vendor=orchestrator.cfg.builder_vendor,
             backend=orchestrator.cfg.backend,
             event="challenge_dispatch",
+            **_challenge_binding(orchestrator.cfg),
         )
         audit.set_handoff(handoff_text)
         audit.attempted()
@@ -2328,7 +2316,7 @@ class TestBuildFromHandoff(unittest.TestCase):
             status="challenged",
             outcome=CHALLENGED,
             reason_code="challenge_complete",
-            attempts=1,
+            attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
         )
 
     def test_receipt_terminal_records_routing_metadata(self):
@@ -2392,6 +2380,7 @@ class TestBuildFromHandoff(unittest.TestCase):
                     "backend", "orchestrator_sha256", "handoff_sha256", "status",
                     "outcome", "reason_code", "attempts", "duration_ms",
                     "routing_preset", "logical_profile", "model", "effort",
+                    "task_id", "policy_sha256",
                 },
             )
 
@@ -2404,17 +2393,22 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
 
         self.assertIsNone(outcome)
+        config = routing.load_routing_config(routing.default_routing_path())
+        profile = routing.resolve_profile(config, "codex_only", "builder_normal")
         self.assertEqual(
             orchestrator._resolved_builder_profile,
             {
-                "routing_preset": "hybrid",
+                "routing_preset": "codex_only",
                 "logical_profile": "builder_normal",
-                "model": "gpt-5.6-terra",
-                "effort": "medium",
+                "model": profile.model,
+                "effort": profile.effort,
+                "override_fields": [],
+                "policy_hash": routing.policy_digest(config, "codex_only"),
+                "account_access": "unknown",
             },
         )
 
-    def test_explicit_builder_model_override_leaves_profile_metadata_empty(self):
+    def test_explicit_builder_model_override_records_resolved_profile(self):
         orchestrator, _ = self._resolve_builder_profile(builder_model="existing-model")
         with mock.patch("orchestrator.controller.make_backend") as make_backend:
             outcome = orchestrator._resolve_builder_profile(
@@ -2423,11 +2417,13 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
 
         self.assertIsNone(outcome)
-        self.assertEqual(orchestrator._resolved_builder_profile, {})
-        make_backend.assert_not_called()
+        self.assertEqual(orchestrator._resolved_builder_profile["override_fields"], ["model"])
+        self.assertEqual(orchestrator._resolved_builder_profile["model"], "existing-model")
+        self.assertTrue(orchestrator._resolved_builder_profile["effort"])
+        make_backend.assert_called_once_with("codex")
 
     def test_real_low_normal_resolves_hybrid_builder_normal(self):
-        orchestrator, _ = self._resolve_builder_profile()
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="hybrid")
         routed_builder = object()
         with mock.patch("orchestrator.controller.make_backend", return_value=routed_builder):
             outcome = orchestrator._resolve_builder_profile(
@@ -2436,12 +2432,12 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
-        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-terra")
-        self.assertEqual(orchestrator.cfg.builder_effort, "medium")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_normal", "hybrid").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_normal", "hybrid").effort)
         self.assertIs(orchestrator.builder, routed_builder)
 
     def test_real_compute_low_resolves_hybrid_builder_low(self):
-        orchestrator, _ = self._resolve_builder_profile()
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="hybrid")
         with mock.patch("orchestrator.controller.make_backend", return_value=object()):
             outcome = orchestrator._resolve_builder_profile(
                 "HANDOFF text",
@@ -2449,11 +2445,11 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
-        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-luna")
-        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_low", "hybrid").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_low", "hybrid").effort)
 
     def test_real_compute_high_on_low_risk_resolves_hybrid_builder_high(self):
-        orchestrator, _ = self._resolve_builder_profile()
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="hybrid")
         with mock.patch("orchestrator.controller.make_backend", return_value=object()):
             outcome = orchestrator._resolve_builder_profile(
                 "HANDOFF text",
@@ -2461,8 +2457,8 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
-        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
-        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_high", "hybrid").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_high", "hybrid").effort)
 
     def test_real_low_normal_resolves_claude_only_builder_normal(self):
         orchestrator, _ = self._resolve_builder_profile(routing_preset="claude_only")
@@ -2473,8 +2469,8 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "claude")
-        self.assertEqual(orchestrator.cfg.builder_model, "claude-sonnet-5")
-        self.assertEqual(orchestrator.cfg.builder_effort, "medium")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_normal", "claude_only").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_normal", "claude_only").effort)
 
     def test_real_high_without_challenge_evidence_is_blocked(self):
         orchestrator, _ = self._resolve_builder_profile()
@@ -2490,7 +2486,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         make_backend.assert_not_called()
 
     def test_real_high_without_override_resolves_hybrid_builder_high(self):
-        orchestrator, _ = self._resolve_builder_profile()
+        orchestrator, _ = self._resolve_builder_profile(routing_preset="hybrid")
         self._record_challenge_evidence(orchestrator, "HANDOFF text")
         with mock.patch("orchestrator.controller.make_backend", return_value=object()):
             outcome = orchestrator._resolve_builder_profile(
@@ -2499,8 +2495,8 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "codex")
-        self.assertEqual(orchestrator.cfg.builder_model, "gpt-5.6-sol")
-        self.assertEqual(orchestrator.cfg.builder_effort, "high")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_high", "hybrid").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_high", "hybrid").effort)
 
     def test_real_high_challenge_evidence_for_changed_draft_is_blocked(self):
         orchestrator, _ = self._resolve_builder_profile()
@@ -2550,10 +2546,10 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_vendor, "claude")
-        self.assertEqual(orchestrator.cfg.builder_model, "claude-opus-5")
-        self.assertEqual(orchestrator.cfg.builder_effort, "low")
+        self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("builder_high", "claude_only").model)
+        self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("builder_high", "claude_only").effort)
 
-    def test_real_low_explicit_model_override_preserves_builder(self):
+    def test_real_low_explicit_model_override_resolves_remaining_fields(self):
         orchestrator, original_builder = self._resolve_builder_profile(
             builder_model="existing-model"
         )
@@ -2564,8 +2560,9 @@ class TestBuildFromHandoff(unittest.TestCase):
             )
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_model, "existing-model")
-        self.assertIs(orchestrator.builder, original_builder)
-        make_backend.assert_not_called()
+        self.assertIs(orchestrator.builder, make_backend.return_value)
+        self.assertTrue(orchestrator.cfg.builder_effort)
+        make_backend.assert_called_once_with("codex")
 
     def test_real_unknown_preset_is_blocked_as_routing_config_error(self):
         orchestrator, _ = self._resolve_builder_profile(routing_preset="nonexistent")
@@ -2679,15 +2676,15 @@ class TestBuildFromHandoff(unittest.TestCase):
                 _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
                 log=lambda m: None,
             ).run_from_handoff()
-            self.assertEqual(out.reason, f"builder error: {leaked}")
+            self.assertIn(f"builder error: {leaked}", out.reason)
+            self.assertIn("delta checks completed", out.reason)
             serialized = out.receipt_path.read_text(encoding="utf-8")
             self.assertNotIn(leaked, serialized)
             self.assertIn('"reason_code":"builder_error"', serialized)
 
-    def test_controller_exception_still_closes_the_audit_pair_without_text(self):
-        # Backend exceptions may include a prompt or vendor output. The caller
-        # keeps the original exception, but audit needs a fixed terminal record
-        # rather than an orphaned `attempted` event or leaked exception text.
+    def test_vendor_exception_is_sanitized_and_delta_checked_before_audit_close(self):
+        # Backend exceptions may include prompt/output. Normalize the failure,
+        # inspect partial edits, and close the audit without retaining that text.
         if not _git_available():
             self.skipTest("git not on PATH")
         with tempfile.TemporaryDirectory() as d:
@@ -2710,16 +2707,19 @@ class TestBuildFromHandoff(unittest.TestCase):
                     raise RuntimeError(leaked)
 
             backend = _Explodes()
-            with self.assertRaisesRegex(RuntimeError, leaked):
-                Orchestrator(
-                    _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
-                    log=lambda m: None,
-                ).run_from_handoff()
+            outcome = Orchestrator(
+                _cfg(repo, audit_dir=audit_dir), backend, backend, AutoApprove(),
+                log=lambda m: None,
+            ).run_from_handoff()
+            self.assertEqual(outcome.status, BLOCKED)
+            self.assertIn("vendor invocation failed (RuntimeError)", outcome.reason)
+            self.assertIn("delta checks completed", outcome.reason)
+            self.assertNotIn(leaked, outcome.reason)
             serialized = (audit_dir / "build-audit.jsonl").read_text(encoding="utf-8")
             records = [json.loads(line) for line in serialized.splitlines()]
             self.assertEqual([record["status"] for record in records], ["attempted", "blocked"])
-            self.assertEqual(records[-1]["outcome"], "ERROR")
-            self.assertEqual(records[-1]["reason_code"], "controller_error")
+            self.assertEqual(records[-1]["outcome"], BLOCKED)
+            self.assertEqual(records[-1]["reason_code"], "builder_error")
             self.assertNotIn(leaked, serialized)
 
     def test_cli_refuses_an_audit_directory_inside_the_real_git_worktree(self):
@@ -2959,11 +2959,12 @@ class TestBuildFromHandoff(unittest.TestCase):
                 log=lambda m: None,
             ).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
-            self.assertEqual(out.reason, "builder error: vendor turn timed out after 0.01s")
+            self.assertIn("builder error: vendor turn timed out after 0.01s", out.reason)
+            self.assertIn("delta checks completed", out.reason)
             records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
             self.assertEqual(records[-1]["status"], "timeout")
 
-    def test_second_builder_bail_blocks_and_is_audited(self):
+    def test_first_builder_block_is_audited_without_reimplementation(self):
         # The old loop retried once but then called the final outcome BUILT even
         # when the second Builder also produced no implementation. That makes a
         # receipt only as trustworthy as the failure it is supposed to expose.
@@ -2993,14 +2994,13 @@ class TestBuildFromHandoff(unittest.TestCase):
                 log=lambda m: None,
             ).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
-            self.assertEqual(out.reason, "builder bailed with no implementation after 2 attempt(s)")
+            self.assertEqual(out.cycles, 1)
+            self.assertEqual(out.blocked_gates, ["1"])
             records = [json.loads(line) for line in out.receipt_path.read_text(encoding="utf-8").splitlines()]
-            self.assertEqual(records[-1]["status"], "builder_bailed")
+            self.assertEqual(records[-1]["status"], "blocked")
 
-    def test_retries_once_on_builder_bail(self):
-        # A headless Builder that bails (status=blocked, no changeset) after a
-        # false read-only self-judgement is re-dispatched once; the clean second
-        # attempt BUILDs. Verified against real Codex 2026-07-14.
+    def test_blocked_verdict_does_not_trigger_implementation_retry(self):
+        # A blocked report is an explicit outcome, not permission to retry writes.
         handoff = "# H\n```tiers\ngate 1: LOW\n```\n```scope\nfeat.py\n```\n"
         sc = Scenario(
             handoffs=[handoff],
@@ -3018,8 +3018,9 @@ class TestBuildFromHandoff(unittest.TestCase):
             cfg = _cfg(repo)
             mock = MockBackend(sc)
             out = Orchestrator(cfg, mock, mock, AutoApprove(), log=lambda m: None).run_from_handoff()
-            self.assertEqual(out.status, BUILT, out.reason)
-            self.assertEqual(out.cycles, 2)  # retried exactly once
+            self.assertEqual(out.status, BLOCKED, out.reason)
+            self.assertEqual(out.cycles, 1)
+            self.assertEqual(mock._cycle[ROLE_BUILDER], 1)
 
     def test_built_reports_completed_and_remaining_gates_after_high_gate(self):
         handoff = (
@@ -3070,9 +3071,11 @@ class TestBuildFromHandoff(unittest.TestCase):
 
                 def __init__(self):
                     self.prompts: list[str] = []
+                    self.roles: list[str] = []
 
                 def invoke(self, role, prompt, cfg):
                     self.prompts.append(prompt)
+                    self.roles.append(role)
                     if len(self.prompts) == 1:
                         (repo / "allowed.py").write_text("VALUE = 1\n", encoding="utf-8")
                         return Turn(text=report)
@@ -3086,7 +3089,8 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BUILT, out.reason)
             self.assertEqual(out.cycles, 2)
             self.assertEqual(len(backend.prompts), 2)
-            self.assertIn("VERDICT-ONLY RECOVERY", backend.prompts[1])
+            self.assertEqual(backend.roles, [ROLE_BUILDER, vendors.ROLE_RECOVERY])
+            self.assertIn("Read-only result-format recovery", backend.prompts[1])
             self.assertNotIn("Implement the HANDOFF", backend.prompts[1])
             result = (repo / bus.RESULT).read_text(encoding="utf-8")
             self.assertIn(report.strip(), result)
@@ -3171,7 +3175,7 @@ class TestBuildFromHandoff(unittest.TestCase):
                 log=lambda m: None,
             ).run_from_handoff()
             self.assertEqual(out.status, BLOCKED, out.reason)
-            self.assertEqual(out.reason, "builder verdict recovery changed implementation")
+            self.assertEqual(out.reason, "read-only result recovery changed implementation")
             self.assertEqual(backend.calls, 2)
 
     def test_no_retry_on_completed_panel_fail(self):
@@ -5104,8 +5108,8 @@ class TestRouting(unittest.TestCase):
         profile = routing.resolve_profile(config, "hybrid", "builder_normal")
 
         self.assertEqual(profile.vendor, "codex")
-        self.assertEqual(profile.model, "gpt-5.6-terra")
-        self.assertEqual(profile.effort, "medium")
+        self.assertEqual(profile.model, config["presets"]["hybrid"]["builder_normal"]["model"])
+        self.assertEqual(profile.effort, config["presets"]["hybrid"]["builder_normal"]["effort"])
 
     def test_claude_only_uses_claude_for_all_roles(self):
         repo_root = Path(__file__).resolve().parents[2]
@@ -5134,13 +5138,17 @@ class TestRouting(unittest.TestCase):
     def test_codex_only_uses_codex_for_all_roles_and_preserves_builder_tiers(self):
         repo_root = Path(__file__).resolve().parents[2]
         config = routing.load_routing_config(repo_root / "content" / "routing.toml")
-        self.assertEqual(routing.active_preset_name(config), "hybrid")
+        self.assertEqual(routing.active_preset_name(config), "codex_only")
         for role in ("architect", "challenger_high", "builder_low", "builder_normal", "builder_high", "reviewer"):
             with self.subTest(role=role):
                 profile = routing.resolve_profile(config, "codex_only", role)
                 self.assertEqual(profile.vendor, "codex")
-                if role.startswith("builder_"):
-                    self.assertEqual(profile, routing.resolve_profile(config, "hybrid", role))
+        builders = [routing.resolve_profile(config, "codex_only", f"builder_{tier}")
+                    for tier in ("low", "normal", "high")]
+        self.assertEqual(len({profile.model for profile in builders}), 3)
+        self.assertEqual([profile.effort for profile in builders],
+                         [config["presets"]["codex_only"][f"builder_{tier}"]["effort"]
+                          for tier in ("low", "normal", "high")])
 
     @staticmethod
     def _write_routing(directory: Path, text: str) -> Path:
@@ -5266,11 +5274,12 @@ class TestRouting(unittest.TestCase):
         with self.assertRaises(routing.RoutingConfigError):
             routing.resolve_profile(config, "hybrid", "builder_normal")
 
-    def test_resolve_builder_high_for_vendor_searches_all_presets(self):
+    def test_resolve_builder_high_for_vendor_follows_explicit_active_fallback(self):
         config = {
             "routing": {"preset": "hybrid"},
             "presets": {
                 "hybrid": {
+                    "vendor_fallbacks": {"claude": "claude_only"},
                     "builder_high": {
                         "vendor": "codex",
                         "model": "gpt-5.6-sol",

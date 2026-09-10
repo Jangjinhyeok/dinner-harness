@@ -12,6 +12,9 @@ Stdlib only (tomllib).
 from __future__ import annotations
 
 import tomllib
+import hashlib
+import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,7 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # The only code-level constant this module permits: which preset NAME to look
 # up in routing.toml when the caller doesn't specify one. This is not a model
 # mapping — it names nothing concrete, only a key into the real SSOT.
-DEFAULT_PRESET = "hybrid"
+DEFAULT_PRESET = "codex_only"
 
 _VALID_VENDORS = ("codex", "claude")
 
@@ -41,6 +44,27 @@ class ModelProfile:
     vendor: str
     model: str
     effort: str
+
+
+def validate_profile(profile: ModelProfile) -> ModelProfile:
+    """Static contract only; installed CLI and account access remain separate checks."""
+    if profile.vendor not in _VALID_VENDORS:
+        raise RoutingConfigError(f"invalid vendor: {profile.vendor!r}")
+    if not isinstance(profile.model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", profile.model):
+        raise RoutingConfigError("model must be a non-empty model identifier without whitespace")
+    efforts = {"codex": ("low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "max")}
+    if profile.effort not in efforts[profile.vendor]:
+        raise RoutingConfigError(f"unsupported effort {profile.effort!r} for vendor {profile.vendor!r}")
+    if (profile.vendor == "codex" and profile.model.startswith("claude-")) or (profile.vendor == "claude" and profile.model.startswith("gpt-")):
+        raise RoutingConfigError("model identifier conflicts with the selected vendor")
+    return profile
+
+
+def policy_digest(config: dict[str, Any], preset: str) -> str:
+    """Bind evidence to the selected policy, including explicit fallback profiles."""
+    resolve_profile(config, preset, "challenger_high")
+    payload = {"preset": preset, "presets": config["presets"]}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def default_routing_path(repo_root: Path | None = None) -> Path:
@@ -86,7 +110,7 @@ def active_preset_name(config: dict[str, Any]) -> str:
     if not isinstance(routing_table, dict):
         raise RoutingConfigError("routing config's [routing] table is not a table")
     name = routing_table.get("preset")
-    if not name or not isinstance(name, str):
+    if not isinstance(name, str) or not name.strip() or name != name.strip():
         raise RoutingConfigError("routing config's [routing].preset is missing or not a string")
     return name
 
@@ -120,6 +144,9 @@ def resolve_profile(config: dict[str, Any], preset: str, logical_role: str) -> M
             f"preset {preset!r} role {logical_role!r} must be a table"
         )
     missing = [k for k in ("vendor", "model", "effort") if k not in role_table]
+    unknown = set(role_table) - {"vendor", "model", "effort"}
+    if unknown:
+        raise RoutingConfigError(f"unknown profile field(s): {', '.join(sorted(unknown))}")
     if missing:
         raise RoutingConfigError(
             f"preset {preset!r} role {logical_role!r} is missing required "
@@ -139,53 +166,31 @@ def resolve_profile(config: dict[str, Any], preset: str, logical_role: str) -> M
             f"preset {preset!r} role {logical_role!r} has invalid vendor "
             f"{vendor!r} (must be one of {_VALID_VENDORS})"
         )
-    return ModelProfile(vendor=vendor, model=role_table["model"], effort=role_table["effort"])
+    return validate_profile(ModelProfile(vendor=vendor, model=role_table["model"], effort=role_table["effort"]))
 
 
-def resolve_builder_high_for_vendor(config: dict[str, Any], vendor: str) -> ModelProfile:
-    """Find a builder_high profile for an explicitly-overridden vendor, searching
-    every preset defined in routing.toml (not just the active one).
-
-    Used when a HIGH-tier dispatch carries an explicit ``--builder <vendor>``
-    override: the concrete builder_high model/effort for that vendor still
-    comes only from routing.toml (never an arbitrary CLI model string — see
-    ADR-0020 correction 4). Raises RoutingConfigError if no preset defines a
-    builder_high profile for that vendor — this must fail closed, not silently
-    pick an unrelated profile.
-    """
+def resolve_profile_for_vendor(
+    config: dict[str, Any], preset: str, logical_role: str, vendor: str,
+) -> ModelProfile:
+    """Resolve an override through the active preset's explicit compatibility map."""
+    profile = resolve_profile(config, preset, logical_role)
+    if vendor == profile.vendor:
+        return profile
     if vendor not in _VALID_VENDORS:
         raise RoutingConfigError(f"invalid vendor override: {vendor!r}")
-    presets = config.get("presets", {})
-    if not isinstance(presets, dict):
-        raise RoutingConfigError("routing config's [presets] table is not a table")
-    for preset_name in sorted(presets):
-        preset_table = presets[preset_name]
-        if not isinstance(preset_table, dict):
-            raise RoutingConfigError(f"routing preset {preset_name!r} is not a table")
-        role_table = preset_table.get("builder_high")
-        if role_table is None:
-            continue
-        if not isinstance(role_table, dict):
-            raise RoutingConfigError(
-                f"preset {preset_name!r} role 'builder_high' must be a table"
-            )
-        if role_table.get("vendor") == vendor:
-            missing = [k for k in ("vendor", "model", "effort") if k not in role_table]
-            if missing:
-                continue
-            invalid_types = [
-                k for k in ("vendor", "model", "effort")
-                if not isinstance(role_table[k], str)
-            ]
-            if invalid_types:
-                raise RoutingConfigError(
-                    f"preset {preset_name!r} role 'builder_high' has non-string "
-                    f"key(s): {', '.join(invalid_types)}"
-                )
-            return ModelProfile(
-                vendor=role_table["vendor"], model=role_table["model"], effort=role_table["effort"]
-            )
-    raise RoutingConfigError(
-        f"no preset in routing.toml defines a builder_high profile for vendor "
-        f"{vendor!r} — cannot honor this HIGH-tier vendor override"
-    )
+    mapping = config["presets"][preset].get("vendor_fallbacks", {})
+    if not isinstance(mapping, dict):
+        raise RoutingConfigError("vendor_fallbacks must be a vendor-to-preset table")
+    target = mapping.get(vendor)
+    if not isinstance(target, str) or not target:
+        raise RoutingConfigError(f"missing or ambiguous explicit fallback for {preset!r}/{vendor!r}")
+    profile = resolve_profile(config, target, logical_role)
+    if profile.vendor != vendor:
+        raise RoutingConfigError(f"fallback {target!r} does not select vendor {vendor!r}")
+    return profile
+
+
+def resolve_builder_high_for_vendor(
+    config: dict[str, Any], vendor: str, preset: str | None = None,
+) -> ModelProfile:
+    return resolve_profile_for_vendor(config, preset or active_preset_name(config), "builder_high", vendor)

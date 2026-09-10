@@ -17,12 +17,15 @@ Stdlib only.
 from __future__ import annotations
 
 import os
-import re
+import json
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -37,57 +40,18 @@ ROLE_BUILDER = "builder"
 # clears any inherited DINNER_EXECUTION_MODE=direct below so its builder_guard
 # hook stays active even when the parent process is a direct-edit session.
 ROLE_CHALLENGER = "challenger"
+ROLE_RECOVERY = "recovery"
+ROLE_REVIEWER = "reviewer"
 
-_SANDBOX_HEADER_RE = re.compile(r"^\s*sandbox:\s*([a-z-]+)")
-_SESSION_HEADER_DIVIDER_RE = re.compile(r"^-{4,}\s*$")
-_SESSION_ID_RE = re.compile(r"^\s*session id:\s*(\S+)\s*$", re.IGNORECASE)
-
-
-def sandbox_degraded(line: str, requested: str) -> Optional[str]:
-    """Inspect one Codex session-header line for a sandbox downgrade."""
-    match = _SANDBOX_HEADER_RE.match(line)
-    if match is None or match.group(1) == requested:
-        return None
-    actual = match.group(1)
-    return (
-        f"Codex sandbox degraded: requested {requested}, but session reports {actual}. "
-        "Enable [features] experimental_windows_sandbox = true in ~/.codex/config.toml "
-        "or upgrade codex-cli. This is a sandbox configuration failure, not "
-        "'builder bailed'."
-    )
-
-
-def _write_session_marker(session_id: str, cfg: Config) -> None:
-    """Best-effort: record the Codex session id this process just launched,
-    so watch-builder.ps1 can pin its live tail to this dispatch's own
-    rollout file instead of following whichever ~/.codex/sessions file has
-    the newest mtime -- a heuristic an unrelated, concurrent Codex session
-    can steal. Writing this must never fail the build, so all errors are
-    swallowed.
-    """
+def _write_session_marker(dispatch_id: str, metadata: dict, cfg: Config) -> None:
+    """Best-effort observations, never policy evidence or a raw transcript."""
     try:
         cfg.audit_dir.mkdir(parents=True, exist_ok=True)
-        (cfg.audit_dir / "watch-builder-session.txt").write_text(
-            session_id, encoding="utf-8"
+        (cfg.audit_dir / f"watch-builder-{dispatch_id}.json").write_text(
+            json.dumps(metadata, ensure_ascii=False), encoding="utf-8"
         )
     except OSError:
         pass
-
-
-class _HeaderAbortCheck:
-    """Apply a Codex abort check only inside its session header."""
-
-    def __init__(self, abort_check: Callable[[str], Optional[str]]):
-        self._abort_check = abort_check
-        self._divider_count = 0
-
-    def __call__(self, line: str) -> Optional[str]:
-        if _SESSION_HEADER_DIVIDER_RE.match(line):
-            self._divider_count += 1
-            return None
-        if self._divider_count != 1:
-            return None
-        return self._abort_check(line)
 
 
 @dataclass
@@ -95,6 +59,10 @@ class Turn:
     text: str = ""
     changeset: Optional[list[Change]] = None  # mock supplies this; real reads git
     error: str = ""
+    thread_id: str = ""
+    usage: dict = field(default_factory=dict)
+    elapsed_s: float = 0.0
+    dispatch_id: str = ""
 
 
 class Backend:
@@ -169,118 +137,314 @@ class MockBackend(Backend):
 # --------------------------------------------------------------------------- #
 # Real backends (scaffold — verify flags on your machine)                     #
 # --------------------------------------------------------------------------- #
+class _WindowsJob:
+    """Contain the suspended CLI before its first instruction (Windows 8+).
+
+    No breakaway is allowed. Descendants remain owned after the launcher exits.
+    Win32 handles are private and non-inheritable; closing the job kills members.
+    """
+
+    def __init__(self):
+        import ctypes as ct
+        from ctypes import wintypes as wt
+
+        self.ct = ct
+        self.api = ct.WinDLL("kernel32", use_last_error=True)
+        class BasicLimits(ct.Structure):
+            _fields_ = [
+                ("process_time", ct.c_longlong), ("job_time", ct.c_longlong),
+                ("flags", wt.DWORD), ("min_working_set", ct.c_size_t),
+                ("max_working_set", ct.c_size_t), ("active_limit", wt.DWORD),
+                ("affinity", ct.c_size_t), ("priority", wt.DWORD),
+                ("scheduling", wt.DWORD),
+            ]
+        class ExtendedLimits(ct.Structure):
+            _fields_ = [
+                ("basic", BasicLimits), ("io_counters", ct.c_ulonglong * 6),
+                ("process_memory", ct.c_size_t), ("job_memory", ct.c_size_t),
+                ("peak_process_memory", ct.c_size_t), ("peak_job_memory", ct.c_size_t),
+            ]
+        class ThreadEntry(ct.Structure):
+            _fields_ = [
+                ("size", wt.DWORD), ("usage", wt.DWORD), ("thread_id", wt.DWORD),
+                ("process_id", wt.DWORD), ("base_priority", wt.LONG),
+                ("delta_priority", wt.LONG), ("flags", wt.DWORD),
+            ]
+        class Accounting(ct.Structure):
+            _fields_ = [
+                ("times", ct.c_longlong * 4), ("page_faults", wt.DWORD),
+                ("total_processes", wt.DWORD), ("active_processes", wt.DWORD),
+                ("terminated_processes", wt.DWORD),
+            ]
+        self.ThreadEntry = ThreadEntry
+        self.Accounting = Accounting
+        signatures = {
+            "CreateJobObjectW": ([ct.c_void_p, wt.LPCWSTR], wt.HANDLE),
+            "SetInformationJobObject": ([wt.HANDLE, ct.c_int, ct.c_void_p, wt.DWORD], wt.BOOL),
+            "AssignProcessToJobObject": ([wt.HANDLE, wt.HANDLE], wt.BOOL),
+            "OpenProcess": ([wt.DWORD, wt.BOOL, wt.DWORD], wt.HANDLE),
+            "CreateToolhelp32Snapshot": ([wt.DWORD, wt.DWORD], wt.HANDLE),
+            "Thread32First": ([wt.HANDLE, ct.POINTER(ThreadEntry)], wt.BOOL),
+            "Thread32Next": ([wt.HANDLE, ct.POINTER(ThreadEntry)], wt.BOOL),
+            "OpenThread": ([wt.DWORD, wt.BOOL, wt.DWORD], wt.HANDLE),
+            "ResumeThread": ([wt.HANDLE], wt.DWORD),
+            "CloseHandle": ([wt.HANDLE], wt.BOOL),
+            "TerminateJobObject": ([wt.HANDLE, wt.UINT], wt.BOOL),
+            "QueryInformationJobObject": ([wt.HANDLE, ct.c_int, ct.c_void_p, wt.DWORD, ct.c_void_p], wt.BOOL),
+        }
+        for name, (args, result) in signatures.items():
+            function = getattr(self.api, name)
+            function.argtypes, function.restype = args, result
+        self.handle = self.api.CreateJobObjectW(None, None)
+        if not self.handle:
+            raise ct.WinError(ct.get_last_error())
+        limits = ExtendedLimits()
+        limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        if not self.api.SetInformationJobObject(self.handle, 9, ct.byref(limits), ct.sizeof(limits)):
+            error = ct.WinError(ct.get_last_error())
+            self.close()
+            raise error
+
+    def assign_and_resume(self, pid):
+        ct, api = self.ct, self.api
+        process = api.OpenProcess(0x0101, False, pid)  # SET_QUOTA | TERMINATE
+        if not process:
+            raise ct.WinError(ct.get_last_error())
+        try:
+            if not api.AssignProcessToJobObject(self.handle, process):
+                raise ct.WinError(ct.get_last_error())
+        finally:
+            api.CloseHandle(process)
+        snapshot = api.CreateToolhelp32Snapshot(0x4, 0)  # TH32CS_SNAPTHREAD
+        if snapshot == ct.c_void_p(-1).value:
+            raise ct.WinError(ct.get_last_error())
+        try:
+            entry = self.ThreadEntry()
+            entry.size = ct.sizeof(entry)
+            found = api.Thread32First(snapshot, ct.byref(entry))
+            thread_ids = []
+            while found:
+                if entry.process_id == pid:
+                    thread_ids.append(entry.thread_id)
+                found = api.Thread32Next(snapshot, ct.byref(entry))
+            # The suspended process has not executed user code or spawned threads.
+            if len(thread_ids) != 1:
+                raise OSError("cannot identify suspended CLI primary thread")
+            thread = api.OpenThread(0x2, False, thread_ids[0])  # SUSPEND_RESUME
+            if not thread:
+                raise ct.WinError(ct.get_last_error())
+            try:
+                if api.ResumeThread(thread) != 1:
+                    raise OSError("CLI primary thread was not suspended once")
+            finally:
+                api.CloseHandle(thread)
+        finally:
+            api.CloseHandle(snapshot)
+
+    def close(self):
+        if self.handle:
+            handle, self.handle = self.handle, None
+            try:
+                if not self.api.TerminateJobObject(handle, 1):
+                    raise self.ct.WinError(self.ct.get_last_error())
+                # Termination requests are asynchronous. Wait for zero members
+                # before permitting the controller's after-snapshot.
+                deadline = time.monotonic() + 2
+                accounting = self.Accounting()
+                while True:
+                    if not self.api.QueryInformationJobObject(
+                        handle, 1, self.ct.byref(accounting), self.ct.sizeof(accounting), None
+                    ):
+                        raise self.ct.WinError(self.ct.get_last_error())
+                    if accounting.active_processes == 0:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise OSError("vendor job termination incomplete")
+                    time.sleep(0.01)
+            finally:
+                self.api.CloseHandle(handle)
+
+
+def _terminate_tree(proc) -> None:
+    """Bounded cleanup, including descendants that inherited our pipe handles."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=5, check=False,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+
+
 def _run(
     argv: list[str],
     cfg: Config,
     last_message_file: Optional[Path] = None,
     *,
     stdin_text: Optional[str] = None,
-    abort_check: Optional[Callable[[str], Optional[str]]] = None,
-    on_session_id: Optional[Callable[[str], None]] = None,
+    json_events: bool = False,
+    on_event: Optional[Callable[[dict], None]] = None,
     env: Optional[dict] = None,
 ) -> Turn:
-    # shell=False with a list argv: the prompt (which carries the user goal and
-    # prior LLM output) is ONE element, never re-tokenised by a shell. Flag
-    # injection via prompt content is the residual surface and is CLI-specific —
-    # part of the "verify on your machine" scaffold contract (see README).
-    #
-    # last_message_file: when set, the agent's clean final message was written
-    # there (codex `-o`); read it as the turn text instead of the noisy event
-    # stdout, so RESULT.md / verdicts parse off the agent's actual output.
-    # Resolve argv[0] to a full path: on Windows the CLIs are .cmd/.exe shims
-    # and subprocess (shell=False) does not honour PATHEXT, so a bare "codex"
-    # raises FileNotFoundError. shutil.which respects PATHEXT on every platform.
+    """Drain stdout/stderr and feed stdin concurrently within a bounded turn.
+
+    JSONL contains lifecycle metadata; only -o is a Codex final response.
+    Requested sandbox flags are not proof of runtime enforcement.
+    """
+    started = time.monotonic()
+    result = Turn()
     exe = shutil.which(argv[0])
     if exe is None:
         return Turn(error=f"executable not found on PATH: {argv[0]!r}")
-    argv = [exe, *argv[1:]]
+    proc = None
+    job = None
+    workers = []
     try:
+        if os.name == "nt":
+            job = _WindowsJob()
         proc = subprocess.Popen(
-            argv,
-            cwd=str(cfg.repo),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # Headless: without prompt text, give the CLI an immediate EOF so
-            # it cannot wait for extra stdin and stall or be disturbed. With
-            # prompt text, the pipe is the prompt-delivery path.
+            [exe, *argv[1:]], cwd=str(cfg.repo),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             stdin=subprocess.PIPE if stdin_text is not None else subprocess.DEVNULL,
-            # Force UTF-8: the CLIs emit UTF-8 (Korean/emoji), but text=True would
-            # otherwise decode with the locale codepage (cp949 on Korean Windows)
-            # and crash the reader thread. errors=replace so a stray byte never
-            # aborts the turn.
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            # None inherits the parent's environment unchanged (subprocess.Popen's
-            # own default) -- every existing caller keeps its current behavior.
-            env=env,
+            encoding="utf-8", errors="replace", bufsize=1, env=env,
+            start_new_session=os.name != "nt",
+            creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | 0x4) if os.name == "nt" else 0,
         )
+        if job is not None:
+            job.assign_and_resume(proc.pid)
         stdout: list[str] = []
         stderr: list[str] = []
-        abort_error: Optional[str] = None
-        session_id_found = False
+        event_error = ""
+        reader_errors: list[str] = []
 
-        def pump(stream, captured: list[str], destination, check_abort: bool = False) -> None:
-            nonlocal abort_error, session_id_found
-            header_abort_check = (
-                _HeaderAbortCheck(abort_check)
-                if check_abort and abort_check is not None
-                else None
-            )
-            for line in iter(stream.readline, ""):
-                captured.append(line)
-                print(line, end="", file=destination, flush=True)
-                if header_abort_check is not None and abort_error is None:
-                    message = header_abort_check(line)
-                    if message is not None:
-                        abort_error = message
-                        try:
-                            proc.kill()
-                        except OSError:
-                            pass
-                if check_abort and on_session_id is not None and not session_id_found:
-                    match = _SESSION_ID_RE.match(line)
-                    if match:
-                        session_id_found = True
-                        on_session_id(match.group(1))
-            stream.close()
+        def pump(stream, captured, destination, events=False):
+            nonlocal event_error
+            try:
+                for line in iter(stream.readline, ""):
+                    if not events:
+                        captured.append(line)
+                        print(line, end="", file=destination, flush=True)
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except (ValueError, TypeError):
+                        event_error = "invalid Codex JSONL event"
+                        continue
+                    if not isinstance(event, dict):
+                        event_error = "invalid Codex JSONL event"
+                        continue
+                    kind = event.get("type")
+                    if kind == "thread.started":
+                        thread_id = event.get("thread_id")
+                        if isinstance(thread_id, str):
+                            result.thread_id = thread_id
+                    elif kind == "turn.completed":
+                        usage = event.get("usage")
+                        if isinstance(usage, dict):
+                            result.usage = {
+                                key: value for key, value in usage.items()
+                                if key in ("input_tokens", "cached_input_tokens", "output_tokens")
+                                and isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                            }
+                    elif kind in ("error", "turn.failed"):
+                        # Raw error messages may contain source/prompt data.
+                        event_error = f"Codex {kind} event; inspect CLI diagnostics"
+                    if on_event and kind in ("thread.started", "turn.completed", "turn.failed", "error"):
+                        on_event({"type": kind, "thread_id": result.thread_id, "usage": result.usage})
+            except (OSError, ValueError) as exc:
+                reader_errors.append(type(exc).__name__)
+            finally:
+                stream.close()
 
-        out_pump = threading.Thread(
-            target=pump, args=(proc.stdout, stdout, sys.stdout, True), daemon=True)
-        err_pump = threading.Thread(target=pump, args=(proc.stderr, stderr, sys.stderr), daemon=True)
-        out_pump.start()
-        err_pump.start()
-        if stdin_text is not None:
+        def feed():
             try:
                 proc.stdin.write(stdin_text)
-                proc.stdin.close()
-            except (BrokenPipeError, OSError):
+            except (BrokenPipeError, OSError, ValueError):
                 pass
+            finally:
+                try:
+                    proc.stdin.close()
+                except (BrokenPipeError, OSError, ValueError):
+                    pass
+
+        workers = [
+            threading.Thread(target=pump, args=(proc.stdout, stdout, sys.stdout, json_events), daemon=True),
+            threading.Thread(target=pump, args=(proc.stderr, stderr, sys.stderr), daemon=True),
+        ]
+        if stdin_text is not None:
+            workers.append(threading.Thread(target=feed, daemon=True))
+        for worker in workers:
+            worker.start()
+        remaining = max(0.001, cfg.timeout_s - (time.monotonic() - started))
         try:
-            proc.wait(timeout=cfg.timeout_s)
+            proc.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            out_pump.join()
-            err_pump.join()
-            return Turn(error=f"vendor turn timed out after {cfg.timeout_s}s")
-        out_pump.join()
-        err_pump.join()
-        output = "".join(stdout)
-        errors = "".join(stderr)
-        if abort_error is not None:
-            return Turn(text=output, error=abort_error)
-        if proc.returncode != 0:
-            return Turn(text=output, error=f"exit {proc.returncode}: {errors.strip()}")
-        text = output
+            result.error = f"vendor turn timed out after {cfg.timeout_s}s"
+            if job is not None:
+                job.close()
+            else:
+                _terminate_tree(proc)
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        # End ownership before collecting the final snapshot, even if the launcher
+        # exited successfully while descendants retained pipes or kept editing.
+        if job is not None:
+            job.close()
+        else:
+            _terminate_tree(proc)
+        deadline = time.monotonic() + 2
+        for worker in workers:
+            worker.join(timeout=max(0, deadline - time.monotonic()))
+        if any(worker.is_alive() for worker in workers):
+            _terminate_tree(proc)
+            result.error = result.error or "vendor pipe cleanup incomplete"
+        if not result.error and proc.returncode != 0:
+            result.error = f"vendor exit {proc.returncode}; inspect CLI diagnostics"
+        result.error = result.error or event_error
+        if reader_errors:
+            result.error = result.error or "vendor output reader failed"
+        result.text = "".join(stdout)
         if last_message_file is not None:
             try:
-                text = last_message_file.read_text(encoding="utf-8-sig") or text
+                result.text = last_message_file.read_text(encoding="utf-8-sig")
+                if not result.text.strip():
+                    result.error = result.error or "vendor final response is empty"
             except OSError:
-                pass  # fall back to stdout
-        return Turn(text=text)
+                result.text = ""
+                result.error = result.error or "vendor final response file missing"
+        return result
     except Exception as exc:  # noqa: BLE001
-        return Turn(error=f"{type(exc).__name__}: {exc}")
+        if job is not None:
+            try:
+                job.close()
+            except OSError:
+                pass  # Preserve the invocation failure; close still releases the job.
+        if proc is not None:
+            _terminate_tree(proc)
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            if not workers:
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
+        result.error = f"vendor invocation failed: {type(exc).__name__}"
+        return result
+    finally:
+        if job is not None:
+            job.close()
+        result.elapsed_s = round(time.monotonic() - started, 3)
 
 
 class ClaudeBackend(Backend):
@@ -314,66 +478,74 @@ class ClaudeBackend(Backend):
             # implementation. The controller-side net (safety.py) remains the
             # deterministic gate regardless of vendor.
             env = {**os.environ, "DINNER_EXECUTION_MODE": "direct"}
-        elif role == ROLE_CHALLENGER:
+        else:
             env = {**os.environ}
             env.pop("DINNER_EXECUTION_MODE", None)
+            argv += ["--permission-mode", "plan"]
         return _run(argv, cfg, stdin_text=prompt, env=env)
 
 
 class CodexBackend(Backend):
-    """`codex exec` non-interactive mode. Verified against codex-cli 0.151.0 (re-verified 2026-08-31 — see CODEX-COVERAGE.md §6.6).
+    """Codex exec: stdin prompt, JSONL observations, separate final response.
 
-    Prompts are sent through stdin instead of argv because the Windows `.CMD`
-    shim invokes cmd.exe, whose command-line limit is 8191 characters.
-
-    Sandbox model (0.140+): `-s/--sandbox {read-only|workspace-write|
-    danger-full-access}` replaced the old `--full-auto`. A Builder gets
-    `workspace-write` (may edit files under `--cd`, cannot escape the workspace);
-    an Architect gets `read-only`. `-o` captures the agent's clean final message
-    for RESULT/verdict parsing; `--skip-git-repo-check` lets a non-repo scratch
-    dir run.
-
-    Native Windows has no workspace-write sandbox without the experimental
-    feature: otherwise Codex silently falls back to read-only, which was the
-    actual cause of a Builder reporting that it bailed. Passing
-    `--enable experimental_windows_sandbox` makes the session header report
-    workspace-write instead of read-only.
+    Requires --json/-o/--output-schema support. Windows sandbox configuration
+    belongs to the installed CLI; no experimental feature is silently enabled.
+    Runtime sandbox enforcement requires a separate environment smoke test.
     """
 
     name = "codex"
 
     def invoke(self, role: str, prompt: str, cfg: Config) -> Turn:
         sandbox = "workspace-write" if role == ROLE_BUILDER else "read-only"
-        last_msg = Path(tempfile.gettempdir()) / f"codex_last_{os.getpid()}_{id(prompt)}.txt"
+        dispatch_id = uuid.uuid4().hex
+        scratch = tempfile.TemporaryDirectory(prefix="dinner-codex-")
+        last_msg = Path(scratch.name) / "last-message.txt"
         argv = [
             "codex", "exec",
             "--cd", str(cfg.repo),
             "--sandbox", sandbox,
             "--skip-git-repo-check",
+            "--json",
             "-o", str(last_msg),
         ]
-        if role == ROLE_BUILDER and sys.platform == "win32":
-            argv += ["--enable", "experimental_windows_sandbox"]
+        output_schema = getattr(cfg, "output_schema", None)
+        if output_schema is not None:
+            argv += ["--output-schema", str(output_schema)]
         model = cfg.architect_model if role == ROLE_ARCHITECT else cfg.builder_model
         if model:
             argv += ["--model", model]
         effort = cfg.architect_effort if role == ROLE_ARCHITECT else cfg.builder_effort
         if effort:
             argv += ["-c", f"model_reasoning_effort={effort}"]
+        metadata = {
+            "dispatch_id": dispatch_id, "role": role, "model": model,
+            "effort": effort, "execution_path": "headless", "status": "starting",
+            "sandbox_requested": sandbox, "sandbox_verified": "not_run",
+        }
+
+        def observe(event):
+            metadata.update(event)
+            metadata["status"] = event["type"]
+            _write_session_marker(dispatch_id, metadata, cfg)
+
+        _write_session_marker(dispatch_id, metadata, cfg)
         try:
-            return _run(
+            turn = _run(
                 argv,
                 cfg,
                 last_message_file=last_msg,
                 stdin_text=prompt,
-                abort_check=lambda line: sandbox_degraded(line, sandbox),
-                on_session_id=lambda sid: _write_session_marker(sid, cfg),
+                json_events=True,
+                on_event=observe,
             )
+            turn.dispatch_id = dispatch_id
+            metadata.update(status="failed" if turn.error else "completed",
+                            elapsed_s=turn.elapsed_s, thread_id=turn.thread_id,
+                            usage=turn.usage)
+            _write_session_marker(dispatch_id, metadata, cfg)
+            return turn
         finally:
-            try:
-                last_msg.unlink()
-            except OSError:
-                pass
+            scratch.cleanup()
 
 
 def make_backend(vendor: str) -> Backend:
