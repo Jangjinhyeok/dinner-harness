@@ -19,3 +19,6 @@ pass@k means at least one success in k attempts; pass^k requires every trial to 
 Do not infer reliability percentages from one successful run or impose universal thresholds.
 Predeclare retry budgets for comparisons, keep cases consistent, and separate unavailable live
 validation from fake subprocess/unit tests. Metrics do not grant release authority.
+Include failure paths as well as happy paths, and keep evaluation cases separate from examples
+used to tune the prompt. Distinguish flaky graders from agent failures; compare cost and latency
+alongside pass rates rather than improving the score by hiding those tradeoffs.

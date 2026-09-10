@@ -9,6 +9,8 @@ Read [autonomy policy](../../rules/autonomy-policy.md). Review is read-only.
 Give one available native reviewer a fresh context with the requested outcome, baseline diff,
 affected callers and actual verification records, not the author's desired verdict.
 A design challenge examines the proposed approach; a post-implementation review examines the code.
+Reassess risk from the actual diff rather than trusting the caller's label; retain HIGH
+when either the declaration or supported review findings requires it.
 
 Find demonstrable correctness, security, compatibility, ownership or performance defects.
 Return PASS, FAIL with required fixes, or BLOCKED for unavailable essential evidence.

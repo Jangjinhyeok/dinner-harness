@@ -86,19 +86,17 @@ Generated: [Date]
 1. **Cut**: [remove to stay on track]
 2. **Defer**: [move to a later cycle/version]
 3. **Keep**: [additions genuinely necessary]
-4. **Flag**: [items needing a decision from the user / Architect session]
+4. **Flag**: [items needing a material scope decision from the user]
 ```
 
 ---
 
 ## Phase 4: Verdict
 
-| Net Change | Verdict | Meaning |
-|-----------|---------|---------|
-| ≤10% | **PASS** | On track — within acceptable variance |
-| 10–25% | **CONCERNS** | Minor creep — manageable with targeted cuts |
-| 25–50% | **FAIL** | Significant creep — must cut or extend timeline |
-| >50% | **FAIL** | Out of control — stop, re-plan |
+Use the project's accepted scope and tolerances to judge schedule, quality and integration
+impact. Item counts describe the change; they do not establish severity or mandate stopping
+by themselves. Report percentages only when baseline items are comparable and the denominator
+is meaningful. Otherwise describe concrete additions, removals and their impact.
 
 ```
 **Scope Verdict: [PASS / CONCERNS / FAIL]**
@@ -110,11 +108,10 @@ Net change: [+X%] — [On Track / Minor Creep / Significant Creep / Out of Contr
 ## Phase 5: Next Steps
 
 - **PASS** → no action. Suggest re-running before the next milestone.
-- **CONCERNS** → identify the 2–3 additions with the best cut ratio; raise re-scoping with the user (Architect session).
-- **FAIL** → raise with the user (Architect session) to re-baseline the plan or formally extend scope. Record the decision as an ADR if the change is structural.
+- **CONCERNS** → identify the additions whose removal best preserves the core outcome; recommend targeted cuts.
+- **FAIL** → explain the material scope decision needed. A separate Architect session or new ADR is not required; follow existing project decision records when relevant.
 
-Always end with:
-> "Run `/scope-check [name]` again after cuts are made to verify the verdict improves."
+After actual scope changes, recommend comparing them with the accepted baseline again.
 
 ---
 
@@ -123,4 +120,4 @@ Always end with:
 - Scope creep = additions without corresponding cuts or timeline extensions.
 - Not all additions are bad — some are discovered requirements. But they must be acknowledged and accounted for.
 - When recommending cuts, preserve the core player experience over nice-to-haves.
-- Always quantify — "+35% items" is actionable, "it feels bigger" is not.
+- Quantify comparable work where possible; do not invent precision for incomparable items.

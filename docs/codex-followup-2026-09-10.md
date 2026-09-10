@@ -299,3 +299,83 @@ HIGH controller 변경의 live 재설치·commit·push는 수행하지 않았다
 **repo == 설치본, drift 0**이다. 앞 절의 controller live drift 2건은 이 적용으로 해소됐다.
 소유 불명 skill 중복 14건은 그대로 advisory이며, native enforcement·interactive 로딩의
 미검증 한계는 바뀌지 않았다. 커밋 대상은 위 7파일로 한정하고 사용자 `HANDOFF_DELEGATE.md`는 제외한다.
+## 남은 이전 skill 정리 완료 (2026-09-10, b6a06ec 후속)
+
+이번 작업 시작 HEAD는 `b6a06ecbb06dceaa96bec406475ffce0d9e4185f`, branch는 `main`이었다.
+기존 untracked `HANDOFF_DELEGATE.md`는 보존했다. 아래 결과는 앞선 14개 중복 보존 기록을 대체한다.
+이번에는 내용 기준 통합·백업·정리 및 Codex live 설치를 사용자가 명시 허용했으며 commit/push는 수행하지 않았다.
+
+### 대상과 판단
+
+`CODEX_HOME` 환경 변수는 미설정이고 실제 설치 root는 `C:/Users/rockwonitglobal_1/.codex`다.
+기존 backup의 inventory, comparison, runtime-after를 실제 파일과 대조했다. 대상 15개 원본 hash는
+이전 inventory와 모두 같았다. `.agents/skills` 및 대상 폴더/파일에 symlink/junction은 없고 파일의
+hardlink count는 각각 1이다. 각 폴더에는 SKILL.md만 있어 이관할 reference/script는 없었다.
+검사한 canonical, Codex, Claude skill tree에서 이전 경로 참조나 연결 파일은 발견하지 못했다.
+Claude 대응 파일은 독립 사본이며 이번 작업 전후 SHA-256이 동일하다. 다른 도구의 모든 가능한
+설정을 조사했다는 의미는 아니며, 실제 공유 소비자가 확인된 파일은 없었다.
+
+모든 아래 이전 `.agents/skills/<name>/SKILL.md`는 백업 hash 검증 후 파일만 제거했다.
+빈 폴더는 보존했다. 목적지는 별도 표기가 없으면 `content/skills/<name>/SKILL.md`이며 Codex에 설치했다.
+
+| 이전 skill | 내용 검토 및 보존 결과 |
+|---|---|
+| adversarial-review | 실제 diff에 따른 위험도 재평가·HIGH 유지 통합. 고정 jury/투표 강제 제외. |
+| arch-review | ADR 근거 탐색·경쟁 ADR 방지, 수동 UI 상태 도달/관찰 가능성 통합. |
+| autonomous-loop | 유용한 목표·검증·보정 지침은 현재 skill에 이미 있음. 의무 jury/pass@3 제외. |
+| code-review | 이름·호출명 외 이전 arch-review와 동일한 alias. 고유 기능 없어 arch-review로 통합. |
+| codebase-onboarding | 구조·data flow·build/test 지침은 현재 skill에 이미 있음. 자동 AGENTS 생성/반복 승인 제외. |
+| eval-harness | 실패 경로, prompt 튜닝 예제와 평가 분리, grader flakiness, 비용/지연 비교 통합. |
+| harness-review | 관측 기간·적격 표본, 텍스트 언급과 실행 증거 구분, 과거/단일 기기 관측의 한계 통합. |
+| hotfix | callers에 따른 검증 범위와 승인된 배포 후 실제 흐름 확인·미해결 incident 유지 통합. |
+| iterative-retrieval | 유용한 점진적 검색은 이미 동일하게 보존됨. 별도 변경 없음. |
+| learnings-review | diagnostic signature와 distinct session 수로 반복 retry와 재발 구분 통합. |
+| perf-profile | 측정·하드웨어·budget 지침은 이미 있음. 강제 역할 전환/견적 절차 제외. |
+| scope-check | 기존 baseline/추가/삭제/영향 분석 보존. canonical에 남은 고정 비율 판정·Architect 절차 제거. |
+| search-first | license 호환성, transitive dependency, 과도한 package/wrapper 비용 통합. |
+| strategic-compact | 현재 연속성 지침으로 충족. 낡은 hook/script/고정 context 크기·절감률 제외. |
+| verification-loop | 프로젝트 검증·exit code·baseline·redaction으로 충족. 보편 coverage/시간 기준 제외. |
+
+옛 harness-review의 특정 회사 PC Git 제한은 해당 프로젝트가 지정되지 않아 전역 정책으로
+확대하지 않고 원문 백업에 보존했다. 낡은 vendor 경로, agent binding, 강제 HANDOFF/역할 절차는
+재도입하지 않았다. 공유 source의 기존 metadata는 Codex adapter에서 name/description으로 변환된다.
+실행 코드, 모델 routing, HIGH 경계·receipt·symlink 처리는 변경하지 않았다.
+
+### 백업과 검증
+
+발견 경로 밖 새 백업:
+`C:/Users/rockwonitglobal_1/.dinner-harness-backups/remaining-skills-20260910-170812`.
+`inventory.json`에 파일별 원본/백업 절대 경로와 SHA-256, canonical 전후 hash, live hash,
+통합 내용·제외 이유·복구 방법을 기록했다. `skill-comparison.md`는 내용별 비교,
+`RESTORE.md`는 파일별 hash 검증 및 기존 파일 덮어쓰기 방지 복구 명령을 제공한다.
+`canonical-before/`에는 수정 전 source도 보존했다. 복구하면 옛 중복과 절차가 다시 발견될 수 있다.
+
+- 새 Codex CLI 0.154.0 app-server 프로세스에서 읽기 전용 `skills/list(forceReload=true)`:
+  **59 → 44 entries, 동명 중복 14 → 0, 발견 오류 전후 0**.
+  이전 경로 15개가 정확히 사라지고 대응 canonical 14개는 모두 enabled였다.
+  `runtime-before.json`, `runtime-after.json`, `verification.json`에 근거를 보존했다.
+- 기본 local roots와 실제 목록에서 관측한 plugin 및 system roots를 합친 읽기 전용 진단도
+  **중복 0, 오류 0**. 관측 root 목록은 `verification.json`에 있다.
+- 임시 경로에 생성·반복 설치 2회: 개인 skill, hook, 일반 사용자 파일 유지, 설치 drift 0.
+  결과와 임시 경로는 `temp-install-verification.json`, 로그는 `temp-install-*.log`에 있다.
+- `python check.py --target codex --no-install`: PASS. 생성된 frontmatter와 relative references 유효.
+  새 script/reference는 추가하지 않았다. live dry-run 후 `install.py --target codex --allow-live` 적용,
+  `python check.py --target codex`: PASS, **설치 drift 0 / 중복 0**.
+- installer migration 및 skill discovery 기존 테스트: **24 tests OK, 1 skip**
+  (Windows symlink 생성 권한). 실행 코드 변경이 없어 이 범위의 테스트를 실행했다.
+- skill-creator `quick_validate.py`: **not_run**, PyYAML 미설치로 import 실패.
+  별도 의존성을 설치하지 않았으며 위 repo 생성/metadata/reference 검사는 통과했다.
+- 대상 밖 skill 및 모든 Claude skill entrypoint의 전후 hash 동일. `git diff --check`: PASS.
+
+리뷰 완료, 이슈 없음 — 메인 세션 self-review 범위는 8개 canonical skill diff, 파일별 통합 판단,
+백업/제거 대상과 설치·발견 검증이다. 별도 독립 리뷰나 실제 모델 skill 실행을 수행한 것으로 표시하지 않는다.
+실행 중 대화의 catalog 갱신은 확인하지 않았으므로 **새 대화 세션 시작을 권장한다**.
+새 프로세스 발견/ enabled 상태는 확인했지만 모델의 선택·실행 및 native hook/sandbox enforcement는
+이번 범위 밖으로 `not_run`이다. 남은 관측 동명 중복은 없다.
+
+### ?? skill ?? delivery ??
+
+?? ???? ???? ? 9? source/?? ??? commit/push? live ??? ?? ????.
+?? `main`? fetch? `origin/main`? ??? `b6a06ec`?? ????.
+`python check.py --target codex` ????? live ?? drift 0, ?? ?? ?? 0, ?? 0???.
+?? live? ??? ?? ???? ????? ???. `HANDOFF_DELEGATE.md`? commit ???? ????.
