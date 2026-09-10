@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 import os
 import re
 import sys
+import subprocess
 import tempfile
 import tomllib
 from pathlib import Path
@@ -361,6 +362,101 @@ def do_update():
     print(f"re-blessed CLAUDE.md hash → curation.toml ({h[:16]}…, blessed_at={blessed_at})")
 
 
+def skill_discovery_roots(cwd=None, home=None, codex_home=None):
+    """Known local roots, not proof of runtime loading or a plugin inventory."""
+    cwd = Path(cwd or Path.cwd()).resolve()
+    home = Path(home or Path.home()).expanduser().resolve()
+    codex_home = Path(codex_home or os.environ.get("CODEX_HOME") or home / ".codex").expanduser()
+    roots = [codex_home / "skills", home / ".agents/skills"]
+    try:
+        result = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+                                capture_output=True, text=True, timeout=10)
+        top = Path(result.stdout.strip()).resolve() if result.returncode == 0 else cwd
+    except (OSError, subprocess.TimeoutExpired):
+        top = cwd
+    for directory in (cwd, *cwd.parents):
+        roots.append(directory / ".agents/skills")
+        if directory == top:
+            break
+    if os.name != "nt":
+        roots.append(Path("/etc/codex/skills"))
+    return list(dict.fromkeys(roots))
+
+
+def check_skill_duplicates(roots):
+    """Read SKILL.md metadata only; names/content never establish ownership.
+
+    Follow linked skill folders with cycle protection. Collapse aliases of the
+    same physical entrypoint, but report distinct files even when bytes match.
+    """
+    entries = {}
+    errors = []
+    visited = set()
+    entrypoints = set()
+    for root in roots:
+        root = Path(root).expanduser()
+        try:
+            root.stat()
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            errors.append(f"{root}: {type(exc).__name__}")
+            continue
+        if not root.is_dir():
+            errors.append(f"{root}: not a skill directory")
+            continue
+        def onerror(exc):
+            errors.append(f"{exc.filename}: {type(exc).__name__}")
+        for directory, dirs, files in os.walk(root, followlinks=True, onerror=onerror):
+            try:
+                physical = Path(directory).resolve(strict=True)
+                if physical in visited:
+                    dirs[:] = []
+                    continue
+                visited.add(physical)
+                dirs[:] = [d for d in dirs if not d.startswith(".") or d == ".system"]
+                if "SKILL.md" not in files:
+                    continue
+                # Resources inside a skill are not additional discovery roots.
+                # In particular, do not walk arbitrary linked resource trees.
+                dirs[:] = []
+                path = Path(directory) / "SKILL.md"
+                resolved_path = path.resolve(strict=True)
+                if resolved_path in entrypoints:
+                    continue
+                entrypoints.add(resolved_path)
+                raw = path.read_bytes()
+                name = frontmatter_name(raw.decode("utf-8-sig"))
+                if not name:
+                    errors.append(f"{path}: missing skill name")
+                    continue
+                name = name.strip("\"'")
+                entries.setdefault(name, []).append({
+                    "path": str(path), "sha256": hashlib.sha256(raw).hexdigest(),
+                })
+            except (OSError, UnicodeError, RuntimeError) as exc:
+                errors.append(f"{directory}: {type(exc).__name__}")
+                dirs[:] = []
+    return {name: paths for name, paths in sorted(entries.items()) if len(paths) > 1}, errors
+
+
+def report_skill_duplicates(roots):
+    duplicates, errors = check_skill_duplicates(roots)
+    print("[discovery:codex] read-only local candidates; ownership/loading not asserted; "
+          "plugin/runtime-only roots require --skill-root")
+    for root in roots:
+        print(f"  root: {root}")
+    for name, paths in duplicates.items():
+        comparison = "identical bytes" if len({p['sha256'] for p in paths}) == 1 else "different content"
+        print(f"  DUPLICATE {name}: {comparison}; ownership unknown, preserved")
+        for entry in paths:
+            print(f"    {entry['path']} sha256={entry['sha256']}")
+    for error in errors:
+        print(f"  UNKNOWN: {error}")
+    print(f"[discovery:codex] {len(duplicates)} duplicate name(s), {len(errors)} unreadable/invalid entry(s); "
+          "advisory only, separate from install drift; activation not verified")
+
+
 def main(argv=None):
     try:  # report uses em-dash + Korean; force UTF-8 stdout regardless of console codepage
         sys.stdout.reconfigure(encoding="utf-8")
@@ -371,6 +467,8 @@ def main(argv=None):
     ap.add_argument("--target", choices=["codex", "claude", "all"], default="all")
     ap.add_argument("--no-install", action="store_true",
                     help="skip the install-drift axis (repo-only checks)")
+    ap.add_argument("--skill-root", action="append", default=[],
+                    help="additional local skill discovery root; also enables discovery with --no-install")
     args = ap.parse_args(argv)
     if args.update:
         if args.target == "codex":
@@ -438,6 +536,11 @@ def main(argv=None):
                     print(f"  - {rel}: repo에 없는 설치본 잔존")
                 if len(advisory) > 20:
                     print(f"  … 외 {len(advisory) - 20}건")
+
+    if "codex" in targets and (not args.no_install or args.skill_root):
+        report_skill_duplicates([*skill_discovery_roots(), *map(Path, args.skill_root)])
+    elif "codex" in targets:
+        print("[discovery:codex] skipped (--no-install; use --skill-root to include local diagnostics)")
 
     return 0 if not (cat_problems or cur_problems or generated_problems or inst_problems) else 1
 

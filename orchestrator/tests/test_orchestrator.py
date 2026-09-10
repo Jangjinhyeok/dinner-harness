@@ -3177,6 +3177,10 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertEqual(out.status, BLOCKED, out.reason)
             self.assertEqual(out.reason, "read-only result recovery changed implementation")
             self.assertEqual(backend.calls, 2)
+            self.assertTrue(out.implementation_observed)
+            terminal = json.loads(out.receipt_path.read_text(encoding="utf-8").splitlines()[-1])
+            self.assertTrue(terminal["implementation_observed"])
+            self.assertEqual(terminal["status"], "blocked")
 
     def test_no_retry_on_completed_panel_fail(self):
         # A completed gate whose review panel FAILs is a legitimate advisory
@@ -4255,6 +4259,10 @@ class TestBuildFromHandoff(unittest.TestCase):
                 # Windows needs Developer Mode or admin for this.
                 self.skipTest("symlink creation not permitted on this machine")
             self.assertTrue((repo / "latest").is_symlink())
+            paths = {change.path for change in collect_changeset(repo)}
+            self.assertIn("latest", paths)
+            self.assertIn("builds/out.txt", paths)
+            self.assertNotIn("builds", paths)
 
             class _WritesInFence(Backend):
                 name = "in-fence"
@@ -4267,6 +4275,45 @@ class TestBuildFromHandoff(unittest.TestCase):
             out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
                                AutoApprove(), log=lambda m: None).run_from_handoff()
             self.assertEqual(out.status, BUILT, out.reason)
+
+    def test_external_directory_symlink_is_refused_before_or_after_dispatch(self):
+        if not _git_available():
+            self.skipTest("git not on PATH")
+        for before in (True, False):
+            with self.subTest(before=before), tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                repo = root / "work"
+                repo.mkdir()
+                _git_init(repo)
+                outside = root / "outside"
+                outside.mkdir()
+                (repo / bus.HANDOFF).write_text(
+                    "```tiers\ngate 1: LOW\n```\n```scope\nlatest\nRESULT.md\n```\n", encoding="utf-8")
+                link = repo / "latest"
+                try:
+                    link.symlink_to(outside, target_is_directory=True)
+                except (OSError, NotImplementedError):
+                    self.skipTest("symlink creation not permitted on this machine")
+                if not before:
+                    link.unlink()
+
+                class _ExternalWriter(Backend):
+                    name = "external-symlink"
+                    calls = 0
+                    def invoke(self, role, prompt, cfg):
+                        self.calls += 1
+                        link.symlink_to(outside, target_is_directory=True)
+                        (link / "outside.txt").write_text("observed write\n", encoding="utf-8")
+                        return Turn(text=_CLEAN_VERDICT)
+
+                backend = _ExternalWriter()
+                out = Orchestrator(_cfg(repo, net_enforce=True), backend, backend,
+                                   AutoApprove(), log=lambda _: None).run_from_handoff()
+                self.assertEqual(out.status, BLOCKED, out.reason)
+                self.assertIn("cannot look inside", out.reason)
+                self.assertEqual(backend.calls, 0 if before else 1)
+                if not before:
+                    self.assertEqual((outside / "outside.txt").read_text(), "observed write\n")
 
     def test_a_real_nested_repo_is_still_refused(self):
         # The other half of the symlink fix: skipping links must not skip the

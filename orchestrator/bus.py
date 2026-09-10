@@ -178,6 +178,16 @@ class ContractError(ValueError):
     """A handoff or result cannot safely identify the work performed."""
 
 
+class GateBoundaryError(ContractError):
+    """Reported execution crossed a HIGH boundary; format recovery cannot undo it."""
+
+
+def effective_high_gates(verdicts: list[GateVerdict], selected: dict[str, str]) -> list[str]:
+    reported_high = {v.gate for v in verdicts if v.tier == TIER_HIGH}
+    return sorted((gate for gate in selected if tier_for(selected, gate) == TIER_HIGH
+                   or gate in reported_high), key=gate_order)
+
+
 def gate_order(gate: str) -> int:
     if not re.fullmatch(r"[1-9][0-9]*", gate):
         raise ContractError(f"invalid gate ID: {gate!r}")
@@ -277,7 +287,42 @@ def parse_build_result(text: str, *, compatibility: bool = False) -> list[GateVe
     return verdicts
 
 
+def reported_gate_evidence(text: str, *, compatibility: bool = False) -> list[GateVerdict]:
+    """Extract only identifiable execution claims, never acceptance evidence.
+
+    Extra schema fields must not hide a boundary violation behind format repair.
+    Strict parsing/validation is still required before accepting any completion.
+    """
+    if compatibility and not text.lstrip().startswith("{"):
+        verdicts = [v for body in _fence_re("verdicts").findall(text)
+                    for v in parse_verdicts("```verdicts\n" + body + "\n```\n")]
+    else:
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(data, dict) or not isinstance(data.get("gates"), list):
+            return []
+        verdicts = [GateVerdict(entry["gate"], entry["status"], entry.get("tier", TIER_HIGH))
+                    for entry in data["gates"] if isinstance(entry, dict)
+                    and isinstance(entry.get("gate"), str) and isinstance(entry.get("status"), str)]
+    return [v for v in verdicts if re.fullmatch(r"[1-9][0-9]*", v.gate)]
+
+
+def validate_high_boundary(verdicts: list[GateVerdict], selected: dict[str, str]) -> None:
+    high = effective_high_gates(verdicts, selected)
+    if high:
+        crossed = sorted({v.gate for v in verdicts if v.status == "completed"
+                          and re.fullmatch(r"[1-9][0-9]*", v.gate)
+                          and gate_order(v.gate) > gate_order(high[0])}, key=gate_order)
+        if crossed:
+            raise GateBoundaryError(
+                f"completed gate(s) {', '.join(crossed)} after effective HIGH gate {high[0]}")
+
+
 def validate_results(verdicts: list[GateVerdict], selected: dict[str, str]) -> None:
+    # Execution violations take precedence over recoverable shape errors.
+    validate_high_boundary(verdicts, selected)
     seen = set()
     for verdict in verdicts:
         gate_order(verdict.gate)

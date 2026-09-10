@@ -72,6 +72,16 @@ class TestCodexInstallMigration(unittest.TestCase):
         self.assertTrue(present)
         self.assertEqual(problems, [])
         self.assertIn(("skills/personal/SKILL.md", True), leftovers)
+        # Installation equality and discovery collisions are separate axes.
+        other = Path(self.temp.name) / "other-discovery/user-copy/SKILL.md"
+        other.parent.mkdir(parents=True)
+        other.write_text("---\nname: surgical-changes\n---\nuser text", encoding="utf-8")
+        before_other = other.read_bytes()
+        duplicates, errors = check.check_skill_duplicates([self.dest / "skills", other.parent.parent])
+        self.assertIn("surgical-changes", duplicates)
+        self.assertEqual(other.read_bytes(), before_other)
+        # The intentionally metadata-free personal skill is diagnosed, preserved.
+        self.assertEqual(len(errors), 1)
 
     def test_conflicts_fail_before_any_destination_writes(self):
         self.dest.mkdir()

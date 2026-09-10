@@ -85,6 +85,10 @@ class Outcome:
     pending_gates: list[str] = field(default_factory=list)
     needs_review_gates: list[str] = field(default_factory=list)
     independent_review: str = "not_run"
+    effective_high_gates: list[str] = field(default_factory=list)
+    reported_completed_gates: list[str] = field(default_factory=list)
+    contract_violation: bool = False
+    implementation_observed: Optional[bool] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -487,6 +491,13 @@ def _opaque_dirs(changes, repo: Path) -> list[str]:
             # that does not exist and no fence edit could clear it. A link is a
             # file to git, and is judged as one.
             if p.is_symlink():
+                # A link cannot make writes beyond the Git witness inspectable.
+                # Preserve ordinary internal links, refuse external/broken ones.
+                try:
+                    if not p.resolve(strict=True).is_relative_to(repo.resolve()):
+                        out.append(c.path)
+                except (OSError, RuntimeError):
+                    out.append(c.path)
                 continue
             if p.is_dir():
                 out.append(c.path)
@@ -504,7 +515,8 @@ def _repo_relative(abs_path: Path, repo: Path) -> str:
     Builder was told to work inside ``repo``.
     """
     try:
-        return abs_path.resolve().relative_to(repo.resolve()).as_posix()
+        # Git reports the link itself, not its target. Resolve parents only.
+        return (abs_path.parent.resolve() / abs_path.name).relative_to(repo.resolve()).as_posix()
     except Exception:
         return str(abs_path)
 
@@ -743,12 +755,20 @@ class Orchestrator:
         blocked_gates: Optional[list[str]] = None,
         pending_gates: Optional[list[str]] = None,
         needs_review_gates: Optional[list[str]] = None,
+        effective_high_gates: Optional[list[str]] = None,
+        reported_completed_gates: Optional[list[str]] = None,
+        contract_violation: bool = False,
+        implementation_observed: Optional[bool] = None,
     ) -> Outcome:
         return Outcome(
             status=status, cycles=cycle, reason=reason, log=list(self._log),
             completed_gates=completed_gates or [], remaining_gates=remaining_gates or [],
             review_required_gate=review_required_gate,
             blocked_gates=blocked_gates or [], pending_gates=pending_gates or [],
+            effective_high_gates=effective_high_gates or [],
+            reported_completed_gates=reported_completed_gates or [],
+            contract_violation=contract_violation,
+            implementation_observed=implementation_observed,
             needs_review_gates=needs_review_gates or [],
         )
 
@@ -900,10 +920,10 @@ class Orchestrator:
 
     @staticmethod
     def _opaque_msg(opaque: list[str]) -> str:
-        return ("changeset contains directories the net cannot look inside "
+        return ("changeset contains directories or links the net cannot look inside "
                 f"({', '.join(sorted(opaque)[:3])}) — a nested git repo or an "
                 "unregistered submodule stops `git status -uall` at its "
-                "boundary, so its files would be admitted unscanned")
+                "boundary; external or unresolved links also lack an inspectable Git witness")
 
     @staticmethod
     def _oversized_msg(what: str) -> str:
@@ -1252,13 +1272,20 @@ class Orchestrator:
             "retry_reason": "output_format" if recovery else "", "failed": bool(bd.error),
         })
         self._last_contract_error = ""
+        boundary_error = ""
         try:
+            verdicts = busmod.reported_gate_evidence(bd.text, compatibility=not structured)
+            busmod.validate_high_boundary(verdicts, tiers)
             verdicts = busmod.parse_build_result(bd.text, compatibility=not structured)
             busmod.validate_results(verdicts, tiers)
+        except busmod.GateBoundaryError as exc:
+            boundary_error = str(exc)
         except busmod.ContractError as exc:
             verdicts = []
             self._last_contract_error = str(exc)
         report = busmod.render_result(bd.text, verdicts, net_status="pending")
+        if boundary_error:
+            report += f"\nContract violation: {boundary_error}\n\nOriginal Builder report:\n{bd.text}\n"
         report_error = False
         try:
             bus.write_result((result_prefix.rstrip() + "\n\n" if result_prefix else "") + report)
@@ -1314,19 +1341,40 @@ class Orchestrator:
             change.path not in {busmod.RESULT, handoff_name} for change in changes
         )
         try:
-            bus.write_result((result_prefix.rstrip() + "\n\n" if result_prefix else "") +
-                             busmod.render_result(bd.text, verdicts, net_status="pass" if cfg.net_enforce else "advisory"))
+            report = busmod.render_result(bd.text, verdicts, net_status="pass" if cfg.net_enforce else "advisory")
+            if boundary_error:
+                report += (f"\nContract violation: {boundary_error}\n"
+                           f"Observed implementation changes: {implementation_observed}; files retained.\n"
+                           f"\nOriginal Builder report:\n{bd.text}\n")
+            bus.write_result((result_prefix.rstrip() + "\n\n" if result_prefix else "") + report)
         except (OSError, UnicodeError):
             report_error = True
+        if boundary_error:
+            high = busmod.effective_high_gates(verdicts, tiers)
+            reported = sorted({v.gate for v in verdicts if v.status == "completed"}, key=busmod.gate_order)
+            completed = [g for g in reported if busmod.gate_order(g) <= busmod.gate_order(high[0])]
+            return bd, verdicts, True, self._outcome(
+                BLOCKED, cycle, f"result contract violation: {boundary_error}; delta checks completed"
+                + ("; RESULT write failed" if report_error else ""),
+                completed_gates=completed,
+                remaining_gates=sorted(set(parse_tiers(handoff_text)) - set(completed), key=busmod.gate_order),
+                effective_high_gates=high, reported_completed_gates=reported,
+                needs_review_gates=[g for g in high if g in reported],
+                review_required_gate=high[0], contract_violation=True,
+                implementation_observed=implementation_observed,
+            ), implementation_observed
         if report_error:
             return bd, verdicts, False, self._outcome(
-                BLOCKED, cycle, "RESULT write failed; delta checks completed"), implementation_observed
+                BLOCKED, cycle, "RESULT write failed; delta checks completed",
+                implementation_observed=implementation_observed), implementation_observed
         if bd.error:
             return bd, verdicts, False, self._outcome(
-                BLOCKED, cycle, f"builder error: {bd.error}; partial edits={implementation_observed}; delta checks completed"), implementation_observed
+                BLOCKED, cycle, f"builder error: {bd.error}; partial edits={implementation_observed}; delta checks completed",
+                implementation_observed=implementation_observed), implementation_observed
         if recovery and implementation_observed:
             return bd, verdicts, False, self._outcome(
-                BLOCKED, cycle, "read-only result recovery changed implementation"), True
+                BLOCKED, cycle, "read-only result recovery changed implementation",
+                implementation_observed=True), True
 
         # tier-gate enforcement
         gate_reasons = enforce_tier_gates(tiers, verdicts)
@@ -1378,6 +1426,10 @@ class Orchestrator:
             independent_review="not_run", completed_gates=outcome.completed_gates,
             blocked_gates=outcome.blocked_gates, pending_gates=outcome.pending_gates,
             needs_review_gates=outcome.needs_review_gates,
+            effective_high_gates=outcome.effective_high_gates,
+            reported_completed_gates=outcome.reported_completed_gates,
+            contract_violation=outcome.contract_violation,
+            implementation_observed=outcome.implementation_observed,
             **self._resolved_builder_profile,
         )
         outcome.receipt_path = audit.terminal_path
@@ -1604,7 +1656,12 @@ class Orchestrator:
             key=busmod.gate_order,
         )
         remaining = sorted(set(all_tiers) - set(completed), key=busmod.gate_order)
-        incomplete = any(v.status in ("blocked", "pending") for v in verdicts)
+        high = busmod.effective_high_gates(verdicts, tiers)
+        stopped_at_high = bool(high and high[0] in completed)
+        incomplete = any(v.status == "blocked" or
+                         (v.status == "pending" and not
+                          (stopped_at_high and busmod.gate_order(v.gate) > busmod.gate_order(high[0])))
+                         for v in verdicts)
         note = ("partial or blocked work; review RESULT.md" if incomplete else
                 "implementation reported; independent review and human HIGH acceptance remain pending"
                 if needs_review else "implementation reported; awaiting in-session review")
@@ -1614,6 +1671,8 @@ class Orchestrator:
             blocked_gates=blocked_gates, pending_gates=pending,
             needs_review_gates=needs_review,
             review_required_gate=needs_review[0] if needs_review else None,
+            effective_high_gates=high, reported_completed_gates=completed,
+            implementation_observed=observed,
         )
 
 
@@ -1631,7 +1690,7 @@ def _receipt_status(outcome: Outcome) -> str:
 def _receipt_reason_code(outcome: Outcome) -> str:
     """Classify an outcome without copying vendor-controlled error text to audit."""
     if outcome.status == BUILT:
-        return "built_high" if outcome.reason.startswith("HIGH gate present") else "built_low"
+        return "built_high" if outcome.effective_high_gates else "built_low"
     if outcome.reason.startswith("builder error: vendor turn timed out after "):
         return "timeout"
     if outcome.reason.startswith("builder bailed with no implementation"):
