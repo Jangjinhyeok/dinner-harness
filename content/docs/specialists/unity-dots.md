@@ -1,100 +1,90 @@
-# Unity DOTS / ECS — specialist reference (former agent)
+# Unity DOTS / ECS — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unity-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The DOTS/ECS specialist owns all Unity Data-Oriented Technology Stack implementation: Entity Component System architecture, Jobs system, Burst compiler optimization, hybrid renderer, and DOTS-based gameplay systems. They ensure correct ECS patterns and maximum performance.
+Use when the project uses Entities/Jobs/Burst or evaluates them for a concrete workload. Entity
+count alone does not justify migration from MonoBehaviour. Compare measured throughput/memory,
+authoring, debugging, integration and platform requirements. This reference does not require delegation.
+Read pinned Editor, Entities, Collections, Burst and Entities Graphics versions; verify uncertain
+APIs and safety constraints with the matching official docs/source.
 
-You are the Unity DOTS/ECS Specialist for a Unity project. You own everything related to Unity's Data-Oriented Technology Stack.
+## Components and data layout
 
-## Core Responsibilities
-- Design Entity Component System (ECS) architecture
-- Implement Systems with correct scheduling and dependencies
-- Optimize with the Jobs system and Burst compiler
-- Manage entity archetypes and chunk layout for cache efficiency
-- Handle hybrid renderer integration (DOTS + GameObjects)
-- Ensure thread-safe data access patterns
+Unmanaged component data supports chunk-based processing and Burst-compatible paths. Managed
+components are valid for appropriate integration but have GC/access restrictions and cannot be
+accessed from jobs or Burst-compiled code. Component methods alone are not forbidden; preserve
+supported field/layout/serialization constraints for the chosen component kind.
 
-## ECS Architecture Standards
+Choose component boundaries by access pattern, ownership, update frequency and chunk utilization.
+Do not split because a struct exceeds a field count, or separate related state when doing so obscures
+its invariants. Shared components can group entities but high value diversity can fragment chunks.
+Tag components need no per-entity payload but still affect archetypes/querying; they are not cost-free.
 
-### Component Design
-- Components are pure data — NO methods, NO logic, NO references to managed objects
-- Use `IComponentData` for per-entity data (position, health, velocity)
-- Use `ISharedComponentData` sparingly — shared components fragment archetypes
-- Use `IBufferElementData` for variable-length per-entity data (inventory slots, path waypoints)
-- Use `IEnableableComponent` for toggling behavior without structural changes
-- Keep components small — only include fields the system actually reads/writes
-- Avoid "god components" with 20+ fields — split by access pattern
+Dynamic buffers suit variable-length entity data; choose capacity from measured distributions.
+Enableable components can avoid structural changes for supported toggles, but affect query matching
+and dependency behavior. Blob assets suit shared immutable data with explicit ownership/disposal.
+Preserve baking, serialization and save/network compatibility when changing layouts or representations.
 
-### Component Organization
-- Group components by system access pattern, not by game concept:
-  - GOOD: `Position`, `Velocity`, `PhysicsState` (separate, each read by different systems)
-  - BAD: `CharacterData` (position + health + inventory + AI state all in one)
-- Tag components (`struct IsEnemy : IComponentData {}`) are free — use them for filtering
-- Use `BlobAssetReference<T>` for shared read-only data (animation curves, lookup tables)
+## Systems, queries and ordering
 
-### System Design
-- Systems must be stateless — all state lives in components
-- Use `SystemBase` for managed systems, `ISystem` for unmanaged (Burst-compatible) systems
-- Prefer `ISystem` + `Burst` for all performance-critical systems
-- Define `[UpdateBefore]` / `[UpdateAfter]` attributes to control execution order
-- Use `SystemGroup` to organize related systems into logical phases
-- Systems should process one concern — don't combine movement and combat in one system
+SystemBase and ISystem have different managed/unmanaged and Burst capabilities. Select for current
+API needs and measured cost, not as a universal upgrade. Systems can own appropriate queries, caches
+and resources; they need not be stateless. Keep persistent gameplay state where the project's
+serialization, World lifetime and ownership contracts require it.
 
-### Queries
-- Use `EntityQuery` with precise component filters — never iterate all entities
-- Use `WithAll<T>`, `WithNone<T>`, `WithAny<T>` for filtering
-- Use `RefRO<T>` for read-only access, `RefRW<T>` for read-write access
-- Cache queries — don't recreate them every frame
-- Use `EntityQueryOptions.IncludeDisabledEntities` only when explicitly needed
+Use system groups and ordering attributes for logical phases, but ordering of system callbacks alone
+does not establish every scheduled job dependency. Initialize/clean up system-owned resources through
+the applicable lifecycle and account for World destruction or stopping/restarting updates.
 
-### Jobs System
-- Use `IJobEntity` for simple per-entity work (most common pattern)
-- Use `IJobChunk` for chunk-level operations or when you need chunk metadata
-- Use `IJob` for single-threaded work that still benefits from Burst
-- Always declare dependencies correctly — read/write conflicts cause race conditions
-- Use `[ReadOnly]` attribute on job fields that only read data
-- Schedule jobs in `OnUpdate()`, let the job system handle parallelism
-- Never call `.Complete()` immediately after scheduling — that defeats the purpose
+Queries should match the required population; an all-entity query can be valid for a global task.
+Use supported filters, enableable-state rules and read/write access declarations. Reuse queries where
+it reduces setup cost without stale state; update lookups/handles as required by the package version.
+Read-only declarations must match actual access, not just serve as optimization annotations.
 
-### Burst Compiler
-- Mark all performance-critical jobs and systems with `[BurstCompile]`
-- Avoid managed types in Burst code (no `string`, `class`, `List<T>`, delegates)
-- Use `NativeArray<T>`, `NativeList<T>`, `NativeHashMap<K,V>` instead of managed collections
-- Use `FixedString` instead of `string` in Burst code
-- Use `math` library (`Unity.Mathematics`) instead of `Mathf` for SIMD optimization
-- Profile with Burst Inspector to verify vectorization
-- Avoid branches in tight loops — use `math.select()` for branchless alternatives
+## Jobs and structural changes
 
-### Memory Management
-- Dispose all `NativeContainer` allocations — use `Allocator.TempJob` for frame-scoped, `Allocator.Persistent` for long-lived
-- Use `EntityCommandBuffer` (ECB) for structural changes (add/remove components, create/destroy entities)
-- Never make structural changes inside a job — use ECB with `EndSimulationEntityCommandBufferSystem`
-- Batch structural changes — don't create entities one at a time in a loop
-- Pre-allocate `NativeContainer` capacity when the size is known
+IJobEntity suits entity iteration, IJobChunk suits chunk-level access and IJob can suit independent
+work. Small workloads may be clearer/cheaper on the main thread. When scheduling, propagate every
+read/write dependency and use supported parallel access patterns. Never bypass safety restrictions
+to hide an unresolved race.
 
-### Hybrid Renderer (Entities Graphics)
-- Use hybrid approach for: complex rendering, VFX, audio, UI (these still need GameObjects)
-- Convert GameObjects to entities using baking (subscenes)
-- Use `CompanionGameObject` for entities that need GameObject features
-- Keep the DOTS/GameObject boundary clean — don't cross it every frame
-- Use `LocalTransform` + `LocalToWorld` for entity transforms, not `Transform`
+Complete the relevant dependencies before main-thread access, disposal or other operations that
+require ownership back. Immediate Complete can be correct when the result is needed immediately;
+measure the lost overlap and scheduling overhead instead of banning synchronization.
 
-### Common DOTS Anti-Patterns
-- Putting logic in components (components are data, systems are logic)
-- Using `SystemBase` where `ISystem` + Burst would work (performance loss)
-- Structural changes inside jobs (causes sync points, kills performance)
-- Calling `.Complete()` immediately after scheduling (removes parallelism)
-- Using managed types in Burst code (prevents compilation)
-- Giant components that cause cache misses (split by access pattern)
-- Forgetting to dispose NativeContainers (memory leaks)
-- Using `GetComponent<T>` per-entity instead of bulk queries (O(n) lookups)
+Use ECB recording for structural changes requested by jobs. Its playback must occur at a valid
+synchronized point, with producer dependencies registered and appropriate parallel-writer/order
+semantics. Select the playback phase for when consumers need the changes; EndSimulation is not the
+only valid phase. Direct main-thread EntityManager structural changes can be valid when synchronized,
+but can introduce sync points and invalidate lookups/references.
 
-## Coordination
-- Work with **unity-specialist** for overall Unity architecture
-- Work with **gameplay-programmer** for ECS gameplay system design
-- Work with **performance-analyst** for profiling DOTS performance
-- Work with `unity-specialist` for low-level optimization
-- See `docs/specialists/unity-shader.md` for Entities Graphics rendering
+## Burst and native allocation safety
+
+Burst supports a restricted subset of C# and data types. Ordinary managed objects/collections are
+not valid job/Burst data; use supported native collections, fixed strings and math operations where
+appropriate. Confirm package/runtime support, not a blanket language-wide ban on managed code.
+
+Dispose owned native allocations after dependent users finish, or through a supported deferred
+disposal path. Allocator.Temp, TempJob and Persistent have different thread/lifetime constraints;
+check their documented maximum lifetime rather than describing TempJob as generically frame-scoped.
+For Collections versions with the four-frame TempJob rule, that is an allocator contract, not a
+performance heuristic. Non-owning aliases must not double-dispose shared storage.
+
+Use Burst Inspector and profiling to evaluate vectorization, access locality, capacity, copies and
+branches. Branchless math.select can evaluate unwanted work and change numeric behavior; do not
+replace branches without correctness and performance evidence.
+
+## GameObject / rendering integration and verification
+
+Use the installed Entities Graphics/baking/transform pipeline where it fits. GameObject companions
+or a hybrid boundary may suit UI, audio, VFX or managed APIs; features differ by package/platform.
+Follow supported transform components and system ownership rather than mutating competing transform
+representations. Synchronize data crossing the boundary with clear entity/object lifetime.
+
+Test job dependencies, ECB visibility/order, World teardown, allocator lifetime and baking/player
+behavior. Profile representative target workloads against the current implementation. Unavailable
+Editor/player checks are not_run. See [shaders](unity-shader.md) for render integration.
+
+Official references (select matching package versions):
+
+- [Managed components](https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/components-managed.html)
+- [ISystem lifecycle](https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/systems-isystem.html)
+- [Allocators](https://docs.unity3d.com/Packages/com.unity.collections@2.1/manual/allocator-overview.html)

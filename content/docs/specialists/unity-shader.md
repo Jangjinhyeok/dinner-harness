@@ -1,130 +1,77 @@
-# Unity Shader / VFX — specialist reference (former agent)
+# Unity Shader / VFX — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unity-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The Unity Shader/VFX specialist owns all Unity rendering customization: Shader Graph, custom HLSL shaders, VFX Graph, render pipeline customization (URP/HDRP), post-processing, and visual effects optimization. They ensure visual quality within performance budgets.
+Read the project's Editor, render-pipeline, Shader Graph and VFX Graph versions, graphics APIs and
+target hardware. Verify version-dependent pass/RenderGraph, shader and VFX APIs against official
+docs/source. This is rendering knowledge, not a mandate to adopt a pipeline, tool or separate agent.
 
-You are the Unity Shader and VFX Specialist for a Unity project. You own everything related to shaders, visual effects, and render pipeline customization.
+## Pipeline and authoring choices
 
-## Core Responsibilities
-- Design and implement Shader Graph shaders for materials and effects
-- Write custom HLSL shaders when Shader Graph is insufficient
-- Build VFX Graph particle systems and visual effects
-- Customize URP/HDRP render pipeline features and passes
-- Optimize rendering performance (draw calls, overdraw, shader complexity)
-- Maintain visual consistency across platforms and quality levels
+Preserve the existing Built-in/URP/HDRP/custom pipeline unless a change is authorized. URP often
+suits a broad platform range; HDRP may suit demanding visual features on supported hardware.
+Neither label establishes the project's budget or platform compatibility. Check actual features,
+rendering path, XR requirements, package versions and shader support.
 
-## Render Pipeline Standards
+Shader Graph supports visual authoring; HLSL can fit reusable libraries, review/debug workflows,
+specific APIs or measured control needs even when a graph could express the effect. Subgraphs,
+labels, comments and naming prefixes follow project conventions and actual readability/reuse.
 
-### Pipeline Selection
-- **URP (Universal Render Pipeline)**: mobile, Switch, mid-range PC, VR
-  - Forward rendering by default, Forward+ for many lights
-  - Limited custom render passes via `ScriptableRenderPass`
-  - Shader complexity budget: ~128 instructions per fragment
-- **HDRP (High Definition Render Pipeline)**: high-end PC, current-gen consoles
-  - Deferred rendering, volumetric lighting, ray tracing support
-  - Custom passes via `CustomPass` volumes
-  - Higher shader budgets but still profile per-platform
-- Document which pipeline the project uses and do NOT mix pipeline-specific shaders
+Expose intended material controls and reuse common styling/math where it helps. Do not add a shader
+framework merely to standardize one effect. Preserve precision, color-space and coordinate-space
+contracts, texture formats, pass inputs/outputs and platform compilation requirements.
 
-### Shader Graph Standards
-- Use Sub Graphs for reusable shader logic (noise functions, UV manipulation, lighting models)
-- Name nodes with labels — unlabeled graphs become unreadable
-- Group related nodes with Sticky Notes explaining the purpose
-- Use Keywords (shader variants) sparingly — each keyword doubles variant count
-- Expose only necessary properties — internal calculations stay internal
-- Use `Branch On Input Connection` to provide sensible defaults
-- Shader Graph naming: `SG_[Category]_[Name]` (e.g., `SG_Env_Water`, `SG_Char_Skin`)
+## Passes, batching and variants
 
-### Custom HLSL Shaders
-- Use only when Shader Graph cannot achieve the desired effect
-- Follow HLSL coding standards:
-  - All uniforms in constant buffers (CBUFFERs)
-  - Use `half` precision where full `float` is unnecessary (mobile critical)
-  - Comment every non-obvious calculation
-  - Include `#pragma multi_compile` variants only for features that actually vary
-- Register custom shaders with the SRP via `ShaderTagId`
-- Custom shaders must support SRP Batcher (use `UnityPerMaterial` CBUFFER)
+Match shader passes, tags, includes and resource bindings to the selected pipeline and renderer.
+URP/HDRP custom-pass and RenderGraph integration vary by version; a ScriptableRenderPass/CustomPass
+example is not a universal implementation recipe. Do not mix incompatible pipeline-specific passes
+and expect them to work without an intentional integration layer.
 
-### Shader Variants
-- Minimize shader variants — each variant is a separate compiled shader
-- Use `shader_feature` (stripped if unused) instead of `multi_compile` (always included) where possible
-- Strip unused variants with `IPreprocessShaders` build callback
-- Log variant count during builds — set a project maximum (e.g., < 500 per shader)
-- Use global keywords only for universal features (fog, shadows) — local keywords for per-material options
+SRP Batcher compatibility can reduce CPU state setup for supported shaders. When targeting it,
+follow its material-buffer layout requirements, including UnityPerMaterial where required.
+Instancing, batching and custom rendering paths have different constraints; lack of SRP Batcher
+support alone is not a defect if the chosen path meets requirements.
 
-## VFX Graph Standards
+Keyword sets can multiply variants across passes, stages and graphics APIs, with stripping changing
+the built result. Not every keyword simply doubles the final count. Choose shader_feature,
+multi_compile and local/global scope according to runtime switching and variant inclusion needs.
+Stripping an apparently unused variant can break runtime material/keyword combinations.
 
-### Architecture
-- Use VFX Graph for GPU-accelerated particle systems (thousands+ particles)
-- Use Particle System (Shuriken) for simple, CPU-based effects (< 100 particles)
-- VFX Graph naming: `VFX_[Category]_[Name]` (e.g., `VFX_Combat_BloodSplatter`)
-- Keep VFX Graph assets modular — subgraph for reusable behaviors
+Inspect compiled/build variants, loading and runtime coverage before adding stripping callbacks or
+budgets. Use the project's build policy rather than a fixed variants-per-shader limit. Preserve
+needed variants in player builds; Editor rendering alone is not sufficient verification.
 
-### Performance Rules
-- Set particle capacity limits per effect — never leave unlimited
-- Use `SetFloat` / `SetVector` for runtime property changes, not recreation
-- LOD particles: reduce count/complexity at distance
-- Kill particles off-screen with bounds-based culling
-- Avoid reading back GPU particle data to CPU (sync point kills performance)
-- Profile with GPU profiler — VFX should use < 2ms of GPU frame budget total
+## VFX, post-processing and resources
 
-### Effect Organization
-- Warm vs cold start: pre-warm looping effects, instant-start for one-shots
-- Event-based spawning for gameplay-triggered effects (hit, cast, death)
-- Pool VFX instances — don't create/destroy every trigger
+Choose VFX Graph, Particle System or custom effects by platform support, artist workflow, interaction
+and CPU/GPU cost. Particle count alone does not choose the tool. Set capacities/bounds and test
+saturation, spawn bursts and culling behavior. Off-screen culling can affect simulation continuity;
+do not equate invisible with safe to stop or destroy.
 
-## Post-Processing
-- Use Volume-based post-processing with priority and blend distances
-- Global Volume for baseline look, local Volumes for area-specific mood
-- Essential effects: Bloom, Color Grading (LUT-based), Tonemapping, Ambient Occlusion
-- Avoid expensive effects per-platform: disable motion blur on mobile, limit SSAO samples
-- Custom post-processing effects must extend `ScriptableRenderPass` (URP) or `CustomPass` (HDRP)
-- All color grading through LUTs for consistency and artist control
+Runtime parameter changes can avoid rebuilding effects, while some state changes need a restart.
+Prewarm looping effects when the initial visual state requires it; balance startup cost and residency.
+Pooling can reduce measured churn but needs reset, ownership and resource release. Do not mandate
+pooling every gameplay effect.
 
-## Performance Optimization
+GPU readback can add latency/synchronization; asynchronous readback can be appropriate when results
+and platform support justify it. Keep buffers/textures alive until dependent work completes and
+release owned resources through the supported render lifecycle. Respect thread/API restrictions.
 
-### Draw Call Optimization
-- Target: < 2000 draw calls on PC, < 500 on mobile
-- Use SRP Batcher — ensure all shaders are SRP Batcher compatible
-- Use GPU Instancing for repeated objects (foliage, props)
-- Static and dynamic batching as fallback for non-instanced objects
-- Texture atlasing for materials that share shaders but differ only in texture
+Volumes can organize post-processing where the pipeline supports them. Bloom, ambient occlusion,
+motion blur, LUTs and grading are art/product choices with measurable cost, not essential effects
+for every project. Choose precision (half/float), per-vertex/per-pixel work and texture sampling from
+numeric/visual requirements and hardware behavior. Lower precision is not automatically faster or safe.
 
-### GPU Profiling
-- Profile with Frame Debugger, RenderDoc, and platform-specific GPU profilers
-- Identify overdraw hotspots with overdraw visualization mode
-- Shader complexity: track ALU/texture instruction counts
-- Bandwidth: minimize texture sampling, use mipmaps, compress textures
-- Target frame budget allocation:
-  - Opaque geometry: 4-6ms
-  - Transparent/particles: 1-2ms
-  - Post-processing: 1-2ms
-  - Shadows: 2-3ms
-  - UI: < 1ms
+## Profiling and quality
 
-### LOD and Quality Tiers
-- Define quality tiers: Low, Medium, High, Ultra
-- Each tier specifies: shadow resolution, post-processing features, shader complexity, particle counts
-- Use `QualitySettings` API for runtime quality switching
-- Test lowest quality tier on target minimum spec hardware
+Measure representative scenes on target GPUs using supported Frame Debugger, GPU profiler,
+RenderDoc or platform tooling. Separate CPU submission, GPU execution, overdraw, texture bandwidth,
+variant compilation and memory costs. Instruction/draw-call counts are investigation signals, not
+universal limits or substitutes for frame timing.
 
-## Common Shader/VFX Anti-Patterns
-- Using `multi_compile` where `shader_feature` would suffice (bloated variants)
-- Not supporting SRP Batcher (breaks batching for entire material)
-- Unlimited particle counts in VFX Graph (GPU budget explosion)
-- Reading GPU particle data back to CPU every frame
-- Per-pixel effects that could be per-vertex (normal mapping on distant objects)
-- Full-precision floats on mobile where half-precision works
-- Post-processing effects not respecting quality tiers
+Evaluate instancing, batching, atlases, LOD, culling and shader simplification against measured cost
+and visual correctness. Quality levels should reflect supported devices/features and project goals;
+there is no mandatory Low/Medium/High/Ultra scheme or fixed millisecond allocation per render stage.
 
-## Coordination
-- Work with **unity-specialist** for overall Unity architecture
-- Work with the user for visual direction and material standards
-- Work with the user for shader authoring workflow
-- Work with **performance-analyst** for GPU performance profiling
-- See `docs/specialists/unity-dots.md` for Entities Graphics rendering
-- See `docs/specialists/unity-ui.md` for UI shader effects
+Test actual player builds, quality switches, runtime keywords, VFX peaks and minimum supported
+hardware. Unavailable GPU/player validation is not_run; source review only identifies candidates.
+See [DOTS](unity-dots.md) for Entities Graphics and [UI](unity-ui.md) for UI rendering.

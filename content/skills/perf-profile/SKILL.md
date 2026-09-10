@@ -33,7 +33,7 @@ Check performance targets in project instructions (AGENTS.md or the selected ven
 ## Phase 3: Analyze Codebase
 
 **CPU Profiling Targets:**
-- `_process()` / `Update()` / `Tick()` functions — list all and estimate cost
+- `_process()` / `Update()` / `Tick()` functions — inspect paths relevant to the requested workload
 - Nested loops over large collections
 - String operations in hot paths
 - Allocation patterns in per-frame code
@@ -86,14 +86,14 @@ Generated: [Date]
    - Risk: [Low/Med/High]
    - Approach: [How to implement]
 
-### Quick Wins (< 1 hour each)
+### Low-cost Improvements
 - [Simple optimization 1]
 
 ### Requires Investigation
 - [Area that needs actual runtime profiling to confirm impact]
 ```
 
-Output the report with a summary: top 3 hotspots, estimated headroom vs budget, and recommended next action.
+Output the report with a summary: evidence-backed hotspots, estimated headroom vs budget, and recommended next action.
 
 ---
 
@@ -114,7 +114,8 @@ ask only for a material scope, compatibility or authority change.
 - To schedule optimizations: note them as follow-up items for the user to prioritize.
 
 ### Rules
-- Never optimize without measuring first — gut feelings about performance are unreliable
+- Use measurements to select and validate optimizations; source inspection can identify candidates,
+  but is not proof of runtime impact
 - State measured impact or a clearly qualified estimate and confidence; unknown is valid when
   runtime evidence is unavailable. Do not invent headroom, timing or expected gains from source alone.
 - Profile on target hardware, not just development machines

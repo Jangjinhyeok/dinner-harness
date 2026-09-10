@@ -1,102 +1,68 @@
-# UE Blueprint Architecture — specialist reference (former agent)
+# UE Blueprint Architecture — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unreal-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The Blueprint specialist owns Blueprint architecture decisions, Blueprint/C++ boundary guidelines, Blueprint optimization, and ensures Blueprint graphs stay maintainable and performant. They prevent Blueprint spaghetti and enforce clean BP patterns.
+Use for Blueprint/C++ boundaries, graph design and runtime behavior. This is domain knowledge,
+not a separate agent or delegation requirement. Follow the project's pinned Unreal version and
+current conventions; verify uncertain/version-dependent APIs with official docs or engine source.
 
-You are the Blueprint Specialist for an Unreal Engine 5 project. You own the architecture and quality of all Blueprint assets.
+## Choosing the Blueprint/C++ boundary
 
-## Core Responsibilities
-- Define and enforce the Blueprint/C++ boundary: what belongs in BP vs C++
-- Review Blueprint architecture for maintainability and performance
-- Establish Blueprint coding standards and naming conventions
-- Prevent Blueprint spaghetti through structural patterns
-- Optimize Blueprint performance where it impacts gameplay
-- Guide designers on Blueprint best practices
+Choose from iteration speed, designer ownership, debugging, testability, available APIs and
+measured runtime cost. Blueprint can implement gameplay, replication and tests when its tools fit
+the contract. C++ can help with native APIs, reusable infrastructure or measured Blueprint overhead;
+a system label or instance count alone does not require a port.
 
-## Blueprint/C++ Boundary Rules
+A native framework with Blueprint content variations is useful when responsibilities divide that
+way. Blueprint-only and native-only features can also fit. Reuse existing boundaries before adding
+a base class, interface, plugin or module.
 
-### Must Be C++
-- Core gameplay systems (ability system, inventory backend, save system)
-- Performance-critical code (anything in tick with >100 instances)
-- Base classes that many Blueprints inherit from
-- Networking logic (replication, RPCs)
-- Complex math or algorithms
-- Plugin or module code
-- Anything that needs to be unit tested
+At mixed boundaries, use BlueprintCallable for intended calls, BlueprintNativeEvent for overridable
+behavior with a native implementation, and BlueprintImplementableEvent for Blueprint implementation
+hooks. Preserve reflection signatures and metadata. Expose intended editing surfaces rather than
+defaulting every field to EditAnywhere/BlueprintReadWrite.
 
-### Can Be Blueprint
-- Content variation (enemy types, item definitions, level-specific logic)
-- UI layout and widget trees (UMG)
-- Animation montage selection and blending logic
-- Simple event responses (play sound on hit, spawn particle on death)
-- Level scripting and triggers
-- Prototype/throwaway gameplay experiments
-- Designer-tunable values with `EditAnywhere` / `BlueprintReadWrite`
+## Graph readability and reuse
 
-### The Boundary Pattern
-- C++ defines the **framework**: base classes, interfaces, core logic
-- Blueprint defines the **content**: specific implementations, tuning, variation
-- C++ exposes **hooks**: `BlueprintNativeEvent`, `BlueprintCallable`, `BlueprintImplementableEvent`
-- Blueprint fills in the hooks with specific behavior
+- Judge execution/data flow, responsibility, debugging difficulty and actual reuse. A graph over
+  20 nodes is not inherently defective; explicit state transitions may be clearer intact.
+- Extract functions for meaningful contracts or reuse, not screen size or node count. Choose
+  functions/macros/libraries from execution and latent-action constraints, context and debugging.
+- Comments, reroute nodes and comment boxes help explain non-obvious flow. Their colors,
+  placement and frequency are project conventions, not engine requirements.
+- Follow existing asset/variable naming. BP_, BPI_ and BPFL_ can aid discovery but are not universal
+  engine rules. Renaming assets has reference and packaging costs.
+- Interfaces suit polymorphic behavior across types; a cast/direct typed reference is valid when
+  the concrete dependency is intended. Do not introduce an interface merely to remove a cast.
+- Data-only Blueprints suit authored variations. Data Assets/Tables may fit other schema,
+  validation and loading needs; select by workflow rather than an entry-count threshold.
 
-## Blueprint Architecture Standards
+## Lifetime, state and events
 
-### Graph Cleanliness
-- Maximum 20 nodes per function graph — if larger, extract to a sub-function or move to C++
-- Every function must have a comment block explaining its purpose
-- Use Reroute nodes to avoid crossing wires
-- Group related logic with Comment boxes (color-coded by system)
-- No "spaghetti" — if a graph is hard to read, it is wrong
-- Collapse frequently-used patterns into Blueprint Function Libraries or Macros
+Preserve UObject creation, GC reachability, reflection and serialized asset contracts. Retained
+references must keep required objects reachable or tolerate destruction. Use engine creation paths,
+not new/delete for UObjects. Validate targets across latent actions, travel and async load callbacks.
 
-### Naming Conventions
-- Blueprint classes: `BP_[Type]_[Name]` (e.g., `BP_Character_Warrior`, `BP_Weapon_Sword`)
-- Blueprint Interfaces: `BPI_[Name]` (e.g., `BPI_Interactable`, `BPI_Damageable`)
-- Blueprint Function Libraries: `BPFL_[Domain]` (e.g., `BPFL_Combat`, `BPFL_UI`)
-- Enums: `E_[Name]` (e.g., `E_WeaponType`, `E_DamageType`)
-- Structures: `S_[Name]` (e.g., `S_InventorySlot`, `S_AbilityData`)
-- Variables: descriptive PascalCase (`CurrentHealth`, `bIsAlive`, `AttackDamage`)
+Bind/unbind delegates for the actual owner lifetime. BeginPlay/EndPlay can suit Actors; widget and
+subsystem lifetimes differ. Prevent duplicate subscriptions and callbacks into expired owners.
+Refresh or invalidate cached references when their targets change.
 
-### Blueprint Interfaces
-- Use interfaces for cross-system communication instead of casting
-- `BPI_Interactable` instead of casting to `BP_InteractableActor`
-- Interfaces allow any actor to be interactable without inheritance coupling
-- Keep interfaces focused: 1-3 functions per interface
+Tick/polling can suit per-frame or sampled state; events can suit change notifications. Compare
+freshness, ordering, initial synchronization, lifetime and cost. An event alternative alone does
+not make polling wrong. Gameplay Tags/events fit existing tag-based contracts, not every feature.
 
-### Data-Only Blueprints
-- Use for content variation: different enemy stats, weapon properties, item definitions
-- Inherit from a C++ base class that defines the data structure
-- Data Tables may be better for large collections (100+ entries)
+For multiplayer preserve authority, owning connection, RPC and replicated-state behavior across
+the Blueprint/C++ boundary. A port must preserve wire/save compatibility and base lifecycle behavior.
 
-### Event-Driven Patterns
-- Use Event Dispatchers for Blueprint-to-Blueprint communication
-- Bind events in `BeginPlay`, unbind in `EndPlay`
-- Never poll (check every frame) when an event would suffice
-- Use Gameplay Tags + Gameplay Events for ability system communication
+## Loading, performance and verification
 
-## Performance Rules
-- **No Tick unless necessary**: Disable tick on Blueprints that don't need it
-- **No casting in Tick**: Cache references in BeginPlay
-- **No ForEach on large arrays in Tick**: Use events or spatial queries
-- **Profile BP cost**: Use `stat game` and Blueprint profiler to identify expensive BPs
-- Nativize performance-critical Blueprints or move logic to C++ if BP overhead is measurable
+Hard references provide direct access and can load dependencies; soft references support deferred
+loading but require completion/failure and lifetime handling. Inspect dependency and cooking behavior
+instead of replacing every direct reference.
 
-## Blueprint Review Checklist
-- [ ] Graph fits on screen without scrolling (or is properly decomposed)
-- [ ] All functions have comment blocks
-- [ ] No direct asset references that could cause loading issues (use Soft References)
-- [ ] Event flow is clear: inputs on left, outputs on right
-- [ ] Error/failure paths are handled (not just the happy path)
-- [ ] No Blueprint casting where an interface would work
-- [ ] Variables have proper categories and tooltips
+Profile the workload with supported Unreal/Blueprint tools. Investigate repeated casts, searches,
+allocations or iteration in hot paths by measured cost and target lifetime. Caching, spatial queries,
+update frequency changes and native code are options, not automatic fixes. Do not assume legacy
+Blueprint nativization is available in the project's engine/toolchain.
 
-## Coordination
-- Work with **unreal-specialist** for C++/BP boundary architecture decisions
-- Work with **gameplay-programmer** for exposing C++ hooks to Blueprint
-- Work with the user for level Blueprint standards
-- See `docs/specialists/ue-umg.md` for UI Blueprint patterns
-- Work with the user for designer-facing Blueprint tools
+Verify Blueprint compilation and relevant runtime/automation scenarios, including failure paths,
+loading, destruction and multiplayer. Unavailable engine checks are not_run.
+See [UMG](ue-umg.md) and [replication](ue-replication.md) for adjacent contracts.

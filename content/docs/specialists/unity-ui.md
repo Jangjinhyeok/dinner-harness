@@ -1,169 +1,88 @@
-# Unity UI — specialist reference (former agent)
+# Unity UI — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unity-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The Unity UI specialist owns all Unity UI implementation: UI Toolkit (UXML/USS), UGUI (Canvas), data binding, runtime UI performance, input handling, and cross-platform UI adaptation. They ensure responsive, performant, and accessible UI.
+Start with pinned Editor/package versions, existing UI stack, input setup and supported platforms.
+Check version-dependent UI Toolkit, uGUI and binding features against official docs/source.
+This is domain knowledge, not a requirement to adopt a UI framework or invoke a separate agent.
 
-You are the Unity UI Specialist for a Unity project. You own everything related to Unity's UI systems — both UI Toolkit and UGUI.
+## Framework and screen architecture
 
-## Core Responsibilities
-- Design UI architecture and screen management system
-- Implement UI with the appropriate system (UI Toolkit or UGUI)
-- Handle data binding between UI and game state
-- Optimize UI rendering performance
-- Ensure cross-platform input handling (mouse, touch, gamepad)
-- Maintain UI accessibility standards
+Choose UI Toolkit, uGUI or an intentional integration from authoring, existing content, rendering,
+world/screen-space needs, animation, input, accessibility and measured cost. Do not universally
+prefer UI Toolkit for new screens or assume its world-space/animation limitations are unchanged
+across versions. Mixing frameworks can be valid with explicit focus, sorting and lifetime boundaries.
 
-## UI System Selection
+Split UXML/screens by ownership and reuse, not one-file-per-screen rules. Templates and shared USS
+help reusable controls/themes; local or runtime styles can suit specific state. Naming conventions,
+selector organization and theme count are project choices, not engine invariants. Keep selectors,
+layout dependencies and style precedence understandable before optimizing hierarchy depth.
 
-### UI Toolkit (Recommended for New Projects)
-- Use for: runtime game UI, editor extensions, tools
-- Strengths: CSS-like styling (USS), UXML layout, data binding, better performance at scale
-- Preferred for: menus, HUD, inventory, settings, dialog systems
-- Naming: UXML files `UI_[Screen]_[Element].uxml`, USS files `USS_[Theme]_[Scope].uss`
+A stack fits hierarchical menus; tabs, independent panels or a simpler controller may fit other
+navigation. Back/Escape behavior follows modal/product semantics, not an unconditional pop.
+Assign creation, activation and teardown ownership for screens and their pending work.
 
-### UGUI (Canvas-Based)
-- Use when: UI Toolkit doesn't support a needed feature (world-space UI, complex animations)
-- Use for: world-space health bars, floating damage numbers, 3D UI elements
-- Prefer UI Toolkit over UGUI for all new screen-space UI
+## State updates and lifetime
 
-### When to Use Each
-- Screen-space menus, HUD, settings → UI Toolkit
-- World-space 3D UI (health bars above enemies) → UGUI with World Space Canvas
-- Editor tools and inspectors → UI Toolkit
-- Complex tween animations on UI → UGUI (until UI Toolkit animation matures)
+Bindings, ViewModels, commands/events, explicit refresh and per-frame polling are options. Select by
+freshness, ownership, ordering, available APIs and measured cost. In supported UI Toolkit binding
+versions, INotifyBindablePropertyChanged can provide change notifications; it is not required for
+all UI data sources or versions. Preserve authoritative game-state contracts while allowing local
+presentation state and intended commands.
 
-## UI Toolkit Architecture
+Match subscriptions to actual document/element lifetime. OnEnable/OnDisable can suit MonoBehaviour
+ownership, but visual trees may be rebuilt or detached independently. Unregister callbacks and
+release bindings/resources when their owner or item changes. Cached visual-tree references must be
+reacquired after rebuilds; caching every query is not automatically correct.
 
-### Document Structure (UXML)
-- One UXML file per screen/panel — don't combine unrelated UI in one document
-- Use `<Template>` for reusable components (inventory slot, stat bar, button styles)
-- Keep UXML hierarchy shallow — deep nesting hurts layout performance
-- Use `name` attributes for programmatic access, `class` for styling
-- UXML naming convention: descriptive names, not generic (`health-bar` not `bar-1`)
+Handle destroyed Unity objects and stale asynchronous completions, including after screen closure,
+scene unload or pooled-item rebinding. Use Unity's lifetime-aware object checks as appropriate and
+keep Unity API calls on supported threads. Retain assets while consumers need them and release
+owned Addressables handles correctly; see [Addressables](unity-addressables.md).
 
-### Styling (USS)
-- Define a global theme USS file applied to the root PanelSettings
-- Use USS classes for styling — avoid inline styles in UXML
-- CSS-like specificity rules apply — keep selectors simple
-- Use USS variables for theme values:
-  ```
-  :root {
-    --primary-color: #1a1a2e;
-    --text-color: #e0e0e0;
-    --font-size-body: 16px;
-    --spacing-md: 8px;
-  }
-  ```
-- Support multiple themes: Default, High Contrast, Colorblind-safe
-- USS file per theme, swap at runtime via `styleSheets` on the root element
+## Input and focus
 
-### Data Binding
-- Use the runtime binding system to connect UI elements to data sources
-- Implement `INotifyBindablePropertyChanged` on ViewModels
-- UI reads data through bindings — UI never directly modifies game state
-- User actions dispatch events/commands that game systems process
-- Pattern:
-  ```
-  GameState → ViewModel (INotifyBindablePropertyChanged) → UI Binding → VisualElement
-  User Click → UI Event → Command → GameSystem → GameState (cycle)
-  ```
-- Cache binding references — don't query the visual tree every frame
+Support the project's required devices through its chosen input system. Do not migrate legacy
+input merely to satisfy this reference. Verify click, navigation, submit/cancel and pointer semantics;
+a low-level pointer-down callback is not equivalent to a complete button interaction.
 
-### Screen Management
-- Implement a screen stack system for menu navigation:
-  - `Push(screen)` — opens new screen on top
-  - `Pop()` — returns to previous screen
-  - `Replace(screen)` — swap current screen
-  - `ClearTo(screen)` — clear stack and show target
-- Screens handle their own initialization and cleanup
-- Use transition animations between screens (fade, slide)
-- Back button / B button / Escape always pops the stack
+Automatic navigation may suffice; explicit routes can resolve ambiguity. Set sensible initial focus,
+restore valid prior focus and prevent unintended navigation/input behind modal screens. Device
+connection changes are different from active input usage; choose the configured system's suitable
+signals for prompt switching rather than assuming onDeviceChange identifies the current input method.
 
-### Event Handling
-- Register events in `OnEnable`, unregister in `OnDisable`
-- Use `RegisterCallback<T>` for UI Toolkit events
-- Prefer `clickable` manipulator over `PointerDownEvent` for buttons
-- Event propagation: use `TrickleDown` only when explicitly needed
-- Don't put game logic in UI event handlers — dispatch commands instead
+## uGUI layout and rendering
 
-## UGUI Standards (When Used)
+Choose Canvas render mode, camera and sorting from the intended composition. Separate Canvases can
+isolate rebuild work but add rendering/batching costs; do not mandate one Canvas per layer or split
+every dynamic control. Determine whether a change dirties layout, geometry or batching before claiming
+the entire UI rebuilds.
 
-### Canvas Configuration
-- One Canvas per logical UI layer (HUD, Menus, Popups, WorldSpace)
-- Screen Space - Overlay for HUD and menus
-- Screen Space - Camera for post-process affected UI
-- World Space for in-world UI (NPC labels, health bars)
-- Set `Canvas.sortingOrder` explicitly — don't rely on hierarchy order
+Anchors/RectTransform and Layout Groups serve different adaptive-layout needs. Prefer the simplest
+correct layout and profile recalculation; do not disable layout updates that content changes require.
+GetComponent/visual-tree lookups may be worth caching on hot paths, but do not assume every call
+allocates or that the target survives indefinitely.
 
-### Canvas Optimization
-- Separate dynamic and static UI into different Canvases
-- A single changing element dirties the ENTIRE Canvas for rebuild
-- HUD Canvas (changing frequently): health, ammo, timers
-- Static Canvas (rarely changes): background frames, labels
-- Use `CanvasGroup` for fading/hiding groups of elements
-- Disable Raycast Target on non-interactive elements (text, images, backgrounds)
+CanvasGroup can control group opacity/input without eliminating all update cost. Disable unnecessary
+raycast participation only when hit-testing behavior remains correct. For UI Toolkit, distinguish
+visibility from display/layout participation using APIs supported by the pinned version.
 
-### Layout Optimization
-- Avoid nested Layout Groups where possible (expensive recalculation)
-- Use anchors and rect transforms for positioning instead of Layout Groups
-- If Layout Groups are needed, disable `Force Rebuild` and mark as static when not changing
-- Cache `RectTransform` references — `GetComponent<RectTransform>()` allocates
+## Lists, styling and accessibility
 
-## Cross-Platform Input
+Virtualization can reduce list element work for large/expensive collections. Use the supported
+ListView make/bind/unbind/destroy lifecycle, cleaning callbacks and item state as entries recycle.
+uGUI pooling or virtualization can help measured creation/layout cost; a small static list need
+not introduce it. Choose atlases by batching, packing and residency needs rather than placing all
+sprites into one shared atlas.
 
-### Input System Integration
-- Support mouse+keyboard, touch, and gamepad simultaneously
-- Use Unity's new Input System — not legacy `Input.GetKey()`
-- Gamepad navigation must work for ALL interactive elements
-- Define explicit navigation routes between UI elements (don't rely on automatic)
-- Show correct input prompts per device:
-  - Detect active device via `InputSystem.onDeviceChange`
-  - Swap prompt icons (keyboard key, Xbox button, PS button, touch gesture)
-  - Update prompts in real time when input device changes
+Use project localization for localizable player-facing strings. Verify expansion, fonts, RTL where
+required, text scaling, contrast, non-color cues, motion preferences, subtitles and supported assistive
+technology against actual product/platform requirements. Web ARIA attributes are not automatically
+Unity accessibility APIs. Touch target dimensions and text-size options need applicable platform
+guidance, not a universal hardcoded number.
 
-### Focus Management
-- Track focused element explicitly — highlight the currently focused button/widget
-- When opening a new screen, set initial focus to the most logical element
-- When closing a screen, restore focus to the previously focused element
-- Trap focus within modal dialogs — gamepad can't navigate behind modals
+## Verification
 
-## Performance Standards
-- UI should use < 2ms of CPU frame budget
-- Minimize draw calls: batch UI elements with the same material/atlas
-- Use Sprite Atlases for UGUI — all UI sprites in shared atlases
-- Use `VisualElement.visible = false` (UI Toolkit) to hide without removing from layout
-- For list/grid displays: virtualize — only render visible items
-  - UI Toolkit: `ListView` with `makeItem` / `bindItem` pattern
-  - UGUI: implement object pooling for scroll content
-- Profile UI with: Frame Debugger, UI Toolkit Debugger, Profiler (UI module)
-
-## Accessibility
-- All interactive elements must be keyboard/gamepad navigable
-- Text scaling: support at least 3 sizes (small, default, large) via USS variables
-- Colorblind modes: shapes/icons must supplement color indicators
-- Minimum touch target: 48x48dp on mobile
-- Screen reader text on key elements (via `aria-label` equivalent metadata)
-- Subtitle widget with configurable size, background opacity, and speaker labels
-- Respect system accessibility settings (large text, high contrast, reduced motion)
-
-## Common UI Anti-Patterns
-- UI directly modifying game state (health bars changing health values)
-- Mixing UI Toolkit and UGUI in the same screen (choose one per screen)
-- One massive Canvas for all UI (dirty flag rebuilds everything)
-- Querying the visual tree every frame instead of caching references
-- Not handling gamepad navigation (mouse-only UI)
-- Inline styles everywhere instead of USS classes (unmaintainable)
-- Creating/destroying UI elements instead of pooling/virtualizing
-- Hardcoded strings instead of localization keys
-
-## Coordination
-- Work with **unity-specialist** for overall Unity architecture
-- Work with **ui-programmer** for general UI implementation patterns
-- Work with the user for interaction design and accessibility
-- See `docs/specialists/unity-addressables.md` for UI asset loading
-- Work with the user for text fitting and localization
-- Work with the user for accessibility compliance
+Profile UI layout/rebuilds, event handling, allocations, rendering and memory on representative target
+hardware with supported Profiler/UI Toolkit Debugger/Frame Debugger tools. Compare against project
+budgets, not a fixed UI millisecond allowance. Test player behavior, required devices, modal focus,
+tree rebuild, item reuse, destroyed data sources, async failure and localization. Missing Editor/
+player/hardware checks are not_run. See [shaders](unity-shader.md) for material/pipeline integration.

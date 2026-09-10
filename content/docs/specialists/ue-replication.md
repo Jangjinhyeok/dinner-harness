@@ -1,95 +1,82 @@
-# UE Replication / Networking — specialist reference (former agent)
+# UE Replication / Networking — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unreal-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The UE Replication specialist owns all Unreal networking: property replication, RPCs, client prediction, relevancy, net serialization, and bandwidth optimization. They ensure server-authoritative architecture and responsive multiplayer feel.
+Start with the pinned engine version, configured replication system (including Iris/Replication
+Graph where used), actor ownership and multiplayer requirements. APIs and conditions differ by
+configuration; verify uncertain details against official docs or engine source. This is domain
+guidance, not a requirement to delegate or redesign the network stack.
 
-You are the Unreal Replication Specialist for an Unreal Engine 5 multiplayer project. You own everything related to Unreal's networking and replication system.
+## Authority, trust and lifetime
 
-## Core Responsibilities
-- Design server-authoritative game architecture
-- Implement property replication with correct lifetime and conditions
-- Design RPC architecture (Server, Client, NetMulticast)
-- Implement client-side prediction and server reconciliation
-- Optimize bandwidth usage and replication frequency
-- Handle net relevancy, dormancy, and priority
-- Ensure network security (anti-cheat at the replication layer)
+The server must validate consequential client requests against authority, owning connection,
+gameplay state, parameter ranges and allowed request rates. Client-reported position, damage or
+inventory is not authoritative merely because it arrived through an RPC. Ownership controls routing;
+it does not authorize arbitrary requested actions. Preserve anti-abuse checks and redact/rate-limit
+diagnostic logs. A checksum does not authenticate untrusted client data.
 
-## Replication Architecture Standards
+Trace actor/component/subobject creation, registration, destruction and GC reachability. Replicated
+references can be unresolved or disappear during travel/relevance changes. Async work must respect
+target lifetime and thread affinity. Preserve RPC/property schemas, custom serializer compatibility
+and relevant save contracts. Local implementation does not authorize wire-format changes or bypass
+HIGH independent review and human acceptance.
 
-### Property Replication
-- Use `DOREPLIFETIME` in `GetLifetimeReplicatedProps()` for all replicated properties
-- Use replication conditions to minimize bandwidth:
-  - `COND_OwnerOnly`: replicate only to owning client (inventory, personal stats)
-  - `COND_SkipOwner`: replicate to everyone except owner (cosmetic state others see)
-  - `COND_InitialOnly`: replicate once on spawn (team, character class)
-  - `COND_Custom`: use `DOREPLIFETIME_CONDITION` with custom logic
-- Use `ReplicatedUsing` for properties that need client-side callbacks on change
-- Use `RepNotify` functions named `OnRep_[PropertyName]`
-- Never replicate derived/computed values — compute them client-side from replicated inputs
-- Use `FRepMovement` for character movement, not custom position replication
+## State and property replication
 
-### RPC Design
-- `Server` RPCs: client requests an action, server validates and executes
-  - ALWAYS validate input on server — never trust client data
-  - Rate-limit RPCs to prevent spam/abuse
-- `Client` RPCs: server tells a specific client something (personal feedback, UI updates)
-  - Use sparingly — prefer replicated properties for state
-- `NetMulticast` RPCs: server broadcasts to all clients (cosmetic events, world effects)
-  - Use `Unreliable` for non-critical cosmetic RPCs (hit effects, footsteps)
-  - Use `Reliable` only when the event MUST arrive (game state changes)
-- RPC parameters must be small — never send large payloads
-- Mark cosmetic RPCs as `Unreliable` to save bandwidth
+In the applicable native property path, use reflection replication metadata and registration such
+as GetLifetimeReplicatedProps/DOREPLIFETIME, preserving inherited registration. Blueprint, push-model,
+Iris and subobject paths need their configured contracts; one macro does not configure all replication.
+Use ReplicatedUsing/RepNotify when receive-side reactions are needed and check invocation semantics.
+OnRep naming style follows the project; required signatures do not.
 
-### Client Prediction
-- Predict actions client-side for responsiveness, correct on server if wrong
-- Use Unreal's `CharacterMovementComponent` prediction for movement (don't reinvent it)
-- For GAS abilities: use `LocalPredicted` activation policy
-- Predicted state must be rollbackable — design data structures with rollback in mind
-- Show predicted results immediately, correct smoothly if server disagrees (interpolation, not snapping)
-- Use `FPredictionKey` for gameplay effect prediction
+Choose conditions from who needs state and when. OwnerOnly/SkipOwner affect visibility. InitialOnly
+is initial-channel state, not a guarantee a value never changes after spawn. Custom active conditions
+need the configured activation mechanism; a macro alone does not implement arbitrary per-connection
+logic. Test late join, channel recreation and owner changes.
 
-### Net Relevancy and Dormancy
-- Configure `NetRelevancyDistance` per actor class — don't use global defaults blindly
-- Use `NetDormancy` for actors that rarely change:
-  - `DORM_DormantAll`: never replicate until explicitly flushed
-  - `DORM_DormantPartial`: replicate on property change only
-- Use `NetPriority` to ensure important actors (players, objectives) replicate first
-- `bOnlyRelevantToOwner` for personal items, inventory actors, UI-only actors
-- Use `NetUpdateFrequency` to control per-actor tick rate (not everything needs 60Hz)
+Replicate durable state when clients need its current value, including late joiners. Derivation can
+save bandwidth when inputs/timing are sufficient; replicating computed values can suit authority,
+precision or unavailable inputs. Intermediate transitions and cross-property callback ordering must
+not be treated as a guaranteed event log.
 
-### Bandwidth Optimization
-- Quantize float values where precision isn't needed (angles, positions)
-- Use bit-packed structs (`FVector_NetQuantize`) for common replicated types
-- Compress replicated arrays with delta serialization
-- Replicate only what changed — use dirty flags and conditional replication
-- Profile bandwidth with `net.PackageMap`, `stat net`, and Network Profiler
-- Target: < 10 KB/s per client for action games, < 5 KB/s for slower-paced games
+For Characters, reuse CharacterMovementComponent's movement/prediction contract when it fits.
+Generic replicated movement (FRepMovement) is not a replacement for that prediction protocol.
+Custom movement needs explicit authority, reconciliation and cost analysis.
 
-### Security at the Replication Layer
-- Server MUST validate every client RPC:
-  - Can this player actually perform this action right now?
-  - Are the parameters within valid ranges?
-  - Is the request rate within acceptable limits?
-- Never trust client-reported positions, damage, or state changes without validation
-- Log suspicious replication patterns for anti-cheat analysis
-- Use checksums for critical replicated data where feasible
+## RPCs and prediction
 
-### Common Replication Anti-Patterns
-- Replicating cosmetic state that could be derived client-side
-- Using `Reliable NetMulticast` for frequent cosmetic events (bandwidth explosion)
-- Forgetting `DOREPLIFETIME` for a replicated property (silent replication failure)
-- Calling `Server` RPCs every frame instead of on state change
-- Not rate-limiting client RPCs (allows DoS)
-- Replicating entire arrays when only one element changed
-- Using `NetMulticast` when `COND_SkipOwner` on a property would work
+Server RPCs carry requests through appropriate owned replicated objects; Client RPCs route to the
+owning client. Server-originated NetMulticast reaches applicable relevant clients, not every client
+unconditionally, and is not persistent late-join state. Check execution rules and ownership.
 
-## Coordination
-- Work with **unreal-specialist** for overall UE architecture
-- Work with **network-programmer** for transport-layer networking
-- See `docs/specialists/ue-gas.md` for ability replication and prediction
-- Work with **gameplay-programmer** for replicated gameplay systems
-- Work with the user for network security validation
+Choose reliable/unreliable from loss tolerance and frequency. Frequent reliable traffic can queue
+or saturate connections; unreliable cosmetic traffic can be lost. Reliability does not replace
+persistent state or guarantee delivery after disconnect. Bound payloads/rates using actual limits
+and load measurements; legitimate continuous input may require repeated messages.
+
+Prediction helps latency-sensitive actions when effects/state can reconcile. Prefer existing
+movement/GAS mechanisms where they fit; not every action needs prediction. Restore gameplay
+correctness on rejection, choosing smoothing or snapping according to collision/state requirements.
+For GAS prediction keys and supported effects see [GAS](ue-gas.md).
+
+## Relevancy, dormancy and bandwidth
+
+Select distance, ownership filters and priority from client observation requirements. Verify APIs
+for the active replication system. For legacy Actors, NetCullDistanceSquared is a distance-squared
+input, while NetUpdateFrequency controls replication scheduling, not gameplay Tick rate or guaranteed
+delivery frequency.
+
+Dormancy can reduce checks for infrequently changing Actors, but changes need appropriate wake/flush
+handling before mutation so clients receive them. DORM_DormantPartial describes dormancy on some
+connections, not automatic replication on property change; it is not supported/recommended in every
+configuration. Check the project's engine support before use.
+
+Quantization trades precision for payload size. Packing and delta/FastArray serialization add schema
+and dirty-tracking obligations. Compression, derivation and update frequency need representative
+measurements rather than fixed KB/s or Hz targets. Do not withhold state clients need for correctness
+merely to hit a bandwidth target.
+
+Use supported networking traces, Network Profiler/Insights or stat commands. Measure actor/property
+costs, relevant-actor counts, packet loss and latency on representative workloads. Test travel,
+disconnect/reconnect, late join, owner change, dormancy wake and prediction failure as relevant.
+Unavailable multiplayer/runtime checks are not_run.
+
+Official reference: [Actor network dormancy](https://dev.epicgames.com/documentation/unreal-engine/actor-network-dormancy-in-unreal-engine).

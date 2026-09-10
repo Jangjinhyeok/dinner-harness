@@ -121,7 +121,7 @@ class TestCodexInstallMigration(unittest.TestCase):
         self.render()
         routing = load_routing_config(ROOT / "content/routing.toml")
         agents = list((self.dest / "agents").glob("*.toml"))
-        self.assertTrue(agents)
+        self.assertEqual({p.stem for p in agents}, set(routing["native_agents"]))
         for agent in agents:
             data = tomllib.loads(agent.read_text(encoding="utf-8"))
             role = routing["native_agents"][data["name"]]
@@ -130,6 +130,8 @@ class TestCodexInstallMigration(unittest.TestCase):
             self.assertEqual(data["model_reasoning_effort"], profile.effort)
             if role in {"architect", "reviewer", "explorer"}:
                 self.assertEqual(data["sandbox_mode"], "read-only")
+            else:
+                self.assertEqual(data["sandbox_mode"], "workspace-write")
 
     def test_repeat_install_preserves_user_hooks_and_extra_skill(self):
         self.dest.mkdir()

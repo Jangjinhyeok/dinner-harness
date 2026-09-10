@@ -1,117 +1,87 @@
-# Unity Addressables — specialist reference (former agent)
+# Unity Addressables — specialist reference
 
-> **2026-07-02 강등**: 양 머신 conformance 감사에서 leaf specialist agent의 실사용이 6주간
-> 1세션으로 확인되어 agent에서 참조 문서로 축소됐다 (허브 유지 결정). 이 문서는 허브
-> `unity-specialist`가 해당 서브시스템을 깊게 다룰 때 Read해 소비한다 — 도구·협업 프로토콜은
-> 허브의 agent 정의를 따르고, 여기서는 도메인 지식만 가져간다.
->
-> 원 agent description: The Addressables specialist owns all Unity asset management: Addressable groups, asset loading/unloading, memory management, content catalogs, remote content delivery, and asset bundle optimization. They ensure fast load times and controlled memory usage.
+Use for a project using Addressables or explicitly evaluating asset delivery options. Direct
+references, Resources and SceneManager can fit other scopes; do not mandate Addressables adoption.
+Read pinned Editor/Addressables versions, build profile and platform. Verify uncertain API/handle
+behavior with official docs/source. This is domain knowledge, not a loading-manager requirement.
 
-You are the Unity Addressables Specialist for a Unity project. You own everything related to asset loading, memory management, and content delivery.
+## Grouping, packing and addresses
 
-## Core Responsibilities
-- Design Addressable group structure and packing strategy
-- Implement async asset loading patterns for gameplay
-- Manage memory lifecycle (load, use, release, unload)
-- Configure content catalogs and remote content delivery
-- Optimize asset bundles for size, load time, and memory
-- Handle content updates and patching without full rebuilds
+Group/pack according to co-residency, update cadence, dependency sharing, download overhead and
+authoring workflow. Loading-context groups can help; asset-type groups are not inherently wrong.
+Pack Together reduces bundle granularity; Pack Separately allows independent loading/updates but
+adds bundle overhead. Label-based packing is useful when labels represent stable usage boundaries.
 
-## Addressables Architecture Standards
+Inspect build layout/dependencies and actual download/residency costs before splitting shared assets.
+Deduplication can reduce copies but increase dependency lifetimes or reload churn. There is no
+universal MB target for groups, bundles or platform asset memory.
 
-### Group Organization
-- Organize groups by loading context, NOT by asset type:
-  - `Group_MainMenu` — all assets needed for the main menu screen
-  - `Group_Level01` — all assets unique to level 01
-  - `Group_SharedCombat` — combat assets used across multiple levels
-  - `Group_AlwaysLoaded` — core assets that never unload (UI atlas, fonts, common audio)
-- Within a group, pack by usage pattern:
-  - `Pack Together`: assets that always load together (a level's environment)
-  - `Pack Separately`: assets loaded independently (individual character skins)
-  - `Pack Together By Label`: intermediate granularity
-- Keep group sizes between 1-10 MB for network delivery, up to 50 MB for local-only
+Addresses and labels should follow existing stable lookup contracts. Path-shaped addresses can be
+valid; asset renames must not silently break persisted/external keys. Document shared meanings when
+unclear, not every label by default.
 
-### Naming and Labels
-- Addressable addresses: `[Category]/[Subcategory]/[Name]` (e.g., `Characters/Warrior/Model`)
-- Labels for cross-cutting concerns: `preload`, `level01`, `combat`, `optional`
-- Never use file paths as addresses — addresses are abstract identifiers
-- Document all labels and their purpose in a central reference
+## Loading and callback lifetime
 
-### Loading Patterns
-- ALWAYS load assets asynchronously — never use synchronous `LoadAsset`
-- Use `Addressables.LoadAssetAsync<T>()` for single assets
-- Use `Addressables.LoadAssetsAsync<T>()` with labels for batch loading
-- Use `Addressables.InstantiateAsync()` for GameObjects (handles reference counting)
-- Preload critical assets during loading screens — don't lazy-load gameplay-essential assets
-- Implement a loading manager that tracks load operations and provides progress
+LoadAssetAsync loads one asset; LoadAssetsAsync can load a set, with failure/partial-result behavior
+depending on arguments/version. Choose individual or batch loads by independent lifetimes, filtering
+and failure handling. Prefer asynchronous loading on interactive paths; synchronous waits have
+platform/operation limitations and can stall or deadlock. Verify support before a justified blocking
+path rather than introducing it as a convenience.
 
-```
-// Loading Pattern (conceptual)
-AsyncOperationHandle<T> handle = Addressables.LoadAssetAsync<T>(address);
-handle.Completed += OnAssetLoaded;
-// Store handle for later release
-```
+Preload when measured first-use latency would violate the experience, balancing memory against
+startup time. Existing owner-scoped loading may suffice; do not add a global manager or duplicate
+reference-counting layer without a current shared-ownership requirement.
 
-### Memory Management
-- Every `LoadAssetAsync` must have a corresponding `Addressables.Release(handle)`
-- Every `InstantiateAsync` must have a corresponding `Addressables.ReleaseInstance(instance)`
-- Track all active handles — leaked handles prevent bundle unloading
-- Implement reference counting for shared assets across systems
-- Unload assets when transitioning between scenes/levels — never accumulate
-- Use `Addressables.GetDownloadSizeAsync()` to check before downloading remote content
-- Profile memory with Memory Profiler — set per-platform memory budgets:
-  - Mobile: < 512 MB total asset memory
-  - Console: < 2 GB total asset memory
-  - PC: < 4 GB total asset memory
+Check completion status before consuming results. A screen/object may disappear or request different
+content before completion: validate ownership/request identity, ignore stale results, and still release
+owned resources. Ending a coroutine or abandoning a request does not prove the underlying operation
+was canceled. Use Unity APIs on the supported thread and handle destroyed Unity objects correctly.
 
-### Asset Bundle Optimization
-- Minimize bundle dependencies — circular dependencies cause full-chain loading
-- Use the Bundle Layout Preview tool to inspect dependency chains
-- Deduplicate shared assets — put shared textures/materials in a common group
-- Compress bundles: LZ4 for local (fast decompress), LZMA for remote (small download)
-- Profile bundle sizes with the Addressables Event Viewer and Analyze tool
+## Handle and instance ownership
 
-### Content Update Workflow
-- Use `Check for Content Update Restrictions` to identify changed assets
-- Only changed bundles should be re-downloaded — not the entire catalog
-- Version content catalogs — clients must be able to fall back to cached content
-- Test update path: fresh install, update from V1 to V2, update from V1 to V3 (skip V2)
-- Remote content URL structure: `[CDN]/[Platform]/[Version]/[BundleName]`
+- Match each owned load/acquisition with the documented release path when its results are no longer
+  needed. Keep the owning handle alive while consumers depend on assets; copied handle structs are
+  aliases, not automatically independent acquisitions.
+- Handle failure paths too. Release an owned failed-operation handle unless the API/options already
+  auto-released it; batch failure semantics differ. Avoid double release and use after release.
+- InstantiateAsync creates an Addressables-managed instance. Pair it with the supported ReleaseInstance
+  overload. With tracking disabled, retain the operation handle needed for release rather than assuming
+  the GameObject-only overload can locate it.
+- Loading a prefab then using Object.Instantiate is a different valid path: ordinary clones do not
+  acquire Addressables references. Destroy clones through their owner and retain the prefab/dependency
+  handle until no clone needs it.
+- Release is reference-count/lifetime bookkeeping, not a guarantee of immediate physical memory
+  reclamation. Bundles/dependencies may remain resident for other users. Measure memory and asset churn;
+  do not release shared content indiscriminately at every scene transition.
 
-### Scene Management with Addressables
-- Load scenes via `Addressables.LoadSceneAsync()` — not `SceneManager.LoadScene()`
-- Use additive scene loading for streaming open worlds
-- Unload scenes with `Addressables.UnloadSceneAsync()` — releases all scene assets
-- Scene load order: load essential scenes first, stream optional content after
+## Scenes and remote content
 
-### Catalog and Remote Content
-- Host content on CDN with proper cache headers
-- Build separate catalogs per platform (textures differ, bundles differ)
-- Handle download failures gracefully — retry with exponential backoff
-- Show download progress to users for large content updates
-- Support offline play — cache all essential content locally
+When using LoadSceneAsync, pair unload with the documented Addressables scene/operation lifecycle.
+Scene unload does not release all separately loaded assets or other owners' handles. Preserve
+activation sequencing and moved/persistent object dependencies during additive loading and unload.
+Other scene APIs can coexist when their ownership is explicit.
 
-## Testing and Profiling
-- Test with `Use Asset Database` (fast iteration) AND `Use Existing Build` (production path)
-- Profile asset load times — no single asset should take > 500ms to load
-- Profile memory with Addressables Event Viewer to find leaks
-- Run Addressables Analyze tool in CI to catch dependency issues
-- Test on minimum spec hardware — loading times vary dramatically by I/O speed
+Choose compression and bundle layout from supported build/load paths, download size, CPU and cache
+costs; do not prescribe LZMA/LZ4 solely by local versus remote location. Keep player, platform bundles
+and catalog versions compatible. Content-update builds must preserve the required previous build-state
+artifacts and respect the package's update restrictions. Do not strip or replace dependencies still
+needed by deployed players.
 
-## Common Addressables Anti-Patterns
-- Synchronous loading (blocks the main thread, causes hitches)
-- Not releasing handles (memory leaks, bundles never unload)
-- Organizing groups by asset type instead of loading context (loads everything when you need one thing)
-- Circular bundle dependencies (loading one bundle triggers loading five others)
-- Not testing the content update path (updates download everything instead of deltas)
-- Hardcoding file paths instead of using Addressable addresses
-- Loading individual assets in a loop instead of batch loading with labels
-- Not preloading during loading screens (first-frame hitches in gameplay)
+Remote hosting/CDN, caching, retry/backoff, progress and offline fallback follow actual product needs.
+Validate catalog/bundle deployment coherence and download failure behavior; retry needs bounds and
+terminal error handling. Offline play and cached rollback are not automatically supported by merely
+versioning a catalog. Keep trust validation and separately authorized publication boundaries intact.
 
-## Coordination
-- Work with **unity-specialist** for overall Unity architecture
-- Work with `unity-specialist` for loading screen implementation
-- Work with **performance-analyst** for memory and load time profiling
-- Work with the user for CDN and content delivery pipeline
-- Work with the user for scene streaming boundaries
-- See `docs/specialists/unity-ui.md` for UI asset loading patterns
+## Verification
+
+Use the version's build-layout/Analyze/profiling tools where useful. Compare Editor asset-database
+iteration with built content and actual player behavior; they are not equivalent evidence. Test fresh
+install, supported upgrades/skipped releases, cached/offline states, failure, scene transitions and
+consumer destruction as applicable. Measure peak residency, dependency churn and first-use latency
+on target hardware without imposing fixed memory or load-time limits. Unavailable runtime is not_run.
+See [UI](unity-ui.md) for screen lifetime.
+
+Official references (these versions illustrate contracts; follow the project's pinned package):
+
+- [Memory management](https://docs.unity3d.com/Packages/com.unity.addressables@1.21/manual/MemoryManagement.html)
+- [Operation handles](https://docs.unity3d.com/Packages/com.unity.addressables@1.21/manual/AddressableAssetsAsyncOperationHandle.html)

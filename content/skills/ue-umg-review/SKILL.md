@@ -7,19 +7,20 @@ description: Use when reviewing or designing UMG widgets in Unreal Engine 5. Tri
 
 > For deeper UMG architecture/performance guidance, read [the UMG reference](../../docs/specialists/ue-umg.md).
 
-This developer has done significant UMG work and accumulated these review points. Apply when reviewing or designing UMG widgets.
+Apply relevant checks to the project engine version, layout behavior and measured workload.
+A missing preferred pattern alone is not a finding; report concrete failures with evidence.
 
 ## Widget hierarchy
 
-- [ ] Avoid unnecessary nesting (each level costs render time)
+- [ ] Investigate hierarchy/layout cost where nesting affects measured performance or clarity
 - [ ] Use Overlay over Canvas Panel when absolute positioning isn't needed
-- [ ] Retainer Box only when the content actually doesn't change frequently
-- [ ] Invisible widgets: use `Collapsed` not `Hidden` (Hidden still ticks)
+- [ ] Evaluate Retainer Box redraw frequency, render-target cost and latency for the content
+- [ ] Choose `Hidden` when layout space must remain and `Collapsed` when it must not; verify update/tick behavior separately
 
 ## Performance hot spots
 
-- [ ] Tick events on widgets — remove if not strictly needed
-- [ ] Bindings (especially function bindings) — these tick. Prefer event-driven updates
+- [ ] Evaluate widget Tick against update frequency, ordering, lifecycle and measured cost; keep it when appropriate for per-frame work
+- [ ] Check binding evaluation/invalidation cost; use event-driven updates when they fit state ownership
 - [ ] Image widgets with frequent texture swaps — consider Material parameter changes instead
 - [ ] Text widgets with frequent updates — check if Slate caching is invalidated
 
@@ -32,8 +33,8 @@ This developer has done significant UMG work and accumulated these review points
 ## Gradient / texture rendering
 
 - [ ] Material-based gradients over baked textures when parameterization needed
-- [ ] Texture compression: UI textures should be User Interface 2D compression
-- [ ] Mipmaps off for UI textures
+- [ ] Choose texture compression for UI quality and target memory requirements
+- [ ] Choose mipmaps for actual display scale/filtering, including world-space UI
 
 ## Interaction patterns
 
@@ -43,11 +44,11 @@ This developer has done significant UMG work and accumulated these review points
 
 ## Localization readiness
 
-- [ ] No hardcoded strings — use FText with namespace
+- [ ] Use the project FText/localization conventions for localizable player-facing text
 - [ ] Layout flexible enough for longer translated strings
 - [ ] RTL language considerations if applicable
 
 ---
 
-Report missing checklist patterns as optional follow-up. An ordinary UMG review does
+Report demonstrated issues; optional suggestions need a task-specific benefit. An ordinary UMG review does
 not authorize editing this skill or other harness policy.
