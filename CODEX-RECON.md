@@ -1,5 +1,42 @@
 # CODEX-RECON — Cycle 1 Gate 3
 
+## 2026-09-10 current policy and validation (supersedes older capability conclusions)
+
+The dated Cycle 1/2/3 and 0.141/0.147/0.151 observations below remain historical evidence.
+They do not establish permanent Codex limitations. The current policy is main-session Codex
+design/implementation/verification, with useful native agents and optional headless dispatch.
+Fixed multi-judge/consult chains and repeated per-file approval do not apply.
+HIGH independent review/human acceptance and scope/secret/baseline protections remain.
+
+| Evidence | Current observation | Limit |
+|---|---|---|
+| Installed environment | Codex CLI 0.153.4; Python 3.12.8; login status reports ChatGPT | Credential/token bodies were not read; account model access remains unknown |
+| CLI help | exec supports --json, --output-schema and read-only sandbox | Help proves option availability, not actual model access or sandbox containment |
+| Agent schema | ReasoningEffort accepts a nonempty string in generated schema | Not an enum; accepting a nonsense features argument does not prove model+effort validity |
+| Features | hooks stable/enabled; old experimental_windows_sandbox and elevated_windows_sandbox feature keys removed | Do not emit removed feature flags |
+| Official hook/subagent contract | Native agents and supported PreToolUse denial, Bash/exec_command and Edit/Write/apply_patch aliases are documented | Matcher names alone do not prove breakage or enforcement |
+| Fresh temporary Codex home | Not logged in; hook trust not established | Live model, allow/deny/reason, nested-call, timeout and sandbox smoke: **not_run** |
+| Safety microbenchmark | 1/10/50 synthetic files: 0.113/1.054/5.532 seconds, allowed | Local subprocess baseline only; batch rewrite deferred, protection kept |
+
+Sources: [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents),
+[hooks](https://learn.chatgpt.com/docs/hooks),
+[noninteractive execution](https://learn.chatgpt.com/docs/non-interactive-mode),
+[Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox).
+Documentation support, offline/fake tests and live runtime measurement are separate evidence classes.
+
+Current target policy restores portable domain/review/management skills; delegate remains an
+optional compatibility skill outside the Codex install. Common skill bodies are tool-neutral;
+the Codex adapter renders discovery frontmatter and logical native model/effort/sandbox profiles.
+Native review is recorded only when actually run. Learning-log collection and edit-count compact
+reminders are disabled by default; scope/secret hooks remain. Existing user hooks are preserved,
+and legacy adoption is explicit with a backup. See the migration report for final integrated
+offline tests and temporary-install results; no live home installation is part of this migration.
+
+Native hooks are not containment for all I/O. Controller delta checks operate after the turn,
+remain distinct from hook preflight, and inspect partial edits after errors/timeouts.
+Inline does not automatically provide equivalent scope guarantees. BUILT, Builder self-report
+and independent review/human acceptance are separate states.
+
 codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
 > **⚠️ 이 문서는 2개 시점이 섞여 있다.** 아래 "Method & evidence"~"Open Questions"는 **Cycle 1 (2026-06-16) build-time recon** — rulesync 산출물 + Codex **0.111.0** 실측 기준의 historical 기록이다. 그 본문의 "Codex has no hook system / no native subagent execution" 류 판정은 **그 시점·그 버전 기준**이며, 바로 아래 **"2026-06 재-recon 갱신"** 섹션이 현행 Codex 기준으로 이를 **정정·supersede**한다. Cycle 2 확정 ground-truth는 `CODEX-COVERAGE.md`. **후기(2026-07-02)**: 엔진 leaf specialist 8종이 agent에서 `docs/specialists/` 참조 문서로 강등되어(양 머신 conformance 감사 — 실사용 6주 1세션), 본문·Porting Plan의 hub→leaf orchestration 분석은 이제 **역사 기록**이다 — 현행 허브는 leaf를 spawn하지 않고 문서를 Read해 소비한다.

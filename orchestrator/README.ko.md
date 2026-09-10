@@ -1,5 +1,8 @@
 # Cross-Vendor Two-CLI Orchestrator
 
+
+> 2026-09-10 정정: 기본은 Codex inline이다. 아래는 legacy orchestration의 역사/호환 설명이며 현재 실행 계약은 source `content/rules/two-cli-reference.md`와 ADR-0022를 따른다. `run`은 explicit vendor/model을 쓰는 experimental 경로이고 real HIGH는 거부한다. `challenge/build`는 numeric prefix·bound evidence·JSON 결과 계약을 사용한다. Builder panel=PASS는 독립 review 증거가 아니다. 실제 native hook 실측은 CODEX-COVERAGE의 날짜별 표를 확인한다.
+
 **한국어** | [English](README.md)
 
 `autonomous-loop` skill의 외부·cross-process 대응물입니다. `HANDOFF.md` /

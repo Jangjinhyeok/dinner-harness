@@ -1,5 +1,8 @@
 # Cross-Vendor Two-CLI Orchestrator
 
+
+> 2026-09-10 correction: Codex inline is the default. The historical/compatibility material below is superseded by source `content/rules/two-cli-reference.md` and ADR-0022 for current operation. `run` is experimental with explicit vendor/model options and refuses real HIGH implementation. `challenge/build` uses a numeric prefix, bound evidence, and JSON result contract. Builder panel=PASS is not independent review. Consult the dated CODEX-COVERAGE matrix for actual native hook measurements.
+
 [한국어](README.ko.md) | **English**
 
 The external, cross-process sibling of the `autonomous-loop` skill. It drives an
