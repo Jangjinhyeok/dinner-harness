@@ -1,8 +1,9 @@
-"""Refresh both live dinner-harness targets from this canonical repository.
+"""Refresh selected live dinner-harness targets from this canonical repository.
 
 Usage:
   py -3 refresh.py          # validate source and preview both target installs
   py -3 refresh.py --apply  # explicit live-install approval, then verify drift
+  py -3 refresh.py --target codex  # Codex-only source validation and preview
 
 This intentionally owns no rendering logic. ``install.py`` remains the only
 writer for a target, and ``check.py`` remains the source/install conformance
@@ -28,45 +29,48 @@ def _run(callable_, argv: list[str]) -> int:
     return 0 if result is None else result
 
 
-def refresh(*, apply: bool) -> int:
-    """Validate source, preview both targets, and apply only after explicit consent."""
+def refresh(*, apply: bool, target: str = "all") -> int:
+    """Validate source, preview selected targets, and apply only on explicit request."""
     print("[refresh] source preflight")
-    status = _run(check.main, ["--no-install"])
+    selected = _TARGETS if target == "all" else (target,)
+    check_args = [] if target == "all" else ["--target", target]
+    status = _run(check.main, ["--no-install", *check_args])
     if status:
         return status
 
-    for target in _TARGETS:
+    for target in selected:
         print(f"[refresh] preview target={target}")
         status = _run(install.main, ["--target", target, "--allow-live", "--dry-run"])
         if status:
             return status
 
     if not apply:
-        print("[refresh] PREVIEW complete - rerun with --apply to install both live targets.")
+        print("[refresh] PREVIEW complete - rerun with --apply and the same --target to install.")
         return 0
 
-    for target in _TARGETS:
+    for target in selected:
         print(f"[refresh] install target={target}")
         status = _run(install.main, ["--target", target, "--allow-live"])
         if status:
             return status
 
     print("[refresh] live conformance check")
-    return _run(check.main, [])
+    return _run(check.main, check_args)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Preview or explicitly apply the Claude + Codex live refresh."
+        description="Preview or explicitly apply selected harness targets."
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="install both live targets after preflight; omitted means dry-run only",
+        help="install selected live targets after preflight; omitted means dry-run only",
     )
+    parser.add_argument("--target", choices=["codex", "claude", "all"], default="all")
     args = parser.parse_args(argv)
 
-    return refresh(apply=args.apply)
+    return refresh(apply=args.apply, target=args.target)
 
 
 if __name__ == "__main__":

@@ -1,61 +1,35 @@
-# Autonomy Policy (Risk-Tiered Gating)
+# Autonomy and Risk Policy
 
-이 규칙은 항상 주입된다. **중간 판단(inner-loop)을 사람이 게이트하느냐 agent가 게이트하느냐**를 정하는 canonical policy 정의다. CLAUDE.md(§1.4·§5·§6)·roles(`ROLE_ARCHITECT`·`ROLE_BUILDER`)·`agent-routing.md`·`autonomous-loop`·`adversarial-review` skill이 전부 이 파일을 **경로로 참조**한다. `orchestrator/controller.py`의 `_TIER_RULE`(헤드리스 Architect 프롬프트용 runtime mirror)처럼 이 정의를 코드에 복사해 쓰는 곳은 이 문서와 **semantically 동일해야 하며**, `test_tier_rule_contains_all_high_keywords` regression test가 이를 지킨다(ADR-0017) — 새 machine-readable policy layer는 두지 않는다.
+2026-09-10: Codex 기본은 같은 세션의 설계·구현·검증이다. 기존 ADR의 강제 consult/jury와
+Codex 영구 degraded 설명은 당시 기록으로 보존하되 현재 운영 정책은 이 문서를 따른다.
 
-## 핵심 모델
+## Risk와 compute
 
-작업의 판단은 세 군데서 일어난다 — **①진입(intent·성공 기준), ②중간(각 step·gate 통과 판정), ③종단(결과 수용)**. 이 하네스의 기본 자세:
+Risk는 변경의 영향과 비가역성, compute는 필요한 추론 자원이다. 서로 대체하지 않는다.
+LOW는 범위가 명확하고 되돌릴 수 있는 로컬 변경이다.
+HIGH는 replication/RPC/net serialization, save/serialization format, live config/feature flag,
+migration/schema, security(auth/crypto/trust/anti-cheat), public API/ABI, build/packaging pipeline,
+또는 큰 blast radius/비가역성을 가진 변경이다. 모호하면 HIGH로 다룬다.
 
-- **②중간 판단은 agent에게 위임한다.** implement → 검증 → adversarial-review → self-correct 루프를 agent가 자율로 돈다.
-- **사람은 ①진입과 ③종단 두 경계에만 선다.** 무엇을 할지·성공 기준을 정하고(시작), 결과를 수용/반려한다(종료).
+## 실행과 수용
 
-단, **위험 등급(risk tier)에 따라 ③종단 게이트의 강제 여부가 갈린다.** 약한 고리는 "판단을 LLM에 위임" 자체이므로(조용히 틀림), 완화는 **judge 다양성**(→ `adversarial-review`)과 **이 tiering** 두 축으로 한다. deterministic 검사는 tier 무관하게 수행되지만 hard-enforcement semantics는 runtime별로 다르다.
+사용자가 요청한 로컬 구현·검증은 재승인 없이 진행한다. 구현자는 프로젝트 기준의
+deterministic 검증과 self-review를 수행한다. 중요한 변경은 별도 context의 reviewer 1회를
+활용하고, HIGH에는 독립 검토와 사람의 결과 수용을 유지한다. 추가 specialist는
+실제로 다른 미해결 위험 축이 있을 때만 사용한다. 사전 challenge와 사후 review는 목적이 다르다.
+파일 수나 비단순 여부만으로 consult→challenge→jury를 강제하지 않는다.
 
-- **Interactive Claude**: `scope_check`의 scope codeblock layer는 dryrun 경고만 내고 always-block layer만 structured Edit/Write payload를 즉시 hard block한다. `secret_scan`은 enforce 모드다.
-- **Controller-side net** (`orchestrator/safety.py`, headless Builder dispatch): pinned structured payload로 `scope_check`·`secret_scan`을 재실행하는 deterministic hard gate다.
-- **Codex native hook**: advisory이며 hard block이 아니다. Headless Codex Builder의 실질 hard gate는 controller-side net이다.
+LOW는 검증과 결과 보고로 완료한다. HIGH 로컬 구현은 승인 범위 안에서 가능하나 독립 검토와
+사람 수용 전에는 완료 수용을 선언하지 않는다. headless HIGH는 구현 후 종료하며 다음 gate로
+자동 진행하지 않는다. commit/push/merge/deploy는 별도의 권한이며 LOW도 자동 허용되지 않는다.
+Builder self-report, 실제 deterministic 실행 기록, independent review를 구별한다.
+수행하지 않은 검토는 not_run이다. 구체적 결함이 없으면 PASS를 허용한다.
 
-## 위험 등급
+## 안전 경계
 
-작업/게이트를 시작할 때 분류하고 기록한다.
-
-### HIGH — blast-radius 큼 / 비가역 (사람 종단 서명 + jury 필수)
-
-라이브 게임 서비스에서 잘못되면 player를 brick하거나 되돌리기 어려운 영역:
-
-- **network replication / RPC / net serialization / relevancy / bandwidth**
-- **save·serialization format / 영속 데이터 back-compat**
-- **live config · feature flag · remote toggle** (런타임에 라이브로 나가는 값)
-- **data migration · schema 변경 · 영속 스토어 마이그레이션**
-- **security-sensitive** — auth, permission, crypto, trust boundary, anti-cheat
-- **광범위·비가역** — public API/ABI, build·packaging 파이프라인, one-way migration
-
-→ `adversarial-review` jury **필수**(우회 불가), 그리고 **사람 종단 서명 전까지 merge/apply/deploy 금지**. 게이트 자동 진행 안 함.
-
-### LOW — blast-radius 작음 / 되돌리기 쉬움 (완전 자율 — inner-loop 사람 게이트 없음)
-
-- 단일 시스템 **내부 로직 · 순수 함수 · 로컬 상태**
-- **테스트** 코드
-- **주석 · 문서 · 로깅**
-- **비-렌더 UI 텍스트/레이아웃 · 에디터 전용 도구**
-- **명백히 하위 호환인 추가**(새 optional 경로, 기존 caller 불변)
-
-→ agent가 implement → 검증 → self-correct를 자율로 돌고(비-trivial이면 `adversarial-review` 포함, trivial이면 직접 self-review), PASS면 inner-loop 사람 승인 없이 진행, **종료 시 결과만 보고**한다.
-
-## 판정 규칙
-
-- **보수적 OR**: HIGH 신호를 *하나라도* 건드리면 작업 전체가 HIGH다.
-- **모호하면 HIGH로 승급한다** — `surgical-changes`의 "확실하지 않으면 보수적으로"와 정합. 저평가(under-classify)가 과평가보다 위험하다.
-- **tier label을 맹신하지 않는다**: `adversarial-review`는 caller가 넘긴 tier를 신뢰하지 말고 diff를 보고 **독립적으로 재분류**한다(저평가 교정의 마지막 방벽).
-- 분류 결과는 작업/게이트마다 **기록**한다(Two-CLI에선 HANDOFF 게이트 태그·RESULT 보고에 명시).
-
-## tier가 루프를 바꾸는 방식
-
-| | LOW | HIGH |
-|---|---|---|
-| inner-loop 사람 게이트 | 없음 (자율 진행) | 없음 (자율 진행) — 단 jury 필수, 패널 FAIL/BLOCK 시 정지, 종단은 사람 서명 대기 |
-| `adversarial-review` jury | 비-trivial 시 권장 | **필수·우회 불가** (만장일치 요구) |
-| 종단 사람 서명 | 불필요 (결과 보고만) | **필수** — 서명 전 merge/apply/deploy 금지 |
-| deterministic safety check (`scope_check`·`secret_scan`) | 항상 작동(runtime별 enforcement는 위 구분 적용) | 항상 작동(runtime별 enforcement는 위 구분 적용) |
-
-상세 절차는 `~/.claude/skills/autonomous-loop/SKILL.md`(루프)와 `~/.claude/skills/adversarial-review/SKILL.md`(jury) 참조.
+scope/secret 검사, baseline/delta 사용자 변경 보호, pinned HANDOFF 변조 검사를 유지한다.
+Native PreToolUse 지원·차단은 CLI 버전/도구/설정별로 검증하며 모든 I/O 보안 경계로 간주하지 않는다.
+headless controller net은 turn 이후 delta 검사다. hook 차단과 같은 기능이 아니며 하나로
+다른 하나를 제거하지 않는다. inline에서 동등한 강제 검사가 없으면 그 차이를 알리고
+엄격한 scope 검사가 필요한 작업을 자동 inline 전환하지 않는다.
+권한 또는 검사 실패를 우회하거나 blanket rollback으로 기존 dirt를 지우지 않는다.

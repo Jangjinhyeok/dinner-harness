@@ -20,7 +20,7 @@ Read the argument:
 
 ## Phase 2: Load Performance Budgets
 
-Check for existing performance targets in design docs or CLAUDE.md:
+Check performance targets in project instructions (AGENTS.md or the selected vendor entrypoint) and design docs:
 
 - Target FPS (e.g., 60fps = 16.67ms frame budget)
 - Memory budget (total and per-system)
@@ -97,31 +97,25 @@ Output the report with a summary: top 3 hotspots, estimated headroom vs budget, 
 
 ---
 
-## Phase 5: Scope and Timeline Decision
+## Phase 5: Recommendations and Scope
 
-Activate this phase only if any hotspot has Fix Effort rated M or L.
-
-Present significant-effort items and ask the user to choose for each:
-
-- **A) Implement the optimization** (proceed with fix now or schedule it)
-- **B) Reduce feature scope** (discuss the trade-offs with the user)
-- **C) Accept the performance hit and defer to Polish phase** (log as known issue)
-- **D) Escalate to the user (Architect session) for an architectural decision**
-
-If multiple items are deferred to Polish (choice C), record them under `### Deferred to Polish`.
-
-This skill is read-only — no files are written. Verdict: **COMPLETE** — performance profile generated.
+Finish a profiling/report request with prioritized findings; medium/large effort alone
+does not require a per-item decision or separate Architect session. Recommend implement,
+investigate or defer with reasons. Do not write a register or begin optimization unless
+requested. Existing implementation authorization covers routine in-scope refinements;
+ask only for a material scope, compatibility or authority change.
 
 ---
 
 ## Phase 6: Next Steps
 
-- If bottlenecks require architectural change: raise it with the user (Architect session) for a decision.
+- If a recommendation would change scope or a meaningful invariant: describe the decision needed.
 - If scope reduction is needed: discuss the trade-offs with the user.
 - To schedule optimizations: note them as follow-up items for the user to prioritize.
 
 ### Rules
 - Never optimize without measuring first — gut feelings about performance are unreliable
-- Recommendations must include estimated impact — "make it faster" is not actionable
+- State measured impact or a clearly qualified estimate and confidence; unknown is valid when
+  runtime evidence is unavailable. Do not invent headroom, timing or expected gains from source alone.
 - Profile on target hardware, not just development machines
 - Static analysis (this skill) identifies candidates; runtime profiling confirms

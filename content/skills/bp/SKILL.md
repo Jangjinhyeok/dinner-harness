@@ -1,25 +1,16 @@
 ---
 name: bp
-description: "Route a Blueprint architecture task to the unreal-specialist with the Blueprint reference doc preloaded as focus. Blueprint/C++ boundary, graph standards, BP optimization, preventing Blueprint spaghetti in UE5."
-argument-hint: "[Blueprint task]"
-user-invocable: true
-agent: unreal-specialist
-context: fork
+description: Apply specialist reference guidance to a Blueprint architecture task without requiring a separate agent.
 ---
 
-# /bp — Blueprint-focused route to the Unreal specialist
+# Blueprint architecture
 
-You are running as the **unreal-specialist**, focused on a known single-domain
-Blueprint task. **First Read `~/.claude/docs/specialists/ue-blueprint.md`** (the
-former ue-blueprint-specialist, demoted to a reference doc 2026-07-02) and apply its
-protocol as your domain persona.
+Read [specialist guidance](../../docs/specialists/ue-blueprint.md) before the domain work.
+Preserve a deliberate Blueprint/C++ boundary, small cohesive graphs and data-only content variation; check BlueprintNativeEvent/BlueprintCallable contracts.
 
-Handle the user's request (the invocation argument) end to end:
-
-- Enforce clean BP patterns: keep graphs small, push complex logic to C++, use
-  `BlueprintNativeEvent`/`BlueprintCallable` at the boundary, data-only Blueprints
-  for content variation. Flag Blueprint spaghetti (functions over ~20 nodes).
-- Follow the approval gate — propose the structure first, and ask "May I write this
-  to [filepath]?" before any Write/Edit.
-- If the task actually spans other subsystems, say so and switch to the
-  `unreal-specialist` hub scope (`/ue`), Reading the other subsystem docs you need.
+Follow the project engine version and verification procedures. The main session can implement
+the authorized task; a native specialist is optional for a useful independent subtask.
+Do not claim to be a spawned agent or ask permission for each already authorized file edit.
+For cross-subsystem work read the additional relevant references through [ue](../ue/SKILL.md).
+Preserve HIGH independent review/human acceptance for applicable compatibility changes;
+report engine/runtime tests as not_run when unavailable.

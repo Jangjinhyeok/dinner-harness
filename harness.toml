@@ -72,12 +72,9 @@ exclude_dir_names = ["__pycache__", "logs", "_staging", "tests"]
 exclude_file_suffixes = [".pyc", ".pyo", ".pyd"]
 
 [targets.codex]
-# codex target: Cycle 3 adapter v2 — agents and hooks are ported natively (see
-# CODEX-COVERAGE.md D3/D4), and roles are curated into AGENTS.md (D6). Only
-# agent-routing.md and rules/_mode/ (Claude-only path-matching conditional
-# inject) are actually dropped — Codex has no equivalent mechanism. MCP is out
-# of scope (no source; D5). Full accounting: CODEX-COVERAGE.md.
-shared_dirs = ["agents"]
+# Codex inline workflow, native custom agents and supported command hooks.
+# Rules/roles are explicit references; copying them does not auto-inject them.
+shared_dirs = ["agents", "skills"]
 
 copy = [
   ["orchestrate.py",           "orchestrate.py"],
@@ -86,21 +83,32 @@ copy = [
   ["content/docs",            "docs"],
   ["content/templates",       "templates"],
   ["content/routing.toml",    "routing.toml"],
+  ["content/rules/agent-routing.md", "rules/agent-routing.md"],
+  ["content/rules/autonomy-policy.md", "rules/autonomy-policy.md"],
+  ["content/rules/routing-reference.md", "rules/routing-reference.md"],
+  ["content/rules/two-cli-reference.md", "rules/two-cli-reference.md"],
+  ["content/roles", "roles"],
 ]
 
 template = [
   { src = "assets/codex/AGENTS.md", dest = "AGENTS.md" },
 ]
 
-# Skills: copy content/skills/* EXCEPT the Claude-machinery skills (D8). The dropped ones
-# route to Claude subagents (bp/gas/umg/ue/repl), operate on the ~/.claude harness
-# (harness-review, learnings-review), or fan out a multi-agent Task panel (adversarial-review);
-# their hub-leaf routing / harness / panel semantics don't map to Codex (which has custom agents,
-# but not that orchestration) — dropped by design (CODEX-RECON.md). autonomous-loop is KEPT as a
-# degraded copy: its loop is portable, only the panel step goes inert (see CODEX-COVERAGE.md).
+# Neutral skill bodies retain engine reference entry points and optional review.
+# delegate remains an explicit Claude compatibility entry point.
 skills_src = "content/skills"
 skills_dest = "skills"
-skills_drop = ["bp", "gas", "umg", "ue", "repl", "harness-review", "learnings-review", "adversarial-review", "delegate"]
+skills_drop = ["delegate"]
+required_references = [
+  "rules/agent-routing.md", "rules/autonomy-policy.md",
+  "rules/routing-reference.md", "rules/two-cli-reference.md",
+  "roles/ROLE_ARCHITECT.md", "roles/ROLE_BUILDER.md",
+  "skills/verification-loop/SKILL.md", "skills/adversarial-review/SKILL.md",
+  "docs/specialists/ue-gas.md", "docs/specialists/ue-blueprint.md",
+  "docs/specialists/ue-replication.md", "docs/specialists/ue-umg.md",
+  "docs/specialists/unity-dots.md", "docs/specialists/unity-ui.md",
+  "docs/specialists/unity-addressables.md", "docs/specialists/unity-shader.md",
+]
 
 # Codex 0.140+ native hooks. Copy only the portable Python implementation;
 # Claude launchers are intentionally excluded because they point at ~/.claude.

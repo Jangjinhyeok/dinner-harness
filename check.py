@@ -15,7 +15,8 @@ Three checks (manual; no CI/pre-commit — run after editing content):
      workflow files (HANDOFF/RESULT) are runtime state and are excluded, a `merge` JSON dest is
      compared on template-owned keys only, and the manifest's own exclude lists apply. Live-only
      leftovers are reported separately for manifest-owned directories and require manual deletion:
-     install.py intentionally does not prune. `shared_dirs` leftovers are advisory-only; other
+     Codex retires only unchanged receipt-owned obsolete skill/agent entrypoints, with backups.
+     Other leftovers require manual review. `shared_dirs` leftovers are advisory-only; other
      leftovers affect exit status. Machine-local by nature: `--no-install` skips it.
 
 Usage:
@@ -112,11 +113,12 @@ def check_curation():
     current = sha256(CLAUDE_MD)
     if not CURATION.is_file():
         return ["curation.toml 없음 — `py -3 check.py --update`로 seed"]
-    blessed = tomllib.load(open(CURATION, "rb")).get("claude_md_blessed_hash", "")
+    with open(CURATION, "rb") as source:
+        blessed = tomllib.load(source).get("claude_md_blessed_hash", "")
     if blessed != current:
-        return ["CLAUDE.md가 AGENTS.md 큐레이션(blessed) 이후 변경됨 — `assets/codex/AGENTS.md`의 "
-                "§1/3/4/5/6/7 재-curate 검토(§2 Two-CLI만 바뀌었으면 무시).",
-                "  `git diff content/instructions/CLAUDE.md` 확인 후 `py -3 check.py --update`로 re-bless.",
+        return ["Legacy Claude source hash changed; review Claude compatibility before --update. "
+                "This hash is not evidence of Codex policy or generated-artifact validity.",
+                "  Review `git diff content/instructions/CLAUDE.md`; Codex uses --target codex generated validation.",
                 f"  blessed={blessed[:16]}… current={current[:16]}…"]
     return []
 
@@ -188,6 +190,56 @@ def _json_key_drift(rel, want_text, got_text):
     return problems
 
 
+def _hooks_drift(want_text, got_text):
+    try:
+        want, got = json.loads(want_text), json.loads(got_text)
+        return [f"hooks.json: missing canonical {event} handler"
+                for event, entries in want["hooks"].items()
+                for entry in entries if entry not in got.get("hooks", {}).get(event, [])]
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        return [f"hooks.json: invalid hook structure ({exc})"]
+
+
+def check_codex_generated():
+    """Validate rendered native config, not a blessed Claude document hash."""
+    problems = []
+    try:
+        with open(MANIFEST, "rb") as source:
+            manifest = tomllib.load(source)
+        inst = _installer()
+        with tempfile.TemporaryDirectory(prefix="dh-codex-source-") as temp:
+            dest = Path(temp)
+            adapter = inst.load_adapter("codex")
+            adapter.install(REPO, manifest["targets"]["codex"], manifest.get("vars", {}), dest, "", False)
+            from orchestrator.routing import load_routing_config, resolve_profile
+            routing = load_routing_config(dest / "routing.toml")
+            for agent in (dest / "agents").glob("*.toml"):
+                data = tomllib.loads(agent.read_text(encoding="utf-8"))
+                role = routing.get("native_agents", {}).get(data.get("name"))
+                profile = resolve_profile(routing, "codex_only", role)
+                if (data.get("model"), data.get("model_reasoning_effort")) != (profile.model, profile.effort):
+                    problems.append(f"{agent.name}: native routing does not match policy")
+                expected_sandbox = "read-only" if role in {"architect", "reviewer", "explorer"} else "workspace-write"
+                if data.get("sandbox_mode") != expected_sandbox:
+                    problems.append(f"{agent.name}: unexpected sandbox")
+            json.loads((dest / "hooks.json").read_text(encoding="utf-8"))
+            for relative in manifest["targets"]["codex"].get("required_references", []):
+                if not (dest / relative).is_file():
+                    problems.append(f"Codex required reference missing: {relative}")
+            for skill in (dest / "skills").glob("*/SKILL.md"):
+                meta, body = adapter._frontmatter(skill.read_text(encoding="utf-8"))
+                if set(meta) != {"name", "description"}:
+                    problems.append(f"{skill.parent.name}: unsupported skill frontmatter")
+                # Validate explicit relative Markdown links. External/optional home
+                # paths are intentionally not guessed from arbitrary prose.
+                for link in re.findall(r"\]\((\.\.?/[^)#]+)(?:#[^)]*)?\)", body):
+                    if not (skill.parent / link).exists():
+                        problems.append(f"{skill.parent.name}: missing relative reference {link}")
+    except Exception as exc:
+        problems.append(f"Codex generated validation failed: {exc}")
+    return problems
+
+
 def check_install(target, live_root=None, username=None):
     """Compare the rendered manifest against a live install tree.
 
@@ -202,6 +254,8 @@ def check_install(target, live_root=None, username=None):
         return True, [f"harness.toml에 target '{target}' 없음"], []
     inst = _installer()
     live = Path(live_root) if live_root else inst.default_dest(target)
+    if target == "codex":
+        live = inst.normalize_dest(live)
     if not live.is_dir():
         return False, [], []
     if username is None:
@@ -212,22 +266,34 @@ def check_install(target, live_root=None, username=None):
     runtime = {dest_rel for _, dest_rel in target_cfg.get("skip_if_exists", [])}
     problems = []
     leftovers = []
+    codex_owned = set()
+    if target == "codex":
+        receipt = live / ".dinner-harness-owned.json"
+        if receipt.is_file():
+            try:
+                codex_owned = set(json.loads(receipt.read_text(encoding="utf-8"))["files"])
+            except (OSError, ValueError, KeyError, TypeError):
+                problems.append("Codex ownership receipt is invalid; ownership cannot be established")
     shared_dirs = {
         Path(dir_rel).as_posix().rstrip("/")
         for dir_rel in target_cfg.get("shared_dirs", [])
     }
 
     with tempfile.TemporaryDirectory(prefix="dh-check-") as td:
-        scratch = Path(td) / f".{target}"
+        scratch = (Path(td) / f".{target}").resolve()
         if scratch.resolve() == live.resolve():  # never render onto the tree we are judging
             return True, [f"scratch dest가 live와 동일 — 비교 불가 ({live})"], []
         adapter = inst.load_adapter(target)
+        if target == "codex":
+            target_cfg = dict(target_cfg, _hooks_command_root=live.resolve())
         plan = adapter.install(
             repo_root=REPO, target_cfg=target_cfg, vars_cfg=manifest.get("vars", {}),
             dest_root=scratch, username=username, dry_run=False,
         )
         expected = set()
         for action, dest in plan:
+            if action == "ownership":
+                continue
             rel = Path(dest).relative_to(scratch).as_posix()
             if rel in runtime:  # HANDOFF.md / RESULT.md are live workflow state, never drift
                 continue
@@ -250,7 +316,9 @@ def check_install(target, live_root=None, username=None):
             except UnicodeDecodeError:  # a mangled live file is drift, not a traceback
                 problems.append(f"{rel}: 설치본이 UTF-8로 안 읽힘 — 손상")
                 continue
-            if action == "merge" and rel.endswith(".json"):
+            if action == "hooks_json":
+                problems += _hooks_drift(want, got)
+            elif action == "merge" and rel.endswith(".json"):
                 problems += _json_key_drift(rel, want, got)
             elif want != got:
                 problems.append(f"{rel}: 설치본 내용 다름 ({action})")
@@ -274,7 +342,10 @@ def check_install(target, live_root=None, username=None):
             # can never be a stale render of ours.
             if any(part.startswith(".") for part in sub.parts):
                 continue
-            leftovers.append((rel, _shared_dir(dir_rel, shared_dirs)))
+            advisory = _shared_dir(dir_rel, shared_dirs)
+            if target == "codex" and rel not in codex_owned:
+                advisory = True  # Unknown user files are not proven stale harness output.
+            leftovers.append((rel, advisory))
     return True, problems, leftovers
 
 
@@ -297,15 +368,20 @@ def main(argv=None):
         pass
     ap = argparse.ArgumentParser(description="dinner-harness drift-check (advisory).")
     ap.add_argument("--update", action="store_true", help="re-bless the current CLAUDE.md hash")
+    ap.add_argument("--target", choices=["codex", "claude", "all"], default="all")
     ap.add_argument("--no-install", action="store_true",
                     help="skip the install-drift axis (repo-only checks)")
     args = ap.parse_args(argv)
     if args.update:
+        if args.target == "codex":
+            ap.error("--update is only a legacy Claude curation check; Codex validates generated artifacts")
         do_update()
         return 0
 
     declared, cat_problems = check_catalog()
-    cur_problems = check_curation()
+    targets = INSTALL_TARGETS if args.target == "all" else (args.target,)
+    cur_problems = check_curation() if "claude" in targets else []
+    generated_problems = check_codex_generated() if "codex" in targets else []
     inst_problems = []
 
     if not cat_problems:
@@ -315,17 +391,23 @@ def main(argv=None):
         print("[catalog] DRIFT:")
         for p in cat_problems:
             print("  -", p)
-    if not cur_problems:
-        print("[curation] CLAUDE.md hash == blessed — drift 없음")
+    if "claude" not in targets:
+        print("[curation] skipped: legacy Claude source hash does not validate Codex")
+    elif not cur_problems:
+        print("[curation:legacy-claude] source hash unchanged; semantic parity not asserted")
     else:
         print("[curation] DRIFT:")
         for p in cur_problems:
             print("  -", p)
+    if "codex" in targets:
+        print("[codex-generated] " + ("FAIL" if generated_problems else "TOML/JSON, routing, references OK"))
+        for problem in generated_problems:
+            print("  -", problem)
 
     if args.no_install:
         print("[install] skipped (--no-install)")
     else:
-        for target in INSTALL_TARGETS:
+        for target in targets:
             present, problems, leftovers = check_install(target)
             if not present:
                 print(f"[install:{target}] {_installer().default_dest(target)} 없음 — skip")
@@ -357,7 +439,7 @@ def main(argv=None):
                 if len(advisory) > 20:
                     print(f"  … 외 {len(advisory) - 20}건")
 
-    return 0 if not (cat_problems or cur_problems or inst_problems) else 1
+    return 0 if not (cat_problems or cur_problems or generated_problems or inst_problems) else 1
 
 
 if __name__ == "__main__":

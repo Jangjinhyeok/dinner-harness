@@ -1,87 +1,43 @@
-# Agent Routing (Engine Orchestration)
+# Agent Routing
 
-이 규칙은 항상 주입된다. 설치된 agent로 작업을 위임하는 진입 규칙이다. **여기 적힌 agent만 실제로 존재한다** — 다른 이름(`technical-director`, `lead-programmer`, `game-designer` 등)은 미설치이며, 그 판단이 필요하면 위임하지 말고 사용자에게 에스컬레이션한다.
+2026-09-10: 기본은 메인 세션이 완료 책임을 유지하는 inline 구현이다.
+파일 수에 따른 자동 dispatch, 모든 구조 결정의 mandatory consult는 적용하지 않는다.
 
-## 언제 위임하지 않는가 (먼저 판정)
+## 언제 위임하는가
 
-CLAUDE.md §2의 단일 세션 원칙을 따른다. 다음은 **메인 세션에서 직접** 처리하고 위임하지 않는다:
-- 한두 줄 수정, 단일 함수 추적/디버깅
-- 코드 질문, 탐색, 학습 목적
-- 단일 파일 안에서 끝나는 작업
+독립 탐색·중요한 별도 검토·경계가 명확한 작업에서 비용/지연 이점이 있을 때 쓴다.
+기본은 구현자 검증이며 중요한 변경에는 fresh-context reviewer 1회,
+추가 specialist는 다른 미해결 위험 축이 있을 때만 배치한다.
+메인 Astra 작업을 risk/파일 수만으로 저가 모델에 내려보내지 않는다.
+native model/effort는 routing logical profile을 따른다; interactive 모델 선택은 별개다.
 
-위임은 **엔진 특화 구현·아키텍처·최적화가 실질적 분량**일 때만 한다.
+## 엔진과 전문 자료
 
-**Two-CLI Builder 모드 예외**: Builder 세션(`builder 모드`/HANDOFF.md 실행 중)에서는 specialist 재위임을 생략한다 — Architect가 이미 분해·설계한 spec을 실행하는 단계라 엔진 specialist 재호출이 구조적으로 잉여다. 엔진 라우팅이 가치를 갖는 지점은 **Architect의 설계 단계**(HANDOFF 작성 전 triage)이지 Builder의 실행 단계가 아니다. (근거: 2026-06-16 conformance 감사 — 실 UE5.6 작업의 ~89%가 메인 인라인 처리, hub-fan-out 0회. 2026-07-02 양 머신 재감사에서 leaf 실사용 6주 1세션이 재확인되어 **leaf specialist는 agent에서 `docs/specialists/` 참조 문서로 축소**됐다 — 허브 2개만 agent로 유지.) 이 절의 consult는 Architect 단계에서 한 번 수행하는 의무이며, Builder 단계에서 specialist를 다시 위임하지 않는 규칙은 그대로다.
+프로젝트 AGENTS.md 등 명시된 engine 정보를 우선한다.
+`*.uproject` 또는 `Source/*/*.Build.cs`는 Unreal,
+`ProjectSettings/ProjectVersion.txt` 또는 `Assets/`+`Packages/manifest.json`은 Unity 신호다.
+관련 전문 자료는 직접 읽어도 되며 항상 agent를 부를 필요는 없다.
+경로는 active harness install root 기준이다.
 
-## 엔진 허브 consult (HANDOFF 전 필수)
+| 영역 | 선택 agent | 필요한 참조 |
+|---|---|---|
+| Unreal | unreal-specialist | docs/specialists/ue-gas.md, ue-blueprint.md, ue-replication.md, ue-umg.md 중 관련 문서 |
+| Unity | unity-specialist | docs/specialists/unity-dots.md, unity-shader.md, unity-addressables.md, unity-ui.md 중 관련 문서 |
+| Gameplay / netcode | gameplay-programmer / network-programmer | 프로젝트 불변식·소유권·예측·성능 요구 |
+| UI / tooling / profiling | ui-programmer / tools-programmer / performance-analyst | 실제 engine version과 검증 절차 |
+| 설계 / 계획 | architect / planner | 관련 boundary·의존성·성공 기준 |
+| 검토 / 테스트 설계 | code-reviewer / cpp-reviewer / tdd-guide | baseline delta와 실행한 검증 |
+| C++ build 실패 | cpp-build-resolver | 원본 exit code와 필요한 redacted diagnostic |
 
-아래 `엔진 판별`에 따라 Unreal 또는 Unity 신호가 있는 **구현 작업**은 Architect가 HANDOFF를 쓰기 전에 해당 엔진 허브를 한 번 consult해야 한다. Claude Architect는 `unreal-specialist`/`unity-specialist` agent 또는 `/ue`·`/umg`·`/gas`·`/repl`·`/bp` router skill을 사용하고, Codex Architect는 자기 install root의 `~/.codex/docs/specialists/*.md` 중 해당 문서를 직접 Read한다.
+## 위임 계약
 
-consult의 설계 판단·anti-pattern·verification point는 HANDOFF의 제약·gate·검증 기준에 반영한다. consult를 읽고 HANDOFF에 반영하지 않으면 이 의무를 충족하지 않는다.
+읽기 전용 explorer/reviewer는 구현 쓰기 권한을 받지 않는다.
+parent는 목표·관련 파일·제약·검증과 소유 범위를 전달한다.
+같은 tree의 동시 writer는 기본 금지다. 병렬 구현은 격리 위치와 통합 방법을 먼저 정하고
+parent가 결과를 통합·검증한다. branch 전략을 임의로 바꾸지 않는다.
+이미 승인된 로컬 수정은 매 파일마다 묻지 않는다. HIGH 수용 경계는
+[autonomy policy](autonomy-policy.md)를 따른다.
 
-read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다. 엔진 신호 판별은 아래 `엔진 판별` 절을 그대로 사용하며 별도 판별 규칙을 추가하지 않는다.
-
-근거: `docs/architecture/ADR-0010-engine-hub-required-before-handoff.md`.
-
-## _core/_gamedev consult (구조적 HANDOFF 전 필수)
-
-작업이 이미 Architect의 triage에서 architect 경로(다파일·구조 결정·HIGH)로 판정되고, 아래 "라우팅 규칙" 표의 `_core`/`_gamedev` 도메인과 매칭되면 Architect는 HANDOFF를 쓰기 전에 해당 agent를 한 번 consult해야 한다. Unreal/Unity 작업은 이미 위 엔진 허브 consult에서 다루므로 이 절에서 다시 트리거하지 않는다.
-
-consult의 설계 판단·anti-pattern·verification point는 HANDOFF의 제약·gate·검증 기준에 반영한다. consult를 읽고 HANDOFF에 반영하지 않으면 이 의무를 충족하지 않는다.
-
-read-only 질문·탐색, 실제로 1~2줄인 변경, 설계가 이미 확정된 re-dispatch, 같은 세션에서 같은 설계로 이미 consult한 경우는 면제한다. 구조적으로 LOW/`/delegate` 레인에 머무는 작업은 architect 경로 판정에 도달하지 않으므로 이 트리거에서 제외된다.
-
-근거: `docs/architecture/ADR-0011-core-gamedev-consult-required-for-large-scope-work.md`.
-
-## 엔진 판별
-
-- `*.uproject` 또는 `Source/*/*.Build.cs` 존재 → **Unreal**
-- `ProjectSettings/ProjectVersion.txt` 또는 `Assets/` + `Packages/manifest.json` → **Unity**
-- 프로젝트 `CLAUDE.md`가 엔진을 명시하면 그쪽이 우선
-
-## 라우팅 규칙
-
-### Unreal 작업 → `unreal-specialist` (단일 엔진 agent)
-서브시스템 심화 지식은 별도 agent가 아니라 **참조 문서**다 — 허브가 필요한 것만 Read해 소비한다 (2026-07-02 leaf 축소):
-- `docs/specialists/ue-gas.md` — GAS: ability, gameplay effect, attribute set, gameplay tag
-- `docs/specialists/ue-blueprint.md` — Blueprint 아키텍처, BP/C++ 경계, 그래프 표준
-- `docs/specialists/ue-replication.md` — property replication, RPC, prediction, relevancy
-- `docs/specialists/ue-umg.md` — UMG/CommonUI, widget hierarchy, data binding
-
-### Unity 작업 → `unity-specialist` (단일 엔진 agent)
-- `docs/specialists/unity-dots.md` — ECS, Jobs, Burst
-- `docs/specialists/unity-shader.md` — Shader Graph, VFX Graph, render pipeline
-- `docs/specialists/unity-addressables.md` — asset 로딩/번들/메모리
-- `docs/specialists/unity-ui.md` — UI Toolkit, UGUI, data binding
-
-### 엔진 무관 도메인 작업 → `_gamedev` agent
-- `gameplay-programmer` — 게임 메커닉/전투/플레이어 시스템 구현 (엔진 특화 부분은 엔진 허브에 재위임)
-- `network-programmer` — netcode/replication 전략, matchmaking
-- `ui-programmer` — UI 시스템/HUD/메뉴 (UMG 구현 디테일은 엔진 허브 + `docs/specialists/ue-umg.md` 참조)
-- `tools-programmer` — 에디터 확장, 콘텐츠 도구, 파이프라인 자동화
-- `performance-analyst` — 프로파일링, 병목 분석, 최적화 전략
-
-### 공통(엔진 무관)
-- `planner` — 복잡한 기능/리팩토링 계획
-- `architect` — 시스템 설계 결정
-- `tdd-guide` — 신규 기능/버그픽스의 테스트 우선
-- `code-reviewer` — 코드 작성 후 리뷰
-- `cpp-build-resolver` — C++ 빌드/링커/템플릿 에러
-- `cpp-reviewer` — C++ 메모리 안정성/모던 idiom 리뷰
-
-## 위임 시 규약
-
-- 승인 게이트는 **risk tier로 갈린다**(per `~/.claude/rules/autonomy-policy.md`). **LOW** tier 작업은 선언된 스코프(HANDOFF ` ```scope ` 또는 합의된 변경 범위) 안에서 specialist가 사용자 승인 없이 Write/Edit 한다 — `scope_check` hook이 범위 밖 수정을 deterministic하게 차단하는 안전망이다. **HIGH** tier 작업은 종전대로 승인 게이트("May I write this to [filepath]?")를 지킨다 — 사용자 종단 서명 전 Write/Edit 금지.
-- 독립적인 하위 작업은 병렬 Task로 띄운다.
-- 위임 프롬프트에 관련 파일 경로·설계 제약·성능 요구를 모두 담는다.
-
-## MCP-aware 라우팅 (tool layer)
-
-엔진 MCP(`mcp-unreal` 등)는 위 위임 축과 **별개인 tool layer**다. 이 절은 **세션에 엔진 MCP tool(`mcp__unreal__*` / `mcp__mcp-unreal__*`)이 노출돼 있을 때만** 적용된다 — 없으면 무시한다(대부분의 세션이 그렇다).
-
-- **탐지**: 세션 tool 목록에 엔진 MCP tool이 있는가. 있으면 라이브 에디터가 붙은 게임 프로젝트 세션이다.
-- **text vs live 분리** (`MCP-UNREAL-SETUP.md` §7): 엔진 specialist agent(허브) = 코드·설계 산출물(텍스트), 엔진 MCP = 라이브 에디터 조작·빌드·검증(실행). **섞지 않는다** — specialist의 `tools:`에 MCP를 넣지 않으며, MCP 호출은 **세션 레벨**이 담당한다(Two-CLI에서 Builder=실행 lane, Architect=read-only 검사).
-- **read-only가 sweet spot**: `get_level_actors`·`blueprint_query`·`ui_query`·`capture_viewport`로 specialist advice를 실제 프로젝트 상태에 grounding하거나 변경을 검증한다.
-- **write는 user-supervised**: `spawn_actor`·`blueprint_modify`·`set_property`·`execute_script`는 `scope_check`·`secret_scan` hook **밖**이다(안전망 없음). 테스트 브랜치/사본에서 먼저, 사용자 승인 하에.
-
-상세 셋업·트러블슈팅은 `MCP-UNREAL-SETUP.md`.
+Engine MCP는 별도의 실제 editor 조작 도구이며 모든 호출이 file hook에 잡히지 않는다.
+허용된 scope 안에서 사용하고, live asset 변경은 사본 등 검증 가능한 환경으로 다룬다.
+MCP availability를 추측하지 않으며 engine runtime이 없으면 검증은 not_run이다.

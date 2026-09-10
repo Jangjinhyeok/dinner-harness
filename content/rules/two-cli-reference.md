@@ -1,56 +1,39 @@
-# Two-CLI Workflow — Reference Detail
+# Optional Headless Dispatch / Two-CLI
 
-이 문서는 `content/instructions/CLAUDE.md` §2(Two-CLI Workflow)에서 매 세션
-필요하지 않은 상세 rationale·내부 동작·edge case를 분리해 둔 lookup-only
-참고 문서다. **자동 inject되지 않는다** — CLAUDE.md의 포인터를 따라 필요할 때만
-Read한다. 매 turn 필요한 핵심 라우팅 규칙(모드 진입, `/delegate` 판정, 기본
-Builder-first entrypoint, dispatch 명령 자체)은 CLAUDE.md §2에 그대로 남아
-있다 — 여기 있는 건 "왜 이렇게 설계했는가"와 "흔하지 않은 상황(cross-vendor,
-내부 guard 동작 detail)"이다.
+2026-09-10 운영 정책: Codex는 기본적으로 한 세션에서 탐색·설계·구현·검증한다.
+다른 모델로 큰 경계 작업을 넘기거나 독립 challenge 및 controller 검사가 필요할 때만
+이 절차를 선택한다. Claude 전용 Builder-first entrypoint는 호환 경로다.
 
-## Builder-first execution details
+## 실행
 
-The normal `claude` command is the daily strict entrypoint. `builder_guard`
-blocks Claude `Edit`/`Write` implementation edits by default; it permits only
-root bus artifacts (`HANDOFF*.md`, `RESULT.md`, `INPUT.md`) and
-`docs/architecture/*.md`, plus persistent-memory Markdown under
-`<CLAUDE_CONFIG_DIR>/projects/*/memory/` (or `~/.claude/...` when the variable
-is unset). The memory path is resolved before segment-based matching, so path
-traversal is not allowed. Write the self-contained HANDOFF, create an ADR when
-the decision is structural, then dispatch Codex with `orchestrate.py build`.
+active harness home(사용자 지정 home 포함)의 orchestrate.py와 실제 repository 절대경로를 쓴다.
+Windows 예시(placeholder를 실제 경로로 치환):
 
-`~/.claude/dh.cmd` and `~/.claude/dh-architect.cmd` remain compatibility
-launchers with the same Builder-first behavior. They are not required for the
-daily workflow. `~/.claude/claude-direct.cmd` is the only direct-edit escape;
-it sets `DINNER_EXECUTION_MODE=direct` for that one Claude process.
+```text
+py -3 "<HARNESS_HOME>/orchestrate.py" challenge --repo "<REPO>" --backend real
+py -3 "<HARNESS_HOME>/orchestrate.py" build --repo "<REPO>" --backend real
+```
 
-This is a workflow guard, not a sandbox. It deliberately does not parse or
-block arbitrary Bash/PowerShell commands: the controller safety net remains the
-deterministic decision boundary, and containment remains the sandbox's responsibility.
+다른 OS는 설치된 Python executable을 쓴다. shell pipe/redirection이나 인증 내용을 명령에
+끼워 넣지 않는다. HANDOFF는 self-contained scope/tiers/verify를 포함하고 build 동안
+같은 tree를 parent가 편집하지 않는다. 현재 user-selected branch와 기존 dirt를 보존한다.
 
-Each `build` appends content-free `attempted` then terminal (`built`, `blocked`,
-`timeout`, or `builder_bailed`) JSONL events under the harness runtime `logs/`
-directory and prints a `[receipt]` path only after the terminal event is
-written. The record has hashes and outcome metadata, never HANDOFF/RESULT text,
-prompts, or changed-file content.
+HIGH challenge 증거는 repo/task/HANDOFF/policy에 묶여야 하며 challenge가 실행된 사실과
+사람의 수용은 별개다. HIGH는 구현 후 독립 review 및 사람 수용 경계를 유지한다.
+Controller pinned scope/secret net은 위반 시 BLOCK하며 rollback을 대신하지 않는다.
+Ignored files나 우회 shell I/O 전체를 봉쇄하는 containment라고 설명하지 않는다.
 
-## Cross-vendor 역할 분담 — rationale과 상세
+## 결과와 관찰
 
-Architect/Builder 역할은 **서로 다른 CLI(vendor)가 채울 수 있다 — 양방향**. 두 역할 모두 vendor-neutral한 협업 프로토콜이며 Claude·Codex 어느 쪽이든 어느 역할이든 맡을 수 있다.
+Codex JSONL events는 thread/error/usage 관찰용, 최종 output-schema JSON은 결과 계약용이다.
+RESULT는 사람이 읽는 보고서이며 BUILT는 review PASS나 수용을 의미하지 않는다.
+실제 independent review가 없으면 not_run이다. 손상 결과 복구는 read-only여야 하며
+format 실패만으로 재구현하지 않는다. 실패/timeout partial edits도 검사·보고한다.
 
-**기본 페어링은 Claude = Architect, Codex = Builder다.** 근거는 token economy — 두 역할의 토큰 소비는 비대칭이다. **Builder가 token sink**다(여러 파일 Read, diff 생성, 빌드·에러 iterate 반복, 큰 컨텍스트, tool call 다발). 반면 **Architect는 low-volume·high-leverage**다(추론, 선별 Read, HANDOFF spec 작성, diff 검수). 따라서 토큰 무거운 Builder를 **quota 여유가 큰 plan(Codex)**에, 가벼운 Architect를 **quota가 빠듯한 plan(Claude Pro)**에 둔다 — Claude Max→Pro 다운그레이드로 Claude quota가 줄어든 상황의 합리적 배치다. 품질 축도 같은 방향이다: 설계 오류는 blast-radius가 크지만 Architect는 저volume이라, quota 빠듯하지만 추론 잘하는 모델에 정확히 들어맞는다.
+지원된 native agent UI/tools 또는 dispatch별 식별자로 관찰한다. private rollout 파일 형식과
+단일 전역 session marker를 작업 identity로 쓰지 않는다. resume는 repo/task에 연결된
+명시적 thread ID를 쓰고 concurrent 작업에서 --last를 쓰지 않는다.
 
-예시 페어링:
-
-- **Claude = Architect, Codex = Builder** (기본 — 설계·추론은 Claude, 토큰 무거운 구현·iterate는 Codex)
-- **Codex = Architect, Claude = Builder** (역방향 — Claude quota가 충분하거나 특정 작업에서 Codex 설계가 더 나을 때)
-- 동일 vendor 2세션(기존 Claude↔Claude)도 그대로 유효
-
-**Builder vendor 스위치 (routing preset, ADR-0020)**: Builder의 기본 vendor/model/effort는 `content/routing.toml`의 active preset이 정한다 — `preset = "hybrid"`(기본, Claude=Architect/Challenger/Reviewer + Codex=Builder, token economy 근거는 위 rationale)와 `preset = "claude_only"`(Codex 없이 전부 Claude), `preset = "codex_only"`(Claude 없이 전부 Codex) 세 개가 있다. **Claude Max 등으로 옮겨 Codex 없이 Claude만 쓰고 싶어지면, `content/routing.toml`의 `preset`을 `"claude_only"`로 바꾸고 `py -3 refresh.py --apply`로 재설치하는 것이 유일한 필수 변경이다** — controller.py·HANDOFF 포맷·risk policy는 그대로다. `orchestrate.py`는 이미 `ClaudeBackend`/`CodexBackend` 양쪽을 동등하게 지원하므로(`orchestrator/vendors.py`) 코드 변경은 불필요하다. 아래 dispatch 명령을 비롯해 `~/.claude/roles/ROLE_ARCHITECT.md`·`~/.claude/rules/_mode/architect.md`·`~/.claude/skills/delegate/SKILL.md`·`~/.claude/README.md`·`~/.codex/AGENTS.md`의 동일 dispatch 명령은 `--builder` 없이 active preset을 그대로 따르므로 개별 수정이 필요 없다. 이 문서·ROLE 파일의 나머지 Codex 관련 서술(quota 비대칭 근거, cross-vendor 주의사항 등)은 claude_only로 옮긴 시점부터 더는 적용되지 않지만 동작을 막지는 않는다 — 정리는 그때 필요한 만큼만 한다. 반대로 Claude Code 없이 Codex만 쓰고 싶다면(Codex 단독), 인터랙티브 **Architect vendor**를 Codex로 바꾸고 HIGH Challenger까지 Codex로 실행하도록 `codex_only` preset도 선택한다 — 상세는 `~/.codex/AGENTS.md` §8 "Architect vendor 스위치" 참조(근거: ADR-0013). Preset·profile·override precedence의 전체 설명은 `~/.claude/rules/routing-reference.md` 참조.
-
-**Explicit `--builder` override**: 위 preset은 기본값일 뿐이며, `orchestrate.py build`/`run`을 `--builder claude`나 `--builder codex`로 직접 실행하면 그 값이 해당 게이트의 vendor를 명시적으로 override한다(runtime override, `orchestrator/config.py`의 `Config.builder_vendor`) — `harness.toml`에 있던 install-time builder-vendor 렌더링 토큰 메커니즘은 ADR-0020으로 제거되었다(ADR-0014 addendum 참조). risk=LOW 게이트는 이 explicit override를 그대로 받아들이지만, risk=HIGH 게이트는 arbitrary model downgrade(`--builder-model`)를 거부하고, vendor만 override하면 해당 vendor의 `builder_high` logical profile로 resolve한다 — silent downgrade는 없다.
-
-cross-vendor 시 주의:
-
-- **HANDOFF.md는 self-contained여야 한다.** Builder가 다른 vendor면 상대에게 없는 도구(특정 skill·subagent·`/명령`)를 전제하지 않는다. 게이트의 빌드·검증은 표준 CLI 명령으로 기술한다.
-- **Codex 세션은 path-매칭 auto-inject가 없다.** Claude는 `HANDOFF.md`/`RESULT.md`를 읽으면 `_mode` reminder가 자동으로 박히지만, Codex엔 그 기제가 없으므로 사용자가 모드를 **명시 선언**한다(`architect 모드`/`builder 모드`). Codex의 역할 프로토콜은 `~/.codex/AGENTS.md`의 Two-CLI 섹션(§8)에 있다.
+`run`은 legacy/experimental 경로다. 기본 workflow로 권장하지 않으며 지원 옵션은 설치 CLI help를
+확인한다. 명시적 역할 제한은 [Architect](../roles/ROLE_ARCHITECT.md)와
+[Builder](../roles/ROLE_BUILDER.md), 모델 정책은 [routing](routing-reference.md)를 읽는다.

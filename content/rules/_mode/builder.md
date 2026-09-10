@@ -2,15 +2,10 @@
 paths: ['**/HANDOFF.md', '**/INPUT.md']
 ---
 
-# Builder Mode Reminder
+# Optional Builder Reminder
 
-이 세션은 Builder 역할이다. HANDOFF.md를 명세로 받아 구현, 빌드 검증, self-review를 수행한다.
-
-## 행동 규약
-
-- HANDOFF.md는 read-only spec이다. Builder는 HANDOFF.md를 수정하지 않는다.
-- 각 게이트는 risk tier로 갈린다(per `~/.claude/rules/autonomy-policy.md`). **인터랙티브**에서는 **LOW** 게이트가 검증·`adversarial-review` 패널 PASS 시 자동 진행하고 HIGH는 구현 후 사용자 종단 서명까지 대기한다; **headless**에서는 HIGH도 구현·RESULT.md 작성 후 종료하되, 서명 전 merge/apply/deploy/commit과 다음 게이트 자동 진행은 금지. 검증 없는 일괄 스킵은 금지.
-- 모든 게이트 완료(또는 중단) 후 RESULT.md를 작성하여 Architect에게 결과를 넘긴다.
-- HANDOFF.md가 명시하지 않은 파일은 수정하지 않는다. CLAUDE.md, ROLE 파일, settings 등 인프라 파일도 마찬가지.
-
-상세는 `~/.claude/roles/ROLE_BUILDER.md` 참조.
+Loading or inspecting HANDOFF.md alone does not select a role.
+Explicit Builder/headless dispatch follows [the Builder contract](../../roles/ROLE_BUILDER.md).
+Treat the specification as read-only, preserve its scope, and verify the eligible gates.
+LOW proceeds under existing authority; HIGH implementation ends pending independent review and
+human acceptance. Do not invent review evidence or repeat routine progress consent.

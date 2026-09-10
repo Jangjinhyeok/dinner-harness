@@ -207,4 +207,4 @@ When retrieving context for this task:
 ## Related
 
 - [The Longform Guide](https://x.com/affaanmustafa/status/2014040193557471352) - Subagent orchestration section
-- Subagent definitions live in `~/.claude/agents/` (delegate via the Task tool)
+- Use the runtime's available native agent tools when useful; if unavailable, perform the same bounded searches directly. Resolve agent definitions from the active harness installation, not a fixed vendor home.

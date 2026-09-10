@@ -133,20 +133,12 @@ one is ready for community posting after your review.
 
 ---
 
-## Phase 7: Offer File Write
+## Phase 7: Requested File Output
 
-Check whether `docs/CHANGELOG.md` exists, then ask:
-
-> "May I write this changelog to `docs/CHANGELOG.md`?
-> [A] Yes, append this entry (recommended if the file exists)
-> [B] Yes, overwrite the file
-> [C] No — I'll copy it manually"
-
-- [A]: prepend the new internal entry to the top (newest first).
-- [B]: overwrite.
-- [C]: stop without writing.
-
-After a successful write: Verdict: **CHANGELOG WRITTEN**. If declined: Verdict: **COMPLETE**.
+If the user requested a changelog file/update, preserve the existing file and add the new entry
+under the established format without repeated approval. If the request was only a summary,
+return the text without modifying files. Never overwrite historical entries or post publicly
+without explicit authority. Report whether a file was written.
 
 ---
 

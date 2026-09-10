@@ -10,20 +10,17 @@
 - **Engine version:** `<FILL IN — e.g. 5.5.4>`
 - **Source build / launcher:** `<launcher | source (custom engine mods?) — FILL IN>`
 - **Verified on:** `<YYYY-MM-DD>`
-- **Assistant knowledge cutoff:** Claude Opus 4.8 ≈ 2026-01 (confirm for the model
-  in use). Treat any UE API, class, UFUNCTION, module, plugin, or workflow
-  introduced or changed AFTER this date as UNVERIFIED — flag it and confirm
-  against the official docs before using.
+- **API verification:** Verify uncertain/version-dependent APIs against the pinned engine/package
+  version's official references. Do not assume the active model's knowledge cutoff.
 
 ## How the agent must use this file
 
 1. Before suggesting any UE-specific API / class / module / console var, check the tables below.
-2. If an API was introduced or changed after the knowledge cutoff, flag it explicitly:
-   "This API may have changed in <version> — verify against the reference below."
+2. Check uncertain or changed APIs against the pinned version and record the verified source/date.
 3. When this file and training data conflict, **this file wins**.
 4. If something isn't covered here, say so rather than guessing.
 
-## Post-cutoff / high-risk APIs (verify before use)
+## Version-sensitive / high-risk APIs (verify before use)
 
 | API / system | Status in pinned version | Note | Verified source (URL) |
 |---|---|---|---|

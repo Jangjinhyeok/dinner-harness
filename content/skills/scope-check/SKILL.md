@@ -14,7 +14,7 @@ agent: Explore
 > **Not the `scope_check` PreToolUse hook.** That hook enforces *file-level* edit
 > scope during Builder cycles (settings.json wiring). This `/scope-check` skill is a
 > manually-invoked *feature/cycle-level* scope-creep audit. Different mechanism, same
-> spirit (it reinforces the surgical-changes principle, CLAUDE.md §1.3).
+> spirit (it reinforces the surgical-changes principle).
 
 Read-only — reports findings, writes no files. Compares the original planned scope
 against the current state to detect, quantify, and triage scope creep.
@@ -26,6 +26,8 @@ against the current state to detect, quantify, and triage scope creep.
 ## Phase 1: Find the Original Plan
 
 Locate the baseline scope for the given argument, in this order:
+
+- The accepted user request and corrections in the current conversation (ordinary inline work needs no HANDOFF).
 
 - The feature's **HANDOFF.md** spec (the `scope` codeblock / task description), if this
   was a Two-CLI cycle.

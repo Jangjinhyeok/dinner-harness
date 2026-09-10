@@ -1,26 +1,16 @@
 ---
 name: repl
-description: "Route an Unreal networking/replication task to the unreal-specialist with the replication reference doc preloaded as focus. Property replication, RPCs, client prediction, relevancy, net serialization, bandwidth optimization in UE5."
-argument-hint: "[replication/netcode task]"
-user-invocable: true
-agent: unreal-specialist
-context: fork
+description: Apply specialist reference guidance to a Unreal replication task without requiring a separate agent.
 ---
 
-# /repl — Replication-focused route to the Unreal specialist
+# Unreal replication
 
-You are running as the **unreal-specialist**, focused on a known single-domain
-networking task. **First Read `~/.claude/docs/specialists/ue-replication.md`** (the
-former ue-replication-specialist, demoted to a reference doc 2026-07-02) and apply
-its protocol as your domain persona.
+Read [specialist guidance](../../docs/specialists/ue-replication.md) before the domain work.
+Check authority, property/RPC contracts, relevancy, bandwidth, ownership and client prediction; preserve wire compatibility and verify multiplayer behavior.
 
-Handle the user's request (the invocation argument) end to end:
-
-- Enforce a server-authoritative model with client prediction; replicate only
-  what's necessary (bandwidth is precious). Use `DOREPLIFETIME` /
-  `GetLifetimeReplicatedProps` correctly and RPCs sparingly.
-- Follow the approval gate — propose the strategy first, and ask "May I write this
-  to [filepath]?" before any Write/Edit.
-- If the task actually spans other subsystems (GAS ability prediction, UMG state),
-  say so and switch to the `unreal-specialist` hub scope (`/ue`), Reading the other
-  subsystem docs you need instead of guessing.
+Follow the project engine version and verification procedures. The main session can implement
+the authorized task; a native specialist is optional for a useful independent subtask.
+Do not claim to be a spawned agent or ask permission for each already authorized file edit.
+For cross-subsystem work read the additional relevant references through [ue](../ue/SKILL.md).
+Preserve HIGH independent review/human acceptance for applicable compatibility changes;
+report engine/runtime tests as not_run when unavailable.

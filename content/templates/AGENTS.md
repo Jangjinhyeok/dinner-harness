@@ -1,90 +1,43 @@
-<!--
-  Project-root agent instructions. The AGENTS.md standard is read from the
-  PROJECT ROOT (and ancestor dirs) by cross-tool agents — Codex CLI, Gemini CLI,
-  Cursor, and others. Keep this file at the repository root, NOT under docs/.
+<!-- Copy to project-root AGENTS.md and replace project placeholders. Preserve any existing file. -->
+# Project Instructions
 
-  Purpose: give NON-Claude agents the same baseline discipline Claude Code gets
-  from CLAUDE.md, without duplicating it. Claude Code reads CLAUDE.md directly;
-  other tools read this file. This template points to CLAUDE.md as the
-  authoritative source and carries only the tool-neutral essentials inline,
-  because other tools do not auto-load CLAUDE.md.
+This file is self-contained project policy for Codex and other agents that load AGENTS.md.
+No vendor-specific global instruction file is required. If both CLI vendors are used,
+CLAUDE.md may refer to an explicitly chosen shared project document without replacing this file.
 
-  Copy to:  <project-root>/AGENTS.md   then fill every <FILL IN>.
--->
+## Project
 
-# AGENTS.md
+<Describe the project, engine/version, language, platforms and live-service status.>
 
-## Authoritative instructions
+## Structure and constraints
 
-The full, authoritative conventions for this project live in:
+<List meaningful module boundaries, entry points, ownership/lifetime invariants,
+replication/save compatibility and frame/memory budgets. Avoid generated directories.>
 
-- `./CLAUDE.md` — project-level domain knowledge (architecture, modules, conventions).
-- `~/.claude/CLAUDE.md` — user-level meta-principles and workflow.
+## Build and verification
 
-If you are an agent that does not auto-load those files, **read `./CLAUDE.md` now
-before making changes.** This file carries only the tool-neutral baseline below;
-on any conflict, CLAUDE.md wins.
+<Record exact project build/test commands and needed engine/editor target/configuration.
+For Unreal note automation/PIE/multiplayer checks; for Unity note EditMode/PlayMode/build checks.
+Mark unavailable runtime validation not_run. Do not impose a universal coverage threshold.>
 
-## Project overview
+## Working conventions
 
-<FILL IN — one paragraph: what this project is, engine/stack (e.g. UE5 C++ /
-Unity C#), target platforms (mobile + PC), live-service or not.>
+- Technical discussion: Korean with English technical terms. Identifiers/comments: English.
+  Commit messages: type prefix plus Korean, unless a more specific project rule applies.
+- Reuse repository patterns first; verify uncertain/version-dependent APIs against official sources.
+- Infer routine details from repo conventions, state material assumptions, ask only when
+  the missing choice changes scope, outcome or authority.
+- Implement authorized local changes and relevant verification without per-file consent.
+  Main Codex can design and implement in the same session. Ordinary tasks need no HANDOFF.
+- Preserve current user-selected branch and existing staged/unstaged/untracked edits.
+  No branch changes, commit, push, merge or deployment without the user's explicit authority.
+- Keep changes scoped; review the task delta against its baseline. Report actual checks,
+  self-review and independent review separately, with not_run when absent.
+- HIGH changes require independent review and human result acceptance. Local implementation
+  permission is separate from outward-facing or irreversible action authority.
+- Respect actual sandbox/hooks/protected paths; never weaken them to complete a task.
+  Do not read or print credential/token contents.
 
-## Repository structure
+## References
 
-<FILL IN — short map of the meaningful folders. Example:
-  Source/   game modules
-  Content/  assets (do not hand-edit binary assets)
-  docs/     ADRs, engine-reference/<engine>/VERSION.md >
-
-## Working principles (tool-neutral baseline)
-
-Apply these on every change. Full rationale in `~/.claude/CLAUDE.md` §1.
-
-1. **State assumptions, don't guess.** Ambiguous request → state the assumption or
-   ask before coding.
-2. **Minimum viable code.** Build only what was asked. No speculative flexibility,
-   configurability, or error handling for impossible cases.
-3. **Surgical changes.** Touch only files in scope. No "while I'm here" refactors —
-   critical on live-service code.
-4. **Research before writing.** For non-trivial work, search existing libraries and
-   patterns (package registries, official docs, code search) before writing
-   net-new code.
-5. **Verifiable goals.** Convert the task into checks; state the verification
-   method before multi-step work.
-
-## Conventions
-
-- **Code style:** <FILL IN — formatter/linter, e.g. clang-format, .editorconfig.>
-- **Naming:** identifiers, comments, and commit messages in English.
-- **Testing:** <FILL IN — command to run tests + pass criteria.>
-- **Commits:** <FILL IN — message format / branch strategy. Commit only when asked.>
-
-## Tool permissions
-
-- **Allowed without asking:** read files, run tests/builds, search.
-- **Confirm first:** writing/editing source, deleting files, dependency changes,
-  anything outward-facing or hard to reverse.
-- **Prohibited unless explicitly instructed:** force-push, history rewrite,
-  secret/credential handling, mass automated edits across many files.
-
-## Known constraints
-
-<FILL IN — non-obvious env/build assumptions, frame/memory budgets, platform
-limits, backward-compat requirements. Engine API claims must match
-docs/engine-reference/<engine>/VERSION.md, which overrides training data.>
-
-## Verification gates
-
-Before reporting work complete:
-
-- [ ] Builds / compiles.
-- [ ] Tests pass (command above), or state which were skipped and why.
-- [ ] Changes stay within requested scope (no unrelated file edits).
-- [ ] Self-review done; report "issues: N" or "no issues".
-
-## Escalation
-
-When a decision falls outside the scope above — architecture choices, dependency
-additions, anything destructive or live-service-affecting — stop and ask the
-human (or the Architect session) rather than assuming authority.
+<List only actual project docs, relevant ADRs and pinned engine reference paths.>

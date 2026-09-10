@@ -27,15 +27,30 @@ def load_adapter(name):
 
 
 def default_dest(target):
-    return Path.home() / f".{target}"
+    configured = os.environ.get("CODEX_HOME") if target == "codex" else None
+    return normalize_dest(configured or Path.home() / f".{target}")
+
+
+def normalize_dest(path):
+    return Path(path).expanduser().resolve()
+
+
+def is_live_dest(target, path):
+    destination = normalize_dest(path)
+    roots = {default_dest(target), normalize_dest(Path.home() / f".{target}")}
+    return any(destination == root or root in destination.parents for root in roots)
 
 
 def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="Install the dinner-harness into a target.")
     ap.add_argument("--target", required=True, choices=["claude", "codex"])
     ap.add_argument("--dest", default=None, help="install root (default: ~/.<target>)")
     ap.add_argument("--username", default=os.environ.get("USERNAME") or os.environ.get("USER") or "")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--adopt-existing", action="store_true",
+                    help="Codex only: explicitly adopt conflicting manifest files after backing them up; review --dry-run first")
     ap.add_argument("--allow-live", action="store_true",
                     help="permit installing onto the live ~/.<target> (guarded off by default)")
     args = ap.parse_args(argv)
@@ -46,9 +61,13 @@ def main(argv=None):
     target_cfg = manifest.get("targets", {}).get(args.target)
     if target_cfg is None:
         sys.exit(f"error: target '{args.target}' not defined in harness.toml")
+    if args.adopt_existing:
+        if args.target != "codex":
+            sys.exit("--adopt-existing is supported only for Codex")
+        target_cfg = dict(target_cfg, adopt_existing=True)
 
-    dest = Path(args.dest) if args.dest else default_dest(args.target)
-    if dest.resolve() == default_dest(args.target).resolve() and not args.allow_live:
+    dest = normalize_dest(args.dest) if args.dest else default_dest(args.target)
+    if is_live_dest(args.target, dest) and not args.allow_live and not args.dry_run:
         sys.exit(f"refusing to write to the live {dest} — pass --dest <scratch> or --allow-live")
 
     adapter = load_adapter(args.target)
@@ -68,7 +87,7 @@ def main(argv=None):
         counts[action] = counts.get(action, 0) + 1
     print("plan:", ", ".join(f"{k}={v}" for k, v in sorted(counts.items())), f"(total {len(plan)})")
     for action, p in plan:
-        if action in ("template", "skip", "write"):
+        if action in ("template", "skip", "write", "backup", "retire_owned") or action.startswith("retire_hook:"):
             print(f"  {action:8} {p}")
     return 0
 

@@ -1,126 +1,32 @@
 ---
 name: verification-loop
-description: "A comprehensive verification system for Claude Code sessions."
-origin: ECC
+description: Verify implementation with project-specific build, tests, safety and baseline-diff checks, including UE, Unity and Python workflows.
 ---
 
-# Verification Loop Skill
+# Verification Loop
 
-A comprehensive verification system for Claude Code sessions.
+Record a pre-edit baseline including staged/unstaged/untracked state. Discover commands from
+project instructions, CI and configuration. Use existing tooling; do not impose a universal
+coverage threshold or install a generic stack.
 
-## When to Use
+- Unreal: identify target/platform/configuration and engine path. Run applicable build/automation
+  tests; lifecycle, UI, assets and networking may need PIE, packaging or multiplayer scenarios.
+- Unity: use the project's Editor version, build target and EditMode/PlayMode setup; validate
+  runtime/asset/lifecycle effects with the corresponding project procedure.
+- Python: use the configured interpreter and repository unittest/pytest command. Type/lint tools
+  apply when configured or relevant.
+- Other stacks: follow documented project build/test commands.
 
-Invoke this skill:
-- After completing a feature or significant code change
-- Before creating a PR
-- When you want to ensure quality gates pass
-- After refactoring
+Run useful targeted checks followed by required regressions. Preserve the process exit code,
+timeout and error status; output head/tail must not hide failure. Separate actual command
+execution from model claims and mock tests from live CLI/engine validation. Mark unavailable
+environment checks not_run. Repeat only for relevant changes or unresolved failures.
 
-## Verification Phases
+Review the task delta against the baseline, not `HEAD~1`; include staged, unstaged and new files.
+Preserve unrelated user edits. Check scope, conventions, compatibility and side effects.
+Use the existing secret scanner with redacted paths/rule IDs, never matched secret values;
+do not read credentials or expose them with broad content searches.
 
-### Phase 1: Build Verification
-```bash
-# Check if project builds
-npm run build 2>&1 | tail -20
-# OR
-pnpm build 2>&1 | tail -20
-```
-
-If build fails, STOP and fix before continuing.
-
-### Phase 2: Type Check
-```bash
-# TypeScript projects
-npx tsc --noEmit 2>&1 | head -30
-
-# Python projects
-pyright . 2>&1 | head -30
-```
-
-Report all type errors. Fix critical ones before continuing.
-
-### Phase 3: Lint Check
-```bash
-# JavaScript/TypeScript
-npm run lint 2>&1 | head -30
-
-# Python
-ruff check . 2>&1 | head -30
-```
-
-### Phase 4: Test Suite
-```bash
-# Run tests with coverage
-npm run test -- --coverage 2>&1 | tail -50
-
-# Check coverage threshold
-# Target: 80% minimum
-```
-
-Report:
-- Total tests: X
-- Passed: X
-- Failed: X
-- Coverage: X%
-
-### Phase 5: Security Scan
-```bash
-# Check for secrets
-grep -rn "sk-" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
-grep -rn "api_key" --include="*.ts" --include="*.js" . 2>/dev/null | head -10
-
-# Check for console.log
-grep -rn "console.log" --include="*.ts" --include="*.tsx" src/ 2>/dev/null | head -10
-```
-
-### Phase 6: Diff Review
-```bash
-# Show what changed
-git diff --stat
-git diff HEAD~1 --name-only
-```
-
-Review each changed file for:
-- Unintended changes
-- Missing error handling
-- Potential edge cases
-
-## Output Format
-
-After running all phases, produce a verification report:
-
-```
-VERIFICATION REPORT
-==================
-
-Build:     [PASS/FAIL]
-Types:     [PASS/FAIL] (X errors)
-Lint:      [PASS/FAIL] (X warnings)
-Tests:     [PASS/FAIL] (X/Y passed, Z% coverage)
-Security:  [PASS/FAIL] (X issues)
-Diff:      [X files changed]
-
-Overall:   [READY/NOT READY] for PR
-
-Issues to Fix:
-1. ...
-2. ...
-```
-
-## Continuous Mode
-
-For long sessions, run verification every 15 minutes or after major changes:
-
-```markdown
-Set a mental checkpoint:
-- After completing each function
-- After finishing a component
-- Before moving to next task
-
-Run: /verify
-```
-
-## Integration with Hooks
-
-This skill complements PostToolUse hooks but provides deeper verification.
-Hooks catch issues immediately; this skill provides comprehensive review.
+Report PASS/FAIL/not_run with evidence and original failures. Distinguish self-review and an
+independent reviewer. Verification grants no commit/push/deploy or HIGH acceptance authority.
+No fixed edit count, function count or timer mandates another full-suite run.
