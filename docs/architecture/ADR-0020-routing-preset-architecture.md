@@ -162,6 +162,141 @@ the prior Phase 0-D cycle):
   construction; a third vendor with no defined `builder_high` anywhere would
   correctly fail closed rather than silently pick something.
 
+## Addendum: 2026-09-11 Codex builder cost tiers
+
+This addendum supersedes the historical builder lineup above. The current
+default is `codex_only`; `hybrid` remains an opt-in compatibility preset.
+Builder routing is intentionally cost-tiered within Codex models. The decision
+applies only to their implementation builders, not architect, reviewer,
+specialist, or challenger policy. `claude_only` remains unchanged. No non-Codex
+provider or benchmark result is a candidate or input to this builder decision.
+
+### Capability audit
+
+The existing `content/routing.toml` already contains the canonical IDs
+`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, and `gpt-6-astra`. All four also
+appear in this host's Codex model catalog (`models_cache.json`, inspected
+2026-09-11) and the [official OpenAI model catalog](https://developers.openai.com/api/docs/models).
+Installed `codex-cli 0.154.0` exposes `--model` and `-c`; `CodexBackend` forwards
+the resolved model and `model_reasoning_effort` through those options.
+
+`ModelProfile`/`validate_profile` is a static shape/vendor/effort contract, not a
+canonical known-model registry or account-access probe. The harness accepts
+`low`, `medium`, `high`, and `xhigh` for Codex. Those efforts are present for all
+four models in the host catalog. The catalog also advertises `max` (and `ultra`
+for some models), but this harness rejects both. No profile, model ID, effort
+alias, provider, or backend is added here. In particular, benchmark
+"extra-high" corresponds to the catalog's `xhigh`; it is not an accepted literal
+`extra-high` setting. Live inference/access tests were not run; per-account
+access remains `unknown` until actual dispatch.
+
+### Evidence and interpretation
+
+The following VulcanBench SWE-v3/v4 figures are the user-supplied reference
+snapshot for this decision, not measurements from dinner-harness or an
+independently reproduced benchmark. SWE-v3 and SWE-v4 scores are not compared
+directly across suites: task suites and scoring differ. Use v3 only to explore
+Luna/Terra/Sol cost-performance, and v4 only to compare Astra efforts.
+
+| SWE-v3 model | Effort | Score | Cost/task | Time/task |
+| --- | --- | ---: | ---: | ---: |
+| Luna | low | 77% | $0.03 | 1.2 min |
+| Luna | medium | 80% | $0.06 | 2.1 min |
+| Luna | high | 86% | $0.17 | 3.8 min |
+| Terra | medium | 87% | $0.19 | 2.3 min |
+| Sol | high | 87% | $0.69 | 4.2 min |
+
+| SWE-v4 Astra effort | Combined | Code Quality | Cost/task | Time/task |
+| --- | ---: | ---: | ---: | ---: |
+| low | 87.43 | 70.31 | $1.72 | 4.2 min |
+| medium | 87.73 | 71.19 | $1.48 | 3.8 min |
+| high | 88.16 | 73.48 | $1.71 | 4.9 min |
+| extra-high | 89.16 | 75.47 | $2.30 | 8.1 min |
+| max | 89.30 | 76.26 | $2.57 | 10.3 min |
+
+### Decision
+
+Both `codex_only` and `hybrid` resolve the following automatic builder tiers
+from TOML; the table documents that decision, not a runtime fallback:
+
+| Compute | Model | Effort | Sufficient workload |
+| --- | --- | --- | --- |
+| LOW | `gpt-5.6-luna` | `medium` | Bounded mechanical edits, existing-pattern replication, small localized fixes/tests, docs/code synchronization; clear requirements and easy rollback |
+| NORMAL | `gpt-5.6-terra` | `medium` | General features, moderate refactors, some repo exploration and subsystem integration using existing abstractions |
+| HIGH | `gpt-6-astra` | `high` | Architecture-sensitive changes, ownership/lifetime or public API/invariant reasoning, ambiguity, large blast radius or difficult reversal |
+
+- **Luna remains the cheap executor.** LOW includes small fixes and tests, not
+  just text substitution. Medium offers a modest sufficiency margin over low
+  in v3 while retaining low cost/latency. This is a conservative starting
+  policy, not proof of a measured retry reduction. Low remains an explicit
+  choice for purely mechanical work. Luna high costs more and takes longer
+  than medium; tasks requiring that much reasoning are better candidates for
+  NORMAL/Terra evaluation than inflating every LOW dispatch.
+- **Terra medium is the cost-efficient general builder.** Within v3 it is
+  1 point above Luna high for $0.02 more and 1.5 minutes less, and matches Sol
+  high's aggregate score at substantially lower cost and latency. There is no
+  repository-specific evidence requiring Sol as an intermediate builder.
+- **Sol leaves automatic builder routing only.** Its independent
+  `codex_only.reviewer` role is retained, and explicit model selection remains
+  available. No unrelated profile is removed or reassigned.
+- **Astra high is reserved for frontier reasoning.** The harness forces HIGH
+  compute for HIGH risk, including ownership/invariant and difficult-to-reverse
+  work. Within v4, high adds 0.43 Combined and 2.29 Code Quality over medium for
+  about 16% more cost and 29% more time. That selective quality trade-off fits
+  this tier; it does not justify sending routine NORMAL work to Astra.
+- **Astra low is excluded from automatic routing.** In the supplied v4 sample,
+  medium has higher scores, lower cost, and lower latency. Astra medium is an
+  explicit escalation candidate when Luna/Terra reasoning is insufficient on
+  non-HIGH-risk work. It does not become the general builder default.
+
+Optimize sufficiency, expected cost to successful completion, and interactive
+latency before buying more reasoning. Do not infer retry probabilities from
+aggregate scores. If failures or review rejection expose missing repo reasoning,
+reassess compute instead of repeatedly retrying an insufficient cheap model.
+This is selection guidance; no automatic retry ladder or new scheduler is added.
+
+### Explicit escalation and preserved boundaries
+
+For non-HIGH risk, existing `build --builder-model gpt-6-astra
+--builder-effort medium` selects Astra explicitly; `high` or `xhigh` can be
+chosen when warranted. `xhigh` is exceptional debugging/one-off work only,
+never an automatic LOW/NORMAL/HIGH default. `max` is outside the current harness
+contract even as an override; it is only a possible manual choice in a Codex
+surface that independently supports it. Do not claim that path provides harness
+HIGH challenge/review enforcement.
+
+For HIGH risk, the controller requires explicit model/effort values to match
+the configured profile exactly; even `xhigh` cannot bypass that guard. A deliberate
+HIGH policy escalation requires a reviewed configuration change and fresh bound
+challenge evidence. This change does not relax that restriction. Within v4,
+medium to max adds about 1.57 Combined for 74% more cost and 171% more time,
+supporting exceptional rather than automatic use.
+
+Risk remains distinct from compute. HIGH risk still forces HIGH compute and its
+independent challenge/review/human acceptance chain; HIGH compute alone does not
+invent HIGH-risk approval requirements. Preserve preset-driven `ModelProfile`
+resolution, explicit overrides within those existing bounds, explicit vendor
+compatibility maps, missing/invalid-config failure, and reference/orchestration
+separation. Legacy install-time `builder_vendor` policy is not reintroduced;
+the existing runtime override/receipt field of that name remains valid.
+
+Changing TOML changes the policy digest: prior bound HIGH challenge evidence
+must be regenerated before dispatch under the new policy. This intentionally
+prevents stale authorization of a different builder lineup.
+
+### Expected cost relative to the latest main baseline
+
+The baseline default `codex_only` already uses the chosen three profiles: its
+LOW, NORMAL and HIGH model costs/latencies are unchanged. In `hybrid`, LOW moves
+from Luna high to medium (lower sampled cost and latency with less reasoning),
+NORMAL remains Terra medium, and HIGH moves from Sol high to Astra high for the
+frontier role. Do not calculate a HIGH cost ratio from different SWE suites.
+HIGH spend may increase; overall hybrid spend depends on workload mix and
+retries, which have not been measured. The default direction is **similar**,
+while hybrid savings are expected only for LOW-heavy workloads, not guaranteed
+overall. The benefit is consistent cost-tier intent and preventing unnecessary
+Astra use in routine work, not a claimed across-the-board cost reduction.
+
 ## Alternatives considered
 
 - **`routing.py` hardcoded hybrid fallback when `routing.toml` is missing**

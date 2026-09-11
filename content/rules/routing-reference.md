@@ -8,6 +8,21 @@
 일반 위임 Terra medium, 복잡한/HIGH 구현 Astra high, 중요한 독립 review Sol high,
 HIGH design challenge Astra high의 별도 호출이다. 벤치마크로 최적성을 입증한 조합이 아니다.
 
+2026-09-11 builder 비용 계층 결정은 [ADR-0020 addendum](https://github.com/Jangjinhyeok/dinner-harness/blob/main/docs/architecture/ADR-0020-routing-preset-architecture.md#addendum-2026-09-11-codex-builder-cost-tiers)을 참고한다.
+기본/hybrid builder는 같은 비용 계층을 사용하며,
+일반 작업을 자동으로 frontier 모델에 올리지 않는다. 실제 값은 TOML이 결정한다.
+LOW compute는 명확하고 국소적이며 기존 pattern을 복제하는 구현,
+NORMAL compute는 기존 abstraction을 활용하는 일반 feature/moderate refactor,
+HIGH compute는 architecture·ownership·invariant 판단과 큰 영향 범위의 구현에 사용한다.
+검증 실패가 요구사항/추론 부족을 드러내면 같은 저가 profile로 무작정 반복하지 말고
+compute를 재평가한다. 이 지침이 자동 retry/escalation 기능을 추가하지는 않는다.
+
+명시 model/effort override는 non-HIGH risk에서 기존 CLI 경로로 적용한다.
+HIGH risk에서는 설정된 profile과 정확히 일치해야 한다. 예외적 effort escalation이
+필요하면 정책 변경과 그 정책에 결합된 challenge를 다시 수행해야 하며 HIGH를 낮추지 않는다.
+현재 harness의 Codex effort 허용값은 `low/medium/high/xhigh`이며
+`max/ultra`는 허용하지 않는다.
+
 ## 적용 범위
 
 Logical keys는 `architect`, `builder_low`, `builder_normal`, `builder_high`,

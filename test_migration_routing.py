@@ -38,6 +38,32 @@ class RoutingMigrationTests(unittest.TestCase):
                 with self.assertRaises(routing.RoutingConfigError):
                     routing.resolve_profile(config, self.preset, "builder_low")
 
+    def test_codex_builder_cost_tiers_match_in_default_and_hybrid(self):
+        # Policy acceptance contract; runtime selection still comes only from TOML.
+        expected = {
+            "builder_low": routing.ModelProfile("codex", "gpt-5.6-luna", "medium"),
+            "builder_normal": routing.ModelProfile("codex", "gpt-5.6-terra", "medium"),
+            "builder_high": routing.ModelProfile("codex", "gpt-6-astra", "high"),
+        }
+        self.assertEqual(self.preset, "codex_only")
+        for preset in (self.preset, "hybrid"):
+            for role, profile in expected.items():
+                with self.subTest(preset=preset, role=role):
+                    self.assertEqual(routing.resolve_profile(self.config, preset, role), profile)
+
+    def test_codex_manual_efforts_and_vendor_mismatch_contract(self):
+        for model in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"):
+            for effort in ("low", "medium", "high", "xhigh"):
+                with self.subTest(model=model, effort=effort):
+                    profile = routing.ModelProfile("codex", model, effort)
+                    self.assertEqual(routing.validate_profile(profile), profile)
+        for profile in (routing.ModelProfile("codex", "gpt-6-astra", "max"),
+                        routing.ModelProfile("codex", "gpt-6-astra", "extra-high"),
+                        routing.ModelProfile("codex", "claude-opus-5", "high"),
+                        routing.ModelProfile("claude", "gpt-6-astra", "high")):
+            with self.subTest(profile=profile), self.assertRaises(routing.RoutingConfigError):
+                routing.validate_profile(profile)
+
     def test_vendor_override_uses_explicit_active_mapping_for_every_tier(self):
         for role in ("builder_low", "builder_normal", "builder_high"):
             actual = routing.resolve_profile_for_vendor(self.config, self.preset, role, "claude")

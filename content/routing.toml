@@ -17,6 +17,9 @@
 #   builder_high     — dispatch-controlled, compute tier HIGH (or any risk=HIGH gate).
 #   reviewer         — interactive-session recommended policy (primary path);
 #                       native reviewer agents also use this policy; legacy run does not.
+#
+# Codex builder cost tiers (default and hybrid) share the policy documented in
+# ADR-0020's 2026-09-11 addendum. Risk/review gates remain independent of compute.
 
 [routing]
 preset = "codex_only"
@@ -65,7 +68,7 @@ effort = "low"
 [presets.hybrid.builder_low]
 vendor = "codex"
 model = "gpt-5.6-luna"
-effort = "high"
+effort = "medium"
 
 [presets.hybrid.builder_normal]
 vendor = "codex"
@@ -74,7 +77,7 @@ effort = "medium"
 
 [presets.hybrid.builder_high]
 vendor = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 effort = "high"
 
 [presets.hybrid.reviewer]
