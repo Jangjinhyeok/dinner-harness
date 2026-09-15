@@ -18,6 +18,7 @@ agent: Explore
 
 Read-only — reports findings, writes no files. Compares the original planned scope
 against the current state to detect, quantify, and triage scope creep.
+Apply [autonomy policy](../../rules/autonomy-policy.md) for the separate LOW/HIGH autonomy Risk.
 
 **Argument:** `$ARGUMENTS[0]` — feature name, work cycle, or milestone.
 
@@ -78,6 +79,9 @@ Generated: [Date]
 - Net scope change: [+/-N] ([X]%)
 
 ### Risk Assessment
+- **Autonomy Risk**: [LOW/HIGH] — [rationale per autonomy policy]
+- The following schedule/quality/integration estimates are report dimensions, not autonomy Risk
+  levels or Compute tiers. They do not change HIGH review and human acceptance requirements.
 - **Schedule Risk**: [Low/Med/High] — [why]
 - **Quality Risk**: [Low/Med/High] — [why]
 - **Integration Risk**: [Low/Med/High] — [why]

@@ -3,6 +3,14 @@
 기본은 메인 Codex가 필요한 탐색·설계·구현·검증을 같은 세션에서 완료하는 것이다.
 작거나 명확한 보통 작업에는 HANDOFF/RESULT/CHALLENGE나 역할 전환이 필요하지 않다.
 
+## 모든 실행 경로의 Risk 정책
+
+- Risk는 `LOW/HIGH` 2단계다. Compute의 `LOW/NORMAL/HIGH` 및 model effort의 `medium`과 구별한다.
+- 비단순 작업(계획 수립 포함) 시작 시 active 설치 root의 `rules/autonomy-policy.md` 원문을 읽고 적용한다. 같은 세션에서 읽은 원문은 변경되지 않았다면 재사용한다. Two-CLI 선택 여부와 무관하다.
+- 시작 보고는 `Risk: LOW|HIGH / 근거: 영향·가역성 / 검증: 필요한 검사·독립 검토 / 수용 조건: 결과 수용에 필요한 조건`을 짧게 제시한다. 조사로 위험이 바뀌면 갱신한다. 사소한 작업에 질문이나 별도 문서를 강제하지 않는다.
+- 완료 보고는 계획·구현·실행한 검증·독립 검토·사람 수용을 구분하고 실제 충족/미충족을 표시한다. 계획만 요청되면 구현·runtime 검증은 `not_run`으로 두고 향후 조건을 명시한다. HIGH 계획 검토는 구현 후 검토를 대체하지 않는다.
+- `REQUEST CHANGES`/FAIL 반영은 수정 완료이며 재검토 PASS가 아니다. 해당 변경과 증거를 재검토한 실제 판정 전에는 미해결 상태를 유지한다. HIGH는 독립 검토와 사람의 결과 수용 전까지 수용 대기다. 승인된 로컬 구현의 진행 승인은 반복하지 않는다.
+
 ## 소통과 범위
 
 - 기술 토론은 한국어, technical terms와 identifiers는 영어. 코드 주석은 영어, commit 메시지는 `fix:`, `feat:`, `docs:` 등의 prefix와 한국어를 기본으로 한다.
@@ -41,6 +49,5 @@
 별도 모델에 큰 작업을 위임하거나 독립 challenge와 controller 검사가 필요하면
 설치 root의 `rules/two-cli-reference.md`, `rules/routing-reference.md`를 읽는다.
 Architect/Builder 역할 제한은 사용자가 명시 선택한 Two-CLI 모드에서만 적용한다.
-계약은 `roles/ROLE_ARCHITECT.md`, `roles/ROLE_BUILDER.md`,
-risk/review 정책은 `rules/autonomy-policy.md`에 있다.
+선택한 역할의 계약은 `roles/ROLE_ARCHITECT.md`, `roles/ROLE_BUILDER.md`에 있다.
 routing 설정은 현재 interactive 모델을 바꾸지 않는다.

@@ -37,6 +37,51 @@ class TestCodexInstallMigration(unittest.TestCase):
         original = '\n한글 C:\\Users\\name\\test """ quote\n\tbackslash\\end'
         self.assertEqual(tomllib.loads("text = " + codex._toml_multiline(original))["text"], original)
 
+    def test_inline_risk_policy_survives_generation_and_repeat_install(self):
+        self.render()
+        self.render()
+        sources = {
+            "AGENTS.md": "assets/codex/AGENTS.md",
+            "templates/AGENTS.md": "content/templates/AGENTS.md",
+            "rules/autonomy-policy.md": "content/rules/autonomy-policy.md",
+            "rules/routing-reference.md": "content/rules/routing-reference.md",
+            "orchestrator/controller.py": "orchestrator/controller.py",
+            "orchestrator/vendors.py": "orchestrator/vendors.py",
+        }
+        for skill in ("autonomous-loop", "goal-driven-execution", "adversarial-review", "verification-loop",
+                      "perf-profile", "scope-check"):
+            sources[f"skills/{skill}/SKILL.md"] = f"content/skills/{skill}/SKILL.md"
+        for destination, source in sources.items():
+            with self.subTest(destination=destination):
+                generated = (self.dest / destination).read_text(encoding="utf-8")
+                canonical = (ROOT / source).read_text(encoding="utf-8")
+                if destination.startswith("skills/"):
+                    # The adapter quotes frontmatter; the policy body must stay intact.
+                    generated = generated.split("---", 2)[2]
+                    canonical = canonical.split("---", 2)[2]
+                self.assertEqual(generated, canonical)
+        agents = (self.dest / "AGENTS.md").read_text(encoding="utf-8")
+        primary = agents.split("## 선택적 경로")[0]
+        for marker in ("rules/autonomy-policy.md", "Risk: LOW|HIGH", "근거:", "검증:",
+                       "수용 조건:", "REQUEST CHANGES", "재검토", "not_run", "사람의 결과 수용"):
+            self.assertIn(marker, primary)
+        for skill in ("autonomous-loop", "goal-driven-execution", "adversarial-review", "verification-loop"):
+            path = self.dest / f"skills/{skill}/SKILL.md"
+            self.assertIn("../../rules/autonomy-policy.md", path.read_text(encoding="utf-8"))
+            self.assertTrue((path.parent / "../../rules/autonomy-policy.md").resolve().is_file())
+        policy = (self.dest / "rules/autonomy-policy.md").read_text(encoding="utf-8")
+        self.assertIn("prompt만으로 강제 집행했다고 주장하지 않는다", policy)
+        self.assertIn("코드 의미를 분석해 잘못 선언된 LOW", policy)
+        perf = (self.dest / "skills/perf-profile/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Risk: [LOW/HIGH]", perf)
+        self.assertNotIn("Risk: [Low/Med/High]", perf)
+        scope = (self.dest / "skills/scope-check/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("not autonomy Risk", scope)
+        present, problems, leftovers = check.check_install("codex", self.dest)
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [])
+
     @unittest.skipUnless(os.name == "nt", "PowerShell hook execution requires Windows")
     def test_windows_hook_commands_preserve_literal_paths_stdin_and_exit_codes(self):
         root = Path(self.temp.name) / "한글 space & $dollar 'quote'"

@@ -30,6 +30,7 @@ from orchestrator.controller import (
     AutoApprove,
     Orchestrator,
     _TIER_RULE,
+    design_prompt,
     build_prompt,
     review_prompt,
     verdict_recovery_prompt,
@@ -289,7 +290,8 @@ class TestBuildPrompt(unittest.TestCase):
         required = [
             "rpc", "replication", "net serialization", "bandwidth", "save",
             "migration", "schema", "security", "public api", "abi", "build",
-            "packaging", "irreversible",
+            "packaging", "irreversible", "large blast radius",
+            "two levels low/high", "compute has low/normal/high",
         ]
         for keyword in required:
             with self.subTest(keyword=keyword):
@@ -298,6 +300,25 @@ class TestBuildPrompt(unittest.TestCase):
             "back-compat" in low or "back compat" in low,
             "missing back-compat",
         )
+
+    def test_design_prompt_separates_risk_compute_and_acceptance(self):
+        prompt = design_prompt("plan a packet migration", "", 1)
+        for marker in ("Risk / rationale / verification / acceptance conditions",
+                       "risk=LOW|HIGH compute=LOW|NORMAL|HIGH",
+                       "Planning completion is not implementation",
+                       "REQUEST CHANGES fixes are not a re-review PASS"):
+            self.assertIn(marker, prompt)
+
+    def test_risk_medium_and_compute_normal_do_not_form_a_third_risk_level(self):
+        for invalid in ("MEDIUM", "NORMAL", "bogus"):
+            text = f"```tiers\ngate 1: risk={invalid} compute=LOW\n```\n"
+            tiers, compute = bus.dispatch_gates(text)
+            self.assertEqual(tiers, {"1": "HIGH"})
+            self.assertEqual(bus.effective_compute(tiers, compute, "1"), "HIGH")
+        text = "```tiers\ngate 1: risk=LOW compute=HIGH\n```\n"
+        tiers, compute = bus.dispatch_gates(text)
+        self.assertEqual(tiers, {"1": "LOW"})
+        self.assertEqual(bus.effective_compute(tiers, compute, "1"), "HIGH")
 
     def test_high_gate_clause_requires_implementation_before_later_sign_off(self):
         prompt = build_prompt("# delegated spec\n", "HANDOFF_DELEGATE.md")
@@ -1746,7 +1767,7 @@ class _WritingArchitect(Backend):
             p = self._repo / self._path
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(self._content, encoding="utf-8")
-        if "REVIEW" in prompt.upper():
+        if prompt.lstrip().upper().startswith("REVIEW."):
             return Turn(text=self._sc.reviews[0])
         return Turn(text=self._sc.handoffs[0])
 

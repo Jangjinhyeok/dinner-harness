@@ -83,7 +83,7 @@ Generated: [Date]
 1. **[Title]** — [Description]
    - Location: [file:line]
    - Expected gain: [estimate]
-   - Risk: [Low/Med/High]
+   - Risk: [LOW/HIGH] — [rationale per autonomy policy]
    - Approach: [How to implement]
 
 ### Low-cost Improvements
@@ -93,6 +93,8 @@ Generated: [Date]
 - [Area that needs actual runtime profiling to confirm impact]
 ```
 
+Use [autonomy policy](../../rules/autonomy-policy.md) for Risk LOW/HIGH, independent review
+and human acceptance. Risk is distinct from estimated effort or Compute LOW/NORMAL/HIGH.
 Output the report with a summary: evidence-backed hotspots, estimated headroom vs budget, and recommended next action.
 
 ---

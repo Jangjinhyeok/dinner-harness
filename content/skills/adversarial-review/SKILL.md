@@ -21,5 +21,8 @@ there is no fixed judge count or majority/unanimity vote.
 Record who actually reviewed and the evidence. If delegation cannot run, record
 `independent_review=not_run`; self-review does not satisfy HIGH independent review.
 HIGH remains pending human acceptance. Builder `panel=PASS` is not proof of a reviewer.
+REQUEST CHANGES/FAIL fixes are an author's response, not a re-review PASS. Record the original
+verdict and `fixes applied; re-review pending` until an independent reviewer examines the changed
+artifact and evidence. Keep design review separate from post-implementation review.
 Preserve controller repo/task challenge caps. Do not repeat review without relevant new changes
 or missing evidence to resolve.

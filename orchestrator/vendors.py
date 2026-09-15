@@ -122,9 +122,8 @@ class MockBackend(Backend):
             text = s.results[i] if i < len(s.results) else ""
             cs = s.changesets[i] if i < len(s.changesets) else []
             return Turn(text=text, changeset=cs)
-        # architect: design on even calls, review on odd — but we route by
-        # prompt marker for robustness.
-        is_review = "REVIEW" in prompt.upper()
+        # Only the review turn marker selects review; design may discuss reviews too.
+        is_review = prompt.lstrip().upper().startswith("REVIEW.")
         i = self._cycle[ROLE_ARCHITECT]
         if is_review:
             text = s.reviews[i] if i < len(s.reviews) else ""

@@ -30,3 +30,8 @@ do not read credentials or expose them with broad content searches.
 Report PASS/FAIL/not_run with evidence and original failures. Distinguish self-review and an
 independent reviewer. Verification grants no commit/push/deploy or HIGH acceptance authority.
 No fixed edit count, function count or timer mandates another full-suite run.
+Apply the unchanged session copy or original [autonomy policy](../../rules/autonomy-policy.md)
+in single-session work too. Completion reports separate planning, implementation, actual checks,
+independent review and HIGH human acceptance, retaining unmet conditions. Planning-only work
+leaves implementation/runtime checks not_run. REQUEST CHANGES/FAIL fixes need independent
+re-review before reporting PASS; an author's fix report is not review evidence.

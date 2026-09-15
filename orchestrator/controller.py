@@ -95,12 +95,14 @@ class Outcome:
 # Prompt builders (self-contained per the harness "HANDOFF self-contained" rule)
 # --------------------------------------------------------------------------- #
 _TIER_RULE = (
-    "Risk tier per autonomy-policy: HIGH = network replication / RPC / net "
+    "Risk tier per autonomy-policy has two levels LOW/HIGH (no MEDIUM); "
+    "Compute has LOW/NORMAL/HIGH. LOW = scoped, reversible local work. "
+    "HIGH = network replication / RPC / net "
     "serialization / relevancy / bandwidth / save or serialization format / "
     "persistent data back-compat / live config or feature flags / data "
     "migration or schema change / security-sensitive (auth, permission, "
     "crypto, trust boundary, anti-cheat) / public API or ABI / build or "
-    "packaging pipeline / anything irreversible. Conservative OR; if "
+    "packaging pipeline / large blast radius / anything irreversible. Conservative OR; if "
     "ambiguous, HIGH."
 )
 
@@ -113,8 +115,12 @@ def design_prompt(goal: str, prior_result: str, cycle: int) -> str:
         f"GOAL: {goal}{extra}\n\n"
         "Break the work into independently verifiable gates (1-3 files each), each "
         "with an explicit verification command. " + _TIER_RULE + "\n"
+        "Start with Risk / rationale / verification / acceptance conditions. "
+        "Planning completion is not implementation, verification, independent review or human acceptance. "
+        "Keep unmet HIGH conditions visible. REQUEST CHANGES fixes are not a re-review PASS.\n"
         "Output ONLY the HANDOFF.md content. It MUST end with two fences:\n"
-        "```tiers``` — one line per gate: `gate N: LOW|HIGH`\n"
+        "```tiers``` — one line per gate: `gate N: risk=LOW|HIGH compute=LOW|NORMAL|HIGH` "
+        "(choose one value per field; compute defaults NORMAL for LOW risk, HIGH for HIGH risk)\n"
         "```scope``` — the whitelist of files the Builder may edit (one per line)."
     )
 
@@ -259,7 +265,10 @@ def _builder_bailed(verdicts) -> bool:
 
 
 def compute_has_high(tiers: dict[str, str], verdicts) -> bool:
-    """True if any gate is HIGH. ``tier_for`` defaults HIGH, so a missing
+    """True if any gate has Risk HIGH, unrelated to the Compute resource tier.
+
+    The legacy name uses 'compute' as a verb; preserved for import compatibility.
+    ``tier_for`` defaults Risk HIGH, so a missing
     ```tiers``` fence yields HIGH for every declared gate (fail-closed); the
     Builder's self-reported tier is cross-checked too."""
     gate_keys = set(tiers) | {v.gate for v in verdicts}
@@ -1385,11 +1394,11 @@ class Orchestrator:
             if tier_gate_hard:
                 return bd, verdicts, False, self._outcome(BLOCKED, cycle, "tier-gate enforcement failed"), False
 
-        has_high = compute_has_high(tiers, verdicts)
+        has_high_risk = compute_has_high(tiers, verdicts)
         implementation_observed = any(
             change.path not in {busmod.RESULT, handoff_name} for change in changes
         )
-        return bd, verdicts, has_high, None, implementation_observed
+        return bd, verdicts, has_high_risk, None, implementation_observed
 
     def run_from_handoff(self) -> Outcome:
         """Run the single-shot build and append its attempt/terminal receipt."""

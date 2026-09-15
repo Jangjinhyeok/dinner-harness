@@ -9,6 +9,11 @@ Read [autonomy policy](../../rules/autonomy-policy.md) for risk classification.
 The user's request supplies the implementation authority already granted. Define observable
 completion criteria, explain important risk and implement in the main session by default.
 Ordinary clear tasks need no HANDOFF or role switch.
+For nontrivial work, start with `Risk / rationale / verification / acceptance conditions`.
+Risk is LOW/HIGH, distinct from Compute LOW/NORMAL/HIGH; this policy applies without Two-CLI.
+At completion report planning, implementation, actual checks, independent review and human
+acceptance separately, including unmet conditions. Planning alone leaves implementation/runtime
+checks not_run. REQUEST CHANGES/FAIL fixes remain pending independent re-review, not PASS.
 
 Preserve baseline user edits and requested scope. Follow the project's checks and
 [verification-loop](../verification-loop/SKILL.md). Correct known deterministic failures

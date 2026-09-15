@@ -22,6 +22,22 @@ Mark unavailable runtime validation not_run. Do not impose a universal coverage 
 
 ## Working conventions
 
+- Risk has two levels: LOW/HIGH; Compute has LOW/NORMAL/HIGH. MEDIUM is not a Risk level.
+  For nontrivial work, including planning, read `rules/autonomy-policy.md` from the active
+  harness install root (reuse an unchanged copy already read in this session). This applies
+  to single-session Codex as well as optional Two-CLI work.
+  HIGH includes replication/RPC/net serialization, save formats, live config, migration/schema,
+  security, public API/ABI, build/packaging, large blast radius or irreversibility; ambiguity is HIGH.
+  LOW is scoped, reversible local work.
+- Start with `Risk / rationale / verification / acceptance conditions`; update after new findings.
+  Report planning, implementation, actual verification, independent review and human acceptance
+  separately, including unmet conditions. Planning-only work leaves implementation/runtime checks
+  not_run; a design review does not replace implementation review. Do not force questions on trivial work.
+- REQUEST CHANGES/FAIL fixes are not a re-review PASS. Preserve the prior verdict and pending
+  re-review until an independent reviewer checks the changed artifact and evidence.
+- Prompt instructions do not enforce semantic risk classification. Native hooks cover supported
+  tool events; controller checks inspect post-turn deltas. Neither proves independent review or
+  human acceptance, and inline work does not automatically receive the controller checks.
 - Technical discussion: Korean with English technical terms. Identifiers/comments: English.
   Commit messages: type prefix plus Korean, unless a more specific project rule applies.
 - Reuse repository patterns first; verify uncertain/version-dependent APIs against official sources.

@@ -8,6 +8,11 @@ description: Turn unclear completion criteria into observable outcomes and a pro
 Infer the outcome from the request and existing behavior, state material assumptions, and ask
 only about choices changing scope or outcome. For multistep work give a short plan connecting
 meaningful changes to verification; ordinary inline work needs no plan file or HANDOFF.
+For nontrivial work, including planning-only requests, read the unchanged session copy or original
+[autonomy policy](../../rules/autonomy-policy.md). Start with `Risk / rationale / verification /
+acceptance conditions`. Risk LOW/HIGH is separate from Compute LOW/NORMAL/HIGH and applies
+without Two-CLI. Report plan completion separately from implementation, actual verification,
+independent review and HIGH human acceptance; keep unmet conditions visible.
 
 A bug fix should reproduce failure and check corrected behavior. A refactor should preserve
 relevant observable behavior. Add a useful regression test when justified; small reversible
