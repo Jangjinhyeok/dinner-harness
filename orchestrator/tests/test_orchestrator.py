@@ -925,7 +925,7 @@ def _git_commit_all(repo: Path) -> None:
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True,
                    capture_output=True, text=True)
     subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@example.com",
-                    "-c", "user.name=t", "commit", "-qm", "base"],
+                    "-c", "user.name=t", "commit", "--allow-empty", "-qm", "base"],
                    check=True, capture_output=True, text=True)
 
 
@@ -1900,6 +1900,12 @@ class TestHumanGates(unittest.TestCase):
 
 
 class TestBuildAuditChallengeEvidence(unittest.TestCase):
+    def setUp(self):
+        # Serialization tests only; no real dispatch or Git snapshot claim.
+        state = mock.patch("orchestrator.receipt.code_state", return_value={"schema": "git-relevant-state.v1", "sha256": "fixture"})
+        state.start()
+        self.addCleanup(state.stop)
+
     @staticmethod
     def _audit(audit_dir: Path, *, event: str = "challenge_dispatch") -> BuildAudit:
         audit = BuildAudit(
@@ -1956,6 +1962,7 @@ class TestBuildAuditChallengeEvidence(unittest.TestCase):
                 outcome="CHALLENGED",
                 reason_code="challenge_complete",
                 attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
+                code_state=receipt.code_state(audit_dir),
             )
             self.assertTrue(
                 receipt.find_challenge_evidence(
@@ -2134,6 +2141,8 @@ class TestChallenge(unittest.TestCase):
 
     @staticmethod
     def _orchestrator(repo: Path, audit_dir: Path, *, routing_preset: str = ""):
+        _git_init(repo)
+        _git_commit_all(repo)
         cfg = Config(
             repo=repo,
             backend="real",
@@ -2313,7 +2322,12 @@ class TestBuildFromHandoff(unittest.TestCase):
             "audit_dir": Path(audit_tmp.name),
         }
         options.update(cfg_overrides)
-        cfg = _cfg(Path("."), **options)
+        repo = Path(audit_tmp.name) / "repo"
+        repo.mkdir()
+        _git_init(repo)
+        _git_commit_all(repo)
+        options["audit_dir"] = Path(audit_tmp.name) / "audit"
+        cfg = _cfg(repo, **options)
         original_builder = object()
         orchestrator = Orchestrator(
             cfg, original_builder, original_builder, AutoApprove(), log=lambda m: None
@@ -2338,6 +2352,7 @@ class TestBuildFromHandoff(unittest.TestCase):
             outcome=CHALLENGED,
             reason_code="challenge_complete",
             attempts=1, required=True, challenge_result_hash=receipt.content_hash("critique"),
+            code_state=receipt.code_state(Path(orchestrator.cfg.repo)),
         )
 
     def test_receipt_terminal_records_routing_metadata(self):

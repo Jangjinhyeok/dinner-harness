@@ -306,6 +306,45 @@ verbatim" above describes the *mechanism*, not two live layers.
     hooks/subagents — `CODEX-RECON.md` §b). The controller net covers the Builder
     diff regardless, but Codex-side native safety only exists on 0.140+.
 
+## HIGH pre-design challenge freshness
+
+`CHALLENGED` means receipt of a design critique, not review PASS, post-implementation
+independent review, or human acceptance. Those HIGH boundaries remain unchanged.
+
+Receipts bind repo/task/HANDOFF/routing policy plus a `git-relevant-state.v1`
+snapshot. The scope is the **entire tracked and non-ignored untracked Git tree**,
+including read dependencies outside an incomplete HANDOFF write scope. HEAD tree
+entries, index mode/object/stage/path entries, and working paths/bytes/executable
+bits are separate digest inputs. Additions, deletions, renames and index-only
+changes invalidate evidence. Commit identity alone is not an input: identical
+source trees, empty commits and report-only commits can reuse evidence.
+
+Only root `RESULT.md` and `CHALLENGE.md` are reserved output exclusions in every
+layer; nested names are included. Audit/execution records and temporary response
+schemas remain outside the target repo. No arbitrary logs directory is exempted.
+Receipts contain only the snapshot schema and SHA-256, never source bytes or a
+path list. Ignored untracked files, Git internals and external dependencies are
+outside the contract. Tasks relying on those inputs must bring required non-secret
+inputs into Git-visible source and re-challenge; this evidence cannot attest to
+their freshness. Tracked files remain included regardless of ignore rules.
+Symlinks/junctions, submodules, opaque directories, unreadable files, Git failures,
+and repositories without HEAD fail closed.
+
+Two consecutive snapshots must agree. The controller compares state and HANDOFF
+before/after the challenge, and refuses successful evidence on changes. HIGH builds
+check evidence during profile resolution and again after preflight just before
+Builder dispatch. This is not a filesystem lock: transient changes restored between
+observations or concurrent writes after the final check are not prevented. Quiesce
+other writers while using this workflow.
+
+Legacy receipts without `code_state`, or with another snapshot schema, cannot
+satisfy HIGH evidence. History is retained and still counts toward the existing
+round cap; re-challenge and existing cap acknowledgement rules apply.
+
+Run `python -m unittest orchestrator.tests.test_challenge_state` for temporary Git
+and actual-adapter-generated install regressions. Model transport is mocked; these
+tests make no live model or live installation claim.
+
 ## Layout
 
 ```

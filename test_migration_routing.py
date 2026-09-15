@@ -97,6 +97,10 @@ class RoutingMigrationTests(unittest.TestCase):
 
 class ReceiptMigrationTests(unittest.TestCase):
     def setUp(self):
+        # Receipt serialization unit tests; real Git snapshots have a separate suite.
+        snapshot = patch("orchestrator.receipt.code_state", return_value={"schema": "git-relevant-state.v1", "sha256": "fixture"})
+        self.state = snapshot.start()
+        self.addCleanup(snapshot.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -110,7 +114,7 @@ class ReceiptMigrationTests(unittest.TestCase):
                            event=event, task_id=task or self.task, policy_hash="policy")
         audit.set_handoff(draft)
         audit.terminal(status=status, outcome=status.upper(), reason_code="test", attempts=1,
-                       required=True, challenge_result_hash=content_hash("critique"))
+                       required=True, challenge_result_hash=content_hash("critique"), code_state=self.state())
         return audit
 
     def test_mock_challenge_cannot_authorize_real_dispatch(self):

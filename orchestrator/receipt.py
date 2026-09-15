@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
+import subprocess
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -22,10 +24,96 @@ from typing import Optional
 _SCHEMA = "dinner-harness.build-audit.v1"
 _AUDIT_FILENAME = "build-audit.jsonl"
 _ORCHESTRATOR_SHA256: Optional[str] = None
+_STATE_SCHEMA = "git-relevant-state.v1"
+_STATE_OUTPUTS = {b"RESULT.md", b"CHALLENGE.md"}
 
 
 class ReceiptError(RuntimeError):
     """Required policy evidence could not be read or durably recorded."""
+
+
+def code_state(repo: Path) -> dict[str, str]:
+    """Hash the whole Git-visible source tree, not the HANDOFF write scope.
+
+    HEAD tree entries, index entries and working bytes are separate inputs.
+    Ignored untracked files and Git internals are outside this contract; root
+    controller reports are reserved outputs. No paths or contents are persisted.
+    Unsupported/opaque state fails closed. Two passes detect unstable reads;
+    this is not a filesystem lock (callers also compare across the challenge).
+    """
+    def git(*args: str) -> bytes:
+        result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                                timeout=30, check=False)
+        if result.returncode:
+            raise ReceiptError("cannot collect challenge Git state")
+        return result.stdout
+
+    def snapshot() -> str:
+        if Path(os.fsdecode(git("rev-parse", "--show-toplevel").strip())).resolve() != repo:
+            raise ReceiptError("challenge target must be the Git worktree root")
+        head = git("ls-tree", "-r", "-z", "HEAD")
+        index = git("ls-files", "--stage", "-z")
+        others = git("ls-files", "--others", "--exclude-standard", "-z")
+        digest = hashlib.sha256()
+
+        def add(value: bytes) -> None:
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+
+        paths = set()
+        for label, raw in ((b"head", head), (b"index", index)):
+            add(label)
+            for entry in sorted(filter(None, raw.split(b"\0"))):
+                metadata, name = entry.split(b"\t", 1)
+                if name in _STATE_OUTPUTS:
+                    continue
+                mode = metadata.split(b" ", 1)[0]
+                if mode not in (b"100644", b"100755"):
+                    raise ReceiptError("unsupported challenge tree entry (link or submodule)")
+                add(entry)
+                paths.add(name)
+        paths.update(filter(None, others.split(b"\0")))
+        add(b"worktree")
+        for name in sorted(paths - _STATE_OUTPUTS):
+            add(name)
+            path = repo / os.fsdecode(name)
+            # Do not follow directory symlinks, junctions, or file symlinks.
+            for parent in (path, *path.parents):
+                if parent == repo:
+                    break
+                try:
+                    component = parent.lstat()
+                except FileNotFoundError:
+                    continue
+                # Path.is_junction is unavailable on supported Python 3.11.
+                # Reject all Windows reparse points without following targets.
+                if (stat.S_ISLNK(component.st_mode) or
+                        getattr(component, "st_file_attributes", 0) &
+                        getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+                    raise ReceiptError("unsupported challenge filesystem link")
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                add(b"absent")
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                raise ReceiptError("unreadable or opaque challenge file state")
+            add(b"regular-executable" if info.st_mode & stat.S_IXUSR else b"regular")
+            file_hash = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    file_hash.update(chunk)
+            add(file_hash.digest())
+        return digest.hexdigest()
+
+    try:
+        repo = repo.resolve()
+        first = snapshot()
+        if first != snapshot():
+            raise ReceiptError("challenge state changed during snapshot")
+        return {"schema": _STATE_SCHEMA, "sha256": first}
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise ReceiptError("challenge state snapshot unavailable") from exc
 
 
 def repo_identity(repo: Path) -> str:
@@ -214,6 +302,7 @@ def find_challenge_evidence(
         return False
     try:
         records = _required_records(audit_dir)
+        current_state = code_state(repo)
     except ReceiptError:
         return False
     for record in records:
@@ -226,6 +315,7 @@ def find_challenge_evidence(
             and record.get("repo_sha256") == repo_identity(repo)
             and record.get("task_id") == task_id
             and record.get("policy_sha256") == policy_hash
+            and record.get("code_state") == current_state
             and bool(record.get("challenge_result_hash"))
             and bool(record.get("dispatch_id"))
         ):

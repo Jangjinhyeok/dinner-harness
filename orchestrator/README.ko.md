@@ -252,6 +252,41 @@ mechanism 설명이지 두 layer가 항상 동시에 active라는 뜻은 아닙�
   - 전제 조건: cross-vendor Codex 작업에는 Codex 0.140 이상이 필요합니다. controller net은
     version과 무관하게 Builder diff를 보지만, Codex native safety는 0.140+에서만 있습니다.
 
+## HIGH 사전 challenge 증거의 최신성
+
+`CHALLENGED`는 사전 설계 critique 수신입니다. 검토 PASS, 구현 후 독립 review,
+사람의 결과 수용을 뜻하지 않습니다. HIGH build의 기존 검토·수용 경계는 유지됩니다.
+
+- receipt는 repo/task/HANDOFF/routing policy 외에 `git-relevant-state.v1` snapshot을
+  결합합니다. HANDOFF의 `scope`는 쓰기 허용 범위이므로 읽기 의존성을 제한하는 데
+  쓰지 않습니다. 불완전한 scope도 동일하게 **repo 전체의 tracked 파일과 Git이
+  무시하지 않는 untracked 파일**을 수집합니다. scope 밖의 Git-visible 변경도 무효화합니다.
+- HEAD의 관련 tree 항목, index의 mode/object/stage/path, working file의 경로·내용·실행
+  권한을 별도로 hash합니다. 추가·삭제·rename과 index만의 변경도 감지합니다.
+  HEAD commit ID 자체는 비교하지 않습니다. 관련 tree가 동일한 empty commit이나
+  controller 산출물만 commit한 경우는 재사용 가능합니다. receipt에는 snapshot
+  schema와 SHA-256만 남기며 파일 내용·경로 목록·자격증명을 저장하지 않습니다.
+- repo root의 `RESULT.md`, `CHALLENGE.md`는 예약된 controller 출력으로 모든 layer에서
+  제외합니다. 동명 하위 경로는 제외하지 않습니다. 실행 기록·receipt·임시 response
+  schema는 기존 규칙대로 repo 밖에 둡니다. 임의의 logs 디렉터리를 추가 제외하지 않습니다.
+- ignored untracked 파일, Git 내부 metadata, repo 외부 의존성은 범위 밖입니다.
+  이들을 읽기 의존성으로 사용하는 작업은 이 증거로 최신성을 보장할 수 없습니다.
+  필요한 non-secret 입력을 Git-visible source로 포함시킨 뒤 다시 challenge해야 합니다.
+  tracked 파일은 ignore 규칙과 무관하게 포함합니다. symlink/junction, submodule,
+  opaque directory, unreadable 파일, Git 실패, HEAD 없는 저장소는 fail-closed입니다.
+- 연속 두 snapshot이 일치해야 수집에 성공합니다. challenge 호출 전후 snapshot과
+  HANDOFF 본문을 비교하며 변경 시 성공 receipt를 발행하지 않습니다. HIGH profile
+  해석 시와 Builder 호출 직전 preflight 이후에 현재 상태와 증거를 다시 비교합니다.
+  이는 filesystem lock이 아니므로 관측 사이에 바뀌었다 복구되는 상태나 마지막 검사
+  이후의 동시 writer까지 막지는 않습니다. 대상 repo의 동시 변경을 중단하고 사용해야 합니다.
+- `code_state` 없는 legacy receipt와 다른 snapshot schema는 HIGH 증거로 거부합니다.
+  기존 history는 삭제하지 않으며 round cap 계산에는 계속 반영합니다. 재challenge가
+  필요하고 기존 cap/acknowledgement 정책은 그대로 적용됩니다.
+
+회귀 검증: `python -m unittest orchestrator.tests.test_challenge_state`.
+임시 Git 저장소와 실제 adapter로 생성한 임시 설치본을 사용하며, 모델 transport는 mock입니다.
+이 검사는 live 모델 호출이나 live 설치 검증을 의미하지 않습니다.
+
 ## 구조
 
 ```

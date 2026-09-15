@@ -29,7 +29,7 @@ from . import safety
 from .bus import Bus, parse_tiers, parse_verdicts, parse_control, tier_for
 from .config import Config
 from .receipt import (BuildAudit, ReceiptError, content_hash, count_consecutive_challenge_rounds,
-                      find_challenge_evidence, task_identity)
+                      code_state, find_challenge_evidence, task_identity)
 from .vendors import Backend, Turn, ROLE_ARCHITECT, ROLE_BUILDER, ROLE_CHALLENGER, make_backend
 
 
@@ -164,6 +164,11 @@ def challenge_prompt(draft_text: str, draft_name: str) -> str:
         "and do not assume you can. Your only output is your final message, "
         "which the calling process captures and stores as the critique record — "
         "you do not write it to a file yourself.\n\n"
+        "Evidence covers the whole tracked and non-ignored untracked Git tree, "
+        "not just the HANDOFF write scope. Do not rely on ignored files, external "
+        "dependencies, Git internals, or root RESULT.md/CHALLENGE.md as source. "
+        "If those inputs are needed, report that this challenge cannot establish "
+        "their freshness; bring non-secret inputs into the versioned source contract first.\n\n"
         "Attack the design in the draft below as rigorously as you can. At minimum:\n"
         "- Is the risk classification (LOW/HIGH) and compute tier justified, or "
         "understated?\n"
@@ -750,6 +755,7 @@ class Orchestrator:
         self._log_fn = log
         self._log: list[str] = []
         self._resolved_builder_profile: dict = {}
+        self._requires_challenge = False
         self._turn_observations: list[dict] = []
 
     def _emit(self, msg: str) -> None:
@@ -1261,6 +1267,18 @@ class Orchestrator:
         if stop:
             return None, [], False, self._outcome(BLOCKED, cycle, stop), False
 
+        # Recheck after preflight and immediately before the first implementation
+        # dispatch. Recovery is read-only and follows deliberate Builder changes.
+        if (not recovery and cfg.backend == "real" and
+                self._requires_challenge):
+            if not find_challenge_evidence(
+                Path(cfg.audit_dir), content_hash(handoff_text), repo=Path(cfg.repo),
+                task_id=task_identity(Path(cfg.repo), handoff_name, cfg.task_id),
+                policy_hash=self._resolved_builder_profile["policy_hash"],
+            ):
+                return None, [], False, self._outcome(
+                    BLOCKED, cycle, "challenge evidence became stale before Builder dispatch"), False
+
         self._emit(f"[cycle {cycle}] BUILDER_EXECUTE ({cfg.builder_vendor})")
         structured = cfg.backend == "real" and cfg.builder_vendor == "codex"
         with tempfile.TemporaryDirectory(prefix="dinner-output-") as directory:
@@ -1528,13 +1546,24 @@ class Orchestrator:
         }
         if rounds_so_far >= cfg.max_challenge_rounds:
             self._resolved_builder_profile["round_cap_acknowledged"] = True
+        try:
+            reviewed_state = code_state(Path(cfg.repo))
+        except ReceiptError as exc:
+            return self._outcome(BLOCKED, 0, str(exc))
         turn = self.builder.invoke(ROLE_CHALLENGER, challenge_prompt(draft_text, draft_name), self.cfg)
         if turn.error:
             return self._outcome(BLOCKED, 1, f"challenger error: {turn.error}")
         critique = turn.text
         if not critique.strip():
             return self._outcome(BLOCKED, 1, "challenger produced an empty critique")
+        try:
+            if (reviewed_state != code_state(Path(cfg.repo)) or
+                    _read_bus(bus, draft_name) != draft_text):
+                return self._outcome(BLOCKED, 1, "target state changed during challenge; critique is stale")
+        except ReceiptError as exc:
+            return self._outcome(BLOCKED, 1, str(exc))
         bus.write("CHALLENGE.md", critique)
+        self._resolved_builder_profile["code_state"] = reviewed_state
         self._resolved_builder_profile["challenge_result_hash"] = content_hash(critique)
         self._resolved_builder_profile["execution_path"] = "headless_challenge"
         return self._outcome(CHALLENGED, 1, "challenge complete -- see CHALLENGE.md")
@@ -1574,7 +1603,7 @@ class Orchestrator:
             ):
                 return self._outcome(
                     BLOCKED, 0, "HIGH gate has no matching challenger_high evidence for this "
-                    "repo/task/handoff/policy; run orchestrate.py challenge first",
+                    "repo/task/handoff/policy/code state; run orchestrate.py challenge first",
                 )
             profile = routing.validate_profile(routing.ModelProfile(
                 vendor=profile.vendor, model=cfg.builder_model or profile.model,
@@ -1595,6 +1624,7 @@ class Orchestrator:
                 ("effort", cfg.builder_effort)) if value],
             "policy_hash": policy_hash, "account_access": "unknown",
         }
+        self._requires_challenge = is_high_risk
         return None
 
     def _run_from_handoff(self, audit: BuildAudit) -> Outcome:
