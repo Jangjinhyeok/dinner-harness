@@ -1,0 +1,24 @@
+{
+  "started_at": "2026-09-15T05:41:13.322788+00:00",
+  "input_sha256": "af2e89910c0c597ac29bcba4bf6b1e30980a2ad03f6b6dce2705651152e1d97e",
+  "policy_sha256": {
+    "assets/codex/AGENTS.md": "641cb84ea9b4cc0f0a7937489d025cbb2c52dc1d0ebf15242da26f8782532b62",
+    "content/skills/verification-loop/SKILL.md": "cb80046bc50fd26e3d971a596555e1b526c4fff7afe4772a30c6fccd0f8037a8",
+    "content/skills/adversarial-review/SKILL.md": "141b7e535be57fca5cf5de54d4ed7fc36d8ce9068760b9b6b48b200a2ad3d9f9",
+    "content/skills/goal-driven-execution/SKILL.md": "56fc9f6a76633d2225d53a7e2ee69ef1e7aceed1367e23f3d2a3dbc3d8a80391",
+    "content/agents/_core/code-reviewer.md": "593ead6cd90ab4f8c27415ce3fca25bec0d2cb8e32c08c3a2714080d890bef97",
+    "content/docs/specialists/ue-blueprint.md": "54ab35a731ac4b76c04dd75a58b77d1ef09929435b804b953f3d13a86391a4a1",
+    "content/docs/specialists/ue-umg.md": "9ffa54aa2fb5875259f34d2cfc0a7254584ed99646c8abac47bf1fe028b56673"
+  },
+  "attempt": 1,
+  "retry_budget": 1,
+  "usage": "unknown",
+  "recorded_at": "2026-09-15T05:43:38.260311+00:00",
+  "elapsed_wall_seconds_to_record": 144.938,
+  "target": "native subagent /root/evidence_attempt; fresh context; inherited main model; concrete runtime model not independently verified",
+  "response_sha256": "4891d26b7d2a31a244e624c993b0e28469f21264a98af08d1775a1daa1537583",
+  "grader_exit_code": 0,
+  "cases": 12,
+  "semantic_review": "PASS: independent native reviewer /root/workflow_review inspected all 12 explanations and provenance hashes",
+  "engine_mcp_execution": "not_run"
+}

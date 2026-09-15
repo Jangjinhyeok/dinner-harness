@@ -24,5 +24,10 @@ HIGH remains pending human acceptance. Builder `panel=PASS` is not proof of a re
 REQUEST CHANGES/FAIL fixes are an author's response, not a re-review PASS. Record the original
 verdict and `fixes applied; re-review pending` until an independent reviewer examines the changed
 artifact and evidence. Keep design review separate from post-implementation review.
+State which files, logs and images you actually inspected and which claims came from the parent.
+Check that evidence targets the reviewed state; stale, blank or uninspected previews cannot support
+visual PASS. Keep that check not_run unless the actual target was observed failing (FAIL).
+Use the latest requested outcome: compile success does not justify retaining a removed feature
+as hidden bindings/widgets or placeholders without a required compatibility contract.
 Preserve controller repo/task challenge caps. Do not repeat review without relevant new changes
 or missing evidence to resolve.

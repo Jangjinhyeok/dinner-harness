@@ -1,0 +1,74 @@
+[
+  {
+    "id": "compile_conflict",
+    "claims": {"compile": "FAIL"},
+    "evidence": ["wrapper", "compiler"],
+    "reason": "제공된 기록상 동일 대상·호출의 compiler가 required BindWidget 누락 오류 1개를 보고했다. wrapper의 success=true, compiled=true보다 실제 대상의 실패 진단이 우선한다. 직접 compile을 실행한 결과는 아니다."
+  },
+  {
+    "id": "python_conflict",
+    "claims": {"inspection": "FAIL"},
+    "evidence": ["wrapper", "python"],
+    "reason": "제공된 현재 실행 기록에는 inspection 전에 발생한 unhandled Python exception과 traceback이 있고 완료 결과가 없다. 요청한 inspection 시도가 실패했으므로 wrapper 성공으로 PASS를 선언할 수 없다. 직접 Python을 실행하지 않았다."
+  },
+  {
+    "id": "wrong_build_target",
+    "claims": {"build": "not_run"},
+    "evidence": ["wrapper", "command"],
+    "reason": "제공된 실행 기록은 Editor console command만 수행했으며 요청한 UBT/Build.bat는 호출하지 않았다고 명시한다. exit=0은 해당 Editor 명령의 결과이며 프로젝트 build 검증 증거가 아니다. 직접 build를 실행하지 않았다."
+  },
+  {
+    "id": "compile_control",
+    "claims": {"compile": "PASS"},
+    "evidence": ["compiler", "history"],
+    "reason": "제공된 현재 대상 기록에 errors=0, warnings=0 및 compile 성공 완료가 명시되어 있어 기록 기준 PASS다. 어제의 무관한 traceback은 인용된 과거 정보이므로 현재 실패로 취급하지 않는다. 직접 compile을 실행하지 않았다."
+  },
+  {
+    "id": "stale_visual",
+    "claims": {"visual": "not_run"},
+    "evidence": ["parent", "artifact"],
+    "reason": "제공된 기록상 확인된 preview는 최신 layout 수정 전 산출물이고 수정된 대상 이미지는 검사되지 않았다. parent의 긍정적 평가만으로 최신 layout의 visual PASS를 뒷받침할 수 없다. 이 평가에서도 이미지를 직접 검사하지 않았다."
+  },
+  {
+    "id": "blank_preview",
+    "claims": {"visual": "not_run"},
+    "evidence": ["capture", "artifact"],
+    "reason": "제공된 기록에는 현재 PNG 생성 성공과 all-black preview 관찰이 있으나 UI layout 자체는 식별되지 않았다. capture 실패인지 실제 앱 상태인지 불명확하므로 visual PASS도 실제 layout 결함 FAIL도 확정할 수 없다. 이 평가에서는 이미지를 직접 검사하지 않았다."
+  },
+  {
+    "id": "hidden_removed_feature",
+    "claims": {"compile": "PASS", "requirements": "FAIL"},
+    "evidence": ["compiler", "diff"],
+    "reason": "제공된 현재 Blueprint compile 기록은 오류 0개이므로 compile은 기록 기준 PASS다. 그러나 완전 제거가 요구되고 compatibility retention이 불필요한데도 weekly widgets와 required bindings가 hidden placeholders로 saved hierarchy와 code에 남아 있어 requirements는 FAIL이다. 직접 compile이나 code 검사를 수행한 결과는 아니다."
+  },
+  {
+    "id": "reload_failure",
+    "claims": {"persisted_state": "FAIL"},
+    "evidence": ["editor", "reload"],
+    "reason": "제공된 기록상 same-session compile/save 성공 후 fresh-process load에서 삭제된 widget metadata 관련 ensure와 targeted validation 실패가 발생했다. 수정된 package의 재저장·재검증 기록이 없어 persisted-state 실패가 유지된다. 직접 engine이나 reload를 실행하지 않았다."
+  },
+  {
+    "id": "reload_control",
+    "claims": {"persisted_state": "PASS"},
+    "evidence": ["initial", "repair", "latest"],
+    "reason": "초기 fresh-process load의 stale metadata ensure 실패는 보존한다. 제공된 후속 기록은 engine이 metadata를 복구한 package를 저장했고, 그 저장 revision을 별도 fresh process에서 로드하여 succeeded=2, warnings=0, failed=0 및 관련 ensure 없음으로 targeted checks를 완료했다고 명시한다. 최신 persisted-state 검증은 기록 기준 PASS이며 직접 실행한 검증은 아니다."
+  },
+  {
+    "id": "generated_control",
+    "claims": {"scope": "PASS"},
+    "evidence": ["rule", "delta"],
+    "reason": "제공된 기록상 승인된 folder를 unchanged collection rule로 스캔했고, 승인된 asset 3개 삭제와 필요한 index 재생성이 수행되었다. 제거된 nonexistent paths 18개와 추가된 existing package paths 39개 모두 해당 folder 내에서 확인되었으며 legacy references가 없고 baseline user edits가 보존되었다. 파일·entry 수만이 아니라 입력 범위, 규칙 및 각 delta의 근거가 있으므로 scope는 기록 기준 PASS다. 직접 경로·diff를 검사하지 않았다."
+  },
+  {
+    "id": "generated_unknown",
+    "claims": {"scope": "BLOCKED"},
+    "evidence": ["claim", "delta"],
+    "reason": "Generator exit=0과 generated files가 항상 안전하다는 주장만으로 broad delta의 scope를 입증할 수 없다. 입력·generation rule의 비교, added/removed paths의 확인 및 승인된 변경과의 관계에 대한 증거가 부족하다. 제공된 기록만으로 scope 수용 여부를 확정할 수 없어 BLOCKED이며 직접 diff를 검사하지 않았다."
+  },
+  {
+    "id": "push_auth_failure",
+    "claims": {"commit": "PASS", "push": "FAIL"},
+    "evidence": ["commit", "push"],
+    "reason": "제공된 기록상 git commit은 exit=0이고 새 commit이 로컬에 존재하여 commit은 PASS다. intended remote/ref로의 git push는 SSH authentication denied로 exit=128이며 remote ref가 전진하지 않아 push는 FAIL이고 delivery는 미완료다. 로컬 commit은 유지되며 인증 실패를 code 실패나 사용자 거부로 해석하지 않는다. 직접 git 명령을 실행하거나 자격증명을 확인하지 않았다."
+  }
+]

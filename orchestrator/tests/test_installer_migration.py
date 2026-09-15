@@ -82,6 +82,34 @@ class TestCodexInstallMigration(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(leftovers, [])
 
+    def test_workflow_evidence_guidance_reaches_inline_and_native_review(self):
+        self.render()
+        sources = {
+            "AGENTS.md": "assets/codex/AGENTS.md",
+            "templates/AGENTS.md": "content/templates/AGENTS.md",
+            "docs/specialists/ue-blueprint.md": "content/docs/specialists/ue-blueprint.md",
+            "docs/specialists/ue-umg.md": "content/docs/specialists/ue-umg.md",
+        }
+        for skill in ("verification-loop", "adversarial-review", "goal-driven-execution"):
+            sources[f"skills/{skill}/SKILL.md"] = f"content/skills/{skill}/SKILL.md"
+        for destination, source in sources.items():
+            actual = (self.dest / destination).read_text(encoding="utf-8")
+            expected = (ROOT / source).read_text(encoding="utf-8")
+            if destination.startswith("skills/"):
+                actual, expected = actual.split("---", 2)[2], expected.split("---", 2)[2]
+            self.assertEqual(actual, expected, destination)
+        agents = (self.dest / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("skills/verification-loop/SKILL.md", agents.split("## 선택적 경로")[0])
+        reviewer = tomllib.loads((self.dest / "agents/code-reviewer.toml").read_text(encoding="utf-8"))
+        self.assertEqual(reviewer["sandbox_mode"], "read-only")
+        self.assertIn("Stale, blank or uninspected", reviewer["developer_instructions"])
+        verification = (self.dest / "skills/verification-loop/SKILL.md").read_text(encoding="utf-8")
+        for marker in ("request delivery, process completion and target-operation success",
+                       "UBT/build command", "Tie logs/images/reports", "generation rule",
+                       "commit and push separately"):
+            self.assertIn(marker, verification)
+        self.assertTrue((self.dest / "skills/verification-loop/../../docs/specialists/ue-blueprint.md").resolve().is_file())
+
     @unittest.skipUnless(os.name == "nt", "PowerShell hook execution requires Windows")
     def test_windows_hook_commands_preserve_literal_paths_stdin_and_exit_codes(self):
         root = Path(self.temp.name) / "한글 space & $dollar 'quote'"

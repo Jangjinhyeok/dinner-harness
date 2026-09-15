@@ -65,4 +65,11 @@ Blueprint nativization is available in the project's engine/toolchain.
 
 Verify Blueprint compilation and relevant runtime/automation scenarios, including failure paths,
 loading, destruction and multiplayer. Unavailable engine checks are not_run.
+For widget addition/deletion, reparenting or reflected-binding changes, compile and save, then
+reload the affected saved packages in a fresh process and run targeted validation. Same-session
+success does not establish persisted-state correctness. Investigate relevant load ensures and
+stale serialized metadata instead of dismissing them as noise. If loading repairs metadata,
+save the repaired package and repeat the fresh-process check before PASS. Do not prescribe manual
+metadata surgery without pinned engine evidence. Cosmetic text/color-only edits need only their
+relevant checks; unavailable engine/reload verification remains not_run.
 See [UMG](ue-umg.md) and [replication](ue-replication.md) for adjacent contracts.

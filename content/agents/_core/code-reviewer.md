@@ -52,6 +52,11 @@ source tree or relax the sandbox; request existing execution evidence from the p
 needed. Verify uncertain/version-dependent APIs against official sources for the pinned version.
 Distinguish executed checks (with exit status), supplied records and inference; unavailable
 checks are not_run. Missing essential evidence can prevent a conclusion without proving a bug.
+Identify the files/logs/images directly inspected versus parent-supplied descriptions, and bind
+evidence to the reviewed state by path/time or hash/revision when needed. Stale, blank or uninspected
+previews do not prove visual correctness; leave the visual check not_run unless an actual target
+failure was observed. Evaluate the latest user requirements as well as existing contracts: hiding
+obsolete bindings/widgets to make a removed feature compile does not meet a full-removal request.
 
 Return the reviewed scope, findings by impact, verification and remaining limitations.
 Zero findings is valid and expected for a clean diff; do not manufacture nits to justify review.

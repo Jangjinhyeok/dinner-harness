@@ -49,6 +49,9 @@ Mark unavailable runtime validation not_run. Do not impose a universal coverage 
   No branch changes, commit, push, merge or deployment without the user's explicit authority.
 - Keep changes scoped; review the task delta against its baseline. Report actual checks,
   self-review and independent review separately, with not_run when absent.
+- For nontrivial verification, follow `skills/verification-loop/SKILL.md` in the active harness
+  home. Tool success and exit zero alone do not prove target success or requirement fulfillment.
+  Check target diagnostics and current artifacts; report commit and push outcomes separately.
 - HIGH changes require independent review and human result acceptance. Local implementation
   permission is separate from outward-facing or irreversible action authority.
 - Respect actual sandbox/hooks/protected paths; never weaken them to complete a task.

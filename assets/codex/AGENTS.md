@@ -25,6 +25,7 @@
 - 메인 세션은 설계와 직접 구현 모두 가능하다. 독립 탐색·중요한 검토에 실익이 있을 때만 native subagent를 쓴다.
 - 동일 tree에서 병렬 구현하지 않는다. 병렬 writer가 필요하면 소유 파일, 격리 위치, parent의 통합 방식을 먼저 확정한다. parent가 검증과 완료 책임을 유지한다.
 - 프로젝트 build/test 명령으로 위험에 맞게 검증한다. UE/Unity runtime이 없으면 해당 검증을 `not_run`으로 보고한다. 보편적인 coverage 수치나 새 도구 설치를 강제하지 않는다.
+- 도구의 success나 종료 코드만으로 작업 PASS를 선언하지 않는다. 비단순 검증에는 `skills/verification-loop/SKILL.md`를 적용해 실제 대상·오류·최신 산출물·요구사항 충족을 확인한다. commit과 push 결과도 별도로 보고한다.
 - baseline 대비 staged/unstaged/untracked 변경을 검토한다. self-review, 실행한 deterministic 검사, 독립 reviewer를 구별하고 수행하지 않은 리뷰를 PASS라 하지 않는다.
 - 완료 보고는 변경과 이유, 검증, 남은 한계를 담는다. 구조 설명은 규모에 비례시키고 사소한 변경에 ADR·다이어그램·파일 3개를 강제하지 않는다. 깊은 투어는 walkthrough skill을 쓴다.
 - “리뷰 완료, 이슈 없음” 또는 “리뷰 완료, 이슈 N개: …”로 검토 결과와 실제 검토 범위를 명시한다.

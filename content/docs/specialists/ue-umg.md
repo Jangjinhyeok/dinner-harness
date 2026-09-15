@@ -69,5 +69,11 @@ platform budgets; there is no universal UI millisecond allowance.
 
 Test focus/input, state changes, destruction, rebinding, loading failure and localization on configured
 targets. Unavailable runtime checks are not_run. See [Blueprint](ue-blueprint.md) and [GAS](ue-gas.md).
+When a feature is removed, reconcile its C++ bindings, widget hierarchy, references and metadata
+with the requested removal boundary; Hidden/Collapsed placeholders are not full removal without
+a compatibility requirement. Structural/binding changes need the Blueprint save/reload checks.
+Visual verification must inspect a usable preview of the current target state. A blank/stale image
+or successful capture command alone leaves layout verification not_run, not PASS; an observed
+target layout defect is FAIL. Keep code inspection, visual checks and PIE validation separate.
 
 Official reference: [ESlateVisibility](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/UMG/ESlateVisibility).

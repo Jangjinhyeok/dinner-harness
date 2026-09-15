@@ -22,8 +22,38 @@ timeout and error status; output head/tail must not hide failure. Separate actua
 execution from model claims and mock tests from live CLI/engine validation. Mark unavailable
 environment checks not_run. Repeat only for relevant changes or unresolved failures.
 
+## Evidence before PASS
+
+Distinguish request delivery, process completion and target-operation success. An MCP `success`
+flag or exit zero alone proves neither compilation nor requirement fulfillment. Confirm the
+actual target, command, diagnostics and completed operation. For UE compile use compiler errors
+and completion results; for Python inspect exceptions/tracebacks and a trustworthy completion
+result; for builds verify the project's actual UBT/build command and result, not an unrelated
+Editor command. Use the supported tool's diagnostics contract, not a universal text search for
+"error" (fixtures, quoted history and unrelated logs are not current target failures).
+Current relevant compiler errors, exceptions, failed checks or load ensures prevent PASS even
+when the wrapper reports success. A known target failure is FAIL; a target never exercised is
+not_run; incomplete or conflicting evidence stays unresolved, not PASS. Investigate the adapter
+and the interpretation separately; do not infer an external MCP implementation bug without evidence.
+
+Tie logs/images/reports to the tested artifact state with path, generation time and, when needed,
+hash or revision. Mark supplied records separately from directly inspected evidence. A created
+image or exit zero is not visual verification. Stale, blank or uninspected previews leave the
+requested visual check not_run; if the actual target was observed violating a requirement, report
+FAIL. After relevant code/asset edits, obtain applicable new evidence or retain the limitation.
+Do not mandate a manifest tool or rerun unrelated checks for every small edit.
+
+Verify the latest requested outcome as well as compilation. On feature removal, establish which
+callers, bindings, widget hierarchy, references and serialized metadata must disappear; do not
+restore obsolete placeholders solely to satisfy the old contract without a compatibility need.
+For Blueprint structural/reflected-binding edits, follow the targeted save/reload checks in
+[Blueprint guidance](../../docs/specialists/ue-blueprint.md); runtime absence remains not_run.
+
 Review the task delta against the baseline, not `HEAD~1`; include staged, unstaged and new files.
 Preserve unrelated user edits. Check scope, conventions, compatibility and side effects.
+For generated/collected data, explain the input and generation rule, added/removed entries and
+their relationship to the requested change. Check references and unexpected churn; generation
+alone does not authorize a broad delta. Preserve baseline user edits instead of blanket rollback.
 Use the existing secret scanner with redacted paths/rule IDs, never matched secret values;
 do not read credentials or expose them with broad content searches.
 
@@ -35,3 +65,7 @@ in single-session work too. Completion reports separate planning, implementation
 independent review and HIGH human acceptance, retaining unmet conditions. Planning-only work
 leaves implementation/runtime checks not_run. REQUEST CHANGES/FAIL fixes need independent
 re-review before reporting PASS; an author's fix report is not review evidence.
+Report local changes, commit and push separately with their actual outcomes and remote/ref when
+attempted. A failed push after a successful commit leaves the commit intact and delivery incomplete.
+Authentication failure is neither a code failure nor a user refusal; do not print credentials,
+bypass permissions/hooks or retry without changed evidence. This reporting grants no delivery authority.
