@@ -93,6 +93,23 @@ HANDOFF/RESULT bodies, changed-file paths, or changed-file contents. The CLI pri
 event is written; its presence is audit evidence, not a substitute for the
 Architect's RESULT + diff review or HIGH human end sign-off.
 
+Build and challenge terminal records include `turns`: one observation per backend invocation
+(format recovery is a separate invocation). The outer `dispatch_id` identifies the controller
+audit; each turn's `dispatch_id` identifies the backend invocation and its watch marker, when
+available. Keep both levels. `usage_source` identifies the public event source; `usage_status`
+is `reported`, `estimated` when explicitly flagged, or `unknown` when unavailable. Reported
+values are backend observations, not verified billing/quota totals. No estimator is added.
+Only provided token fields are kept; missing detail is unknown, not zero. Cached input is part
+of input, and reasoning (not exposed by this collector) must not be added again to output.
+The collector retains the latest completion snapshot without summing repeated events; it does
+not establish whether a provider's snapshot is request-local or cumulative across resumed work.
+Do not sum attempted/terminal events, required receipt copies and watch markers as separate usage.
+For aggregation, deduplicate terminal observations by audit and backend invocation IDs and establish
+snapshot scope first. These observations cover only the invoked headless path: interactive parent,
+native children and automatic approval usage/inclusion are unknown, not whole-task totals.
+Missing usage limits observation only; required challenge evidence still fails closed on persistence
+or state-binding failure. No private rollout or transcript collection is used.
+
 ## Dispatch the Builder in place
 
 Dispatch from the original repository. Before dispatch, commit the approved

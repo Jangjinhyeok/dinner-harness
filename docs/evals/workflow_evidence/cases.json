@@ -66,6 +66,30 @@
     "expected": {"claims": {"scope": "BLOCKED"}, "evidence": ["delta"]}
   },
   {
+    "id": "environment_changed",
+    "task": "Judge whether the previous environment blocker still justifies skipping current validation.",
+    "evidence": {"old": "Run 40 failed because the old engine installation lacked a build component.", "current": "The engine installation and permission configuration changed for run 41. No current build or blocker check was performed."},
+    "expected": {"claims": {"blocker_current": "not_run", "build": "not_run"}, "evidence": ["old", "current"]}
+  },
+  {
+    "id": "context_lost",
+    "task": "Determine whether the agent has enough current instruction context to proceed without rereading relevant guidance.",
+    "evidence": {"summary": "Compaction retained the policy path and matching file hash, but lost the task-relevant constraints and scope. The original text is available at that path.", "action": "No relevant sections were reread after compaction."},
+    "expected": {"claims": {"instruction_context": "BLOCKED"}, "evidence": ["summary", "action"]}
+  },
+  {
+    "id": "unused_helper",
+    "task": "Determine whether the requested CI behavior fix is verified for the current job.",
+    "evidence": {"diff": "A helper was changed and its unit test passed.", "caller": "The current job invokes a different script which never calls that helper. No changed execution path was exercised by this job."},
+    "expected": {"claims": {"job_fix": "not_run"}, "evidence": ["diff", "caller"]}
+  },
+  {
+    "id": "artifact_requirement",
+    "task": "The request requires removal of permission P from the final package. Report build and final requirement verification separately.",
+    "evidence": {"build": "The current dirty worktree built successfully into package run-42.", "artifact": "Inspection of that exact package found permission P still present, contributed by engine configuration."},
+    "expected": {"claims": {"build": "PASS", "requirements": "FAIL"}, "evidence": ["build", "artifact"]}
+  },
+  {
     "id": "push_auth_failure",
     "task": "Report commit and push outcomes separately for an authorized delivery. Do not expose credentials or infer a code failure/user refusal.",
     "evidence": {"commit": "git commit exited 0; the new commit exists locally.", "push": "git push to the intended remote/ref exited 128 with SSH authentication denied. Remote ref did not advance."},

@@ -113,7 +113,13 @@ class TestDispatchContract(unittest.TestCase):
                 self.assertEqual(outcome.status, BUILT)
                 self.assertEqual(outcome.completed_gates, ["1"])
                 self.assertEqual(backend.invoke.call_count, 2 if recover else 1)
+                terminal = json.loads(outcome.receipt_path.read_text().splitlines()[-1])
+                self.assertEqual(len(terminal["turns"]), 2 if recover else 1)
+                self.assertEqual(terminal["turns"][0]["role"], "builder")
+                self.assertEqual(terminal["turns"][0]["usage_status"], "unknown")
                 if recover:
+                    self.assertEqual(terminal["turns"][1]["role"], "recovery")
+                    self.assertEqual(terminal["turns"][1]["retry_reason"], "output_format")
                     self.assertEqual(backend.invoke.call_args.args[0], "recovery")
                     self.assertIn("report without contract", (root / "RESULT.md").read_text(encoding="utf-8"))
 

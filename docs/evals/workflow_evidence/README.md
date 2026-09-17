@@ -15,7 +15,7 @@ Risk 정책 자체의 단계나 controller gate는 변경하지 않는다.
 - 알려진 대상 실패는 FAIL, 실행/관찰되지 않은 검사는 not_run, 판정에 필요한 증거가
   없어 진행할 수 없는 scope 판단은 BLOCKED다. supplied evidence를 직접 실행/육안 검사한
   것으로 서술하면 안 된다. target failure가 아니라 캡처 자체가 불명인 blank preview는 not_run이다.
-- 12개 사례에는 success/error 충돌, 잘못된 build 대상, stale/blank visual, 숨김 잔재,
+- 최초 12개 사례에는 success/error 충돌, 잘못된 build 대상, stale/blank visual, 숨김 잔재,
   reload 실패, 생성 목록 scope, push 인증 실패와 정상 compile/reload/generated 대조군이 있다.
   특정 문자열이 있다는 이유만으로 모든 결과를 FAIL로 만드는 grader를 피한다.
 - 최초 비교의 retry budget은 1회다. 실패를 숨기는 재시도는 하지 않는다. 수정 후 재평가가
@@ -39,6 +39,25 @@ grader unittest PASS는 grader의 회귀 검사일 뿐 모델 평가 PASS가 아
 
 ## 실제 실행 기록
 
+### 이번 개선 평가 (attempt-2)
+
+- 현재 집합은 기존 12개와 환경 변경, context 손실, 미호출 helper, 최종 산출물 요구의
+  신규 4개로 총 16개다. 기준은 `6356dfff`와 이번 미커밋 source 변경이다.
+- 별도 context의 `/root/evidence_eval`에 expected를 제외한 입력과 지정 지침만 전달했다.
+  단일 시도, feedback 재시도 0회. [응답](attempt-2.json)과
+  [입력·지침·응답 hash 및 시간 기록](attempt-2.metadata.json)을 보존했다. usage는 unknown이다.
+- grader 실행 결과는 **FAIL: 16개 중 1개 상태 불일치**다. `context_lost`는 기대한
+  `instruction_context=BLOCKED` 대신 `FAIL`을 반환했다. 원본 응답과 기대값은 그대로 둔다.
+  설명에는 matching hash만으로 context 보존을 판단하지 않고 관련 지침을 다시 읽은 뒤
+  진행해야 한다고 적었다. 상태 판정과 설명의 의미 검토는 구분하며, 전체 PASS로 보고하지 않는다.
+- 독립 reviewer `/root/implementation_review`는 설명과 provenance를 직접 확인하여 의미 검토
+  PASS로 판정했다. 이 불일치는 context 충분성 판단과 진행 gate 판단을 혼용한 fixture의
+  상태 분류 모호성으로 보았다. 향후 문구를 명확히 한 별도 평가가 필요하며 기존 결과는 보존한다.
+- 나머지 15개 상태·증거 검사는 일치했다. 이는 합성 증거 해석 결과이며 runtime 실행,
+  토큰 절감이나 일반적인 품질 개선의 증명이 아니다. 실제 engine/CI 검증은 not_run이다.
+
+### 이전 실행 기록 (attempt-1, 당시 12개 집합)
+
 - 대상: native subagent `/root/evidence_attempt`, 이전 대화 없는 별도 context, 단일 시도.
 - 입력: 12개 합성 사례의 `id/task/evidence`, 현재 AGENTS 및 지정된 verification/review/UE
   source 지침. 예상 답과 grader를 제공하지 않았다. case 데이터는 instruction 본문에 넣지 않았다.
@@ -52,7 +71,7 @@ grader unittest PASS는 grader의 회귀 검사일 뿐 모델 평가 PASS가 아
   실제 시도 결과로 정정한 뒤 재검토했다. HIGH 사람 결과 수용: 수용(아래 승인 기록).
 - 이 한 번의 합성 평가로 실제 작업 성공률이나 신뢰도 백분율을 추정하지 않는다.
 
-## 구현 검증 기록
+## 이전 구현 검증 기록 (이번 변경의 검증 결과 아님)
 
 - `py -3 -m unittest discover -s . -p "test_*.py"`: exit 0, **374개, 실패 0, skip 4**.
   grader/생성물 targeted 5개도 별도 PASS. 이 suite가 native 모델 평가를 다시 실행하지는 않는다.

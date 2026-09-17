@@ -37,8 +37,13 @@ not_run; incomplete or conflicting evidence stays unresolved, not PASS. Investig
 and the interpretation separately; do not infer an external MCP implementation bug without evidence.
 
 Tie logs/images/reports to the tested artifact state with path, generation time and, when needed,
-hash or revision. Mark supplied records separately from directly inspected evidence. A created
-image or exit zero is not visual verification. Stale, blank or uninspected previews leave the
+hash or revision. Mark supplied records separately from directly inspected evidence. A
+revision alone does not identify uncommitted changes: record the relevant staged/unstaged/untracked
+state too. Trace the actual caller or job/run to the changed path; an unused helper or an old run
+cannot verify the current operation. Separate code changes, compile/build success, requirement
+fulfillment, final artifact checks, deployment/publication and human acceptance in the existing report.
+Check the final artifact when the requirement concerns its contents rather than just build success.
+A created image or exit zero is not visual verification. Stale, blank or uninspected previews leave the
 requested visual check not_run; if the actual target was observed violating a requirement, report
 FAIL. After relevant code/asset edits, obtain applicable new evidence or retain the limitation.
 Do not mandate a manifest tool or rerun unrelated checks for every small edit.

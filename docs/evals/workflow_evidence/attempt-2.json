@@ -1,0 +1,183 @@
+[
+  {
+    "id": "compile_conflict",
+    "claims": {
+      "compile": "FAIL"
+    },
+    "evidence": [
+      "wrapper",
+      "compiler"
+    ],
+    "reason": "제공된 합성 기록에서 동일 대상·호출의 compiler error가 확인되므로 wrapper success와 무관하게 실패다. 수정 후 해당 대상 compile을 다시 확인해야 한다."
+  },
+  {
+    "id": "python_conflict",
+    "claims": {
+      "inspection": "FAIL"
+    },
+    "evidence": [
+      "wrapper",
+      "python"
+    ],
+    "reason": "현재 inspection 호출이 완료 전에 unhandled exception으로 실패했다. wrapper success는 완료 증거가 아니다. 원인 수정 후 inspection 완료 결과가 필요하다."
+  },
+  {
+    "id": "wrong_build_target",
+    "claims": {
+      "build": "not_run"
+    },
+    "evidence": [
+      "wrapper",
+      "command"
+    ],
+    "reason": "Editor console 명령만 실행됐고 요청된 UBT build는 실행되지 않았다. 실제 프로젝트 target/platform/configuration의 build 명령과 완료 결과를 확인해야 한다."
+  },
+  {
+    "id": "compile_control",
+    "claims": {
+      "compile": "PASS"
+    },
+    "evidence": [
+      "compiler",
+      "history"
+    ],
+    "reason": "제공된 현재 대상 compile은 errors=0, warnings=0 및 성공 완료가 있다. 인용된 과거의 무관한 traceback은 현재 실패가 아니다. 대상이나 관련 소스가 바뀌면 다시 검증한다."
+  },
+  {
+    "id": "stale_visual",
+    "claims": {
+      "visual": "not_run"
+    },
+    "evidence": [
+      "parent",
+      "artifact"
+    ],
+    "reason": "검사된 preview는 최신 layout edit 이전 산출물이다. parent 주장만으로 최신 화면을 검증할 수 없으며 최신 대상 preview를 생성하고 직접 검사해야 한다."
+  },
+  {
+    "id": "blank_preview",
+    "claims": {
+      "visual": "not_run"
+    },
+    "evidence": [
+      "capture",
+      "artifact"
+    ],
+    "reason": "현재 PNG는 생성됐지만 검은 화면으로 실제 layout을 관찰하지 못했다. 캡처 실패인지 앱 문제인지 불명확하므로 layout FAIL로 단정하지 않는다. 캡처 경로를 확인하고 식별 가능한 현재 화면을 검사해야 한다."
+  },
+  {
+    "id": "hidden_removed_feature",
+    "claims": {
+      "compile": "PASS",
+      "requirements": "FAIL"
+    },
+    "evidence": [
+      "compiler",
+      "diff"
+    ],
+    "reason": "현재 compile은 성공했지만 제거 대상 widgets와 C++ bindings가 hidden placeholders로 남아 전체 제거 요구를 위반한다. 불필요한 hierarchy와 code를 제거하고 compile 및 저장된 최종 구조를 다시 확인해야 한다."
+  },
+  {
+    "id": "reload_failure",
+    "claims": {
+      "persisted_state": "FAIL"
+    },
+    "evidence": [
+      "editor",
+      "reload"
+    ],
+    "reason": "동일 세션 compile/save 성공에도 fresh-process load가 삭제된 widget metadata ensure로 실패했다. 복구된 package 저장 후 새 프로세스에서 해당 package를 다시 검증해야 한다."
+  },
+  {
+    "id": "reload_control",
+    "claims": {
+      "persisted_state": "PASS"
+    },
+    "evidence": [
+      "initial",
+      "repair",
+      "latest"
+    ],
+    "reason": "최초 load는 stale metadata ensure로 실패했다. 이후 repair/save된 revision을 별도 fresh process가 로드하여 succeeded=2, failed=0, warnings=0 및 관련 ensure 없음으로 검증했다. PASS는 이 저장 상태에 한정되며 관련 변경 후 재검증이 필요하다."
+  },
+  {
+    "id": "generated_control",
+    "claims": {
+      "scope": "PASS"
+    },
+    "evidence": [
+      "rule",
+      "delta"
+    ],
+    "reason": "승인된 folder와 변경 없는 collection rule, 3개 승인 asset 삭제, 18개 nonexistent path 제거와 39개 existing package path 추가를 모두 해당 folder 내에서 확인했다. legacy references가 없고 baseline 사용자 변경도 보존됐다. 파일 수가 아니라 입력·규칙·path 검사가 범위 증거다."
+  },
+  {
+    "id": "generated_unknown",
+    "claims": {
+      "scope": "BLOCKED"
+    },
+    "evidence": [
+      "claim",
+      "delta"
+    ],
+    "reason": "generator exit 0은 scope 증거가 아니다. 입력과 생성 규칙의 비교, 추가·삭제 path별 정당성, 승인된 범위와 baseline 사용자 변경 보존 여부가 부족해 수용을 판정할 수 없다. 해당 증거를 확보해야 한다."
+  },
+  {
+    "id": "environment_changed",
+    "claims": {
+      "blocker_current": "not_run",
+      "build": "not_run"
+    },
+    "evidence": [
+      "old",
+      "current"
+    ],
+    "reason": "run 40의 blocker는 당시 설치에 대한 기록이며 engine과 permissions가 바뀐 run 41의 검증 생략 근거가 아니다. 현재 engine/target/configuration 및 필요한 component와 permission을 재평가하고 현재 build를 실행해야 한다. 현 blocker도 build 성공도 확인되지 않았다."
+  },
+  {
+    "id": "context_lost",
+    "claims": {
+      "instruction_context": "FAIL"
+    },
+    "evidence": [
+      "summary",
+      "action"
+    ],
+    "reason": "경로와 matching hash는 필요한 지침 내용이 context에 남아 있다는 증거가 아니다. task constraints와 scope가 소실됐으므로 관련 원문을 다시 읽고 적용 범위를 복원한 뒤 진행해야 한다. context·scope·instruction 변경 시 필요한 부분을 재확인한다."
+  },
+  {
+    "id": "unused_helper",
+    "claims": {
+      "job_fix": "not_run"
+    },
+    "evidence": [
+      "diff",
+      "caller"
+    ],
+    "reason": "helper unit test는 실제 job이 호출하지 않는 경로만 검증했다. 요청된 current job behavior에 대한 fix 검증은 수행되지 않았다. 실제 caller에서 실행 script까지 추적해 관련 경로를 수정하고 현재 job/run을 검증해야 하며 helper test를 job fix PASS로 확장할 수 없다."
+  },
+  {
+    "id": "artifact_requirement",
+    "claims": {
+      "build": "PASS",
+      "requirements": "FAIL"
+    },
+    "evidence": [
+      "build",
+      "artifact"
+    ],
+    "reason": "현재 dirty worktree의 run-42 package build는 성공했지만 바로 그 package에 permission P가 존재해 최종 제거 요구는 실패했다. 기여하는 engine configuration을 수정한 후 새 package를 만들고 실제 permission을 검사해야 한다. revision만으로 dirty worktree를 식별하지 말고 관련 변경 상태와 package/run을 함께 기록한다."
+  },
+  {
+    "id": "push_auth_failure",
+    "claims": {
+      "commit": "PASS",
+      "push": "FAIL"
+    },
+    "evidence": [
+      "commit",
+      "push"
+    ],
+    "reason": "새 commit은 로컬에 존재하지만 intended remote/ref의 push는 SSH authentication denied로 실패해 remote가 갱신되지 않았다. commit은 유지되며 delivery는 미완료다. 인증 실패는 code failure나 사용자 거부가 아니다. 자격증명 노출이나 권한 우회 없이 인증 조건이 바뀐 후에만 재시도하고 remote/ref를 확인한다."
+  }
+]

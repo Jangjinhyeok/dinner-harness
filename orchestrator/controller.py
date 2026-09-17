@@ -1293,11 +1293,8 @@ class Orchestrator:
                     prompt or build_prompt(handoff_text, handoff_name, tiers, structured=structured), invoke_cfg)
             except Exception as exc:
                 bd = Turn(error=f"vendor invocation failed ({type(exc).__name__})")
-        self._turn_observations.append({
-            "role": "recovery" if recovery else "builder", "dispatch_id": bd.dispatch_id,
-            "thread_id": bd.thread_id, "usage": bd.usage, "elapsed_s": bd.elapsed_s,
-            "retry_reason": "output_format" if recovery else "", "failed": bool(bd.error),
-        })
+        self._turn_observations.append(bd.observation(
+            "recovery" if recovery else "builder", "output_format" if recovery else ""))
         self._last_contract_error = ""
         boundary_error = ""
         try:
@@ -1471,6 +1468,7 @@ class Orchestrator:
         primary build path's HIGH gate requires before dispatching builder_high.
         """
         cfg = self.cfg
+        self._turn_observations = []
         handoff_name = cfg.handoff_name or busmod.HANDOFF
         audit = BuildAudit(
             audit_dir=Path(cfg.audit_dir), repo=Path(cfg.repo), handoff_name=handoff_name,
@@ -1481,7 +1479,8 @@ class Orchestrator:
         try:
             outcome = self._run_challenge(audit)
         except Exception:
-            audit.terminal(status="blocked", outcome="ERROR", reason_code="controller_error", attempts=0)
+            audit.terminal(status="blocked", outcome="ERROR", reason_code="controller_error", attempts=0,
+                           execution_path="headless_challenge", turns=self._turn_observations)
             raise
         try:
             audit.terminal(
@@ -1490,6 +1489,7 @@ class Orchestrator:
                 reason_code=_challenge_receipt_reason_code(outcome),
                 attempts=outcome.cycles,
                 required=outcome.status == CHALLENGED,
+                execution_path="headless_challenge", turns=self._turn_observations,
                 **self._resolved_builder_profile,
             )
         except ReceiptError:
@@ -1550,7 +1550,11 @@ class Orchestrator:
             reviewed_state = code_state(Path(cfg.repo))
         except ReceiptError as exc:
             return self._outcome(BLOCKED, 0, str(exc))
-        turn = self.builder.invoke(ROLE_CHALLENGER, challenge_prompt(draft_text, draft_name), self.cfg)
+        try:
+            turn = self.builder.invoke(ROLE_CHALLENGER, challenge_prompt(draft_text, draft_name), self.cfg)
+        except Exception as exc:
+            turn = Turn(error=f"vendor invocation failed ({type(exc).__name__})")
+        self._turn_observations.append(turn.observation(ROLE_CHALLENGER))
         if turn.error:
             return self._outcome(BLOCKED, 1, f"challenger error: {turn.error}")
         critique = turn.text
@@ -1565,7 +1569,6 @@ class Orchestrator:
         bus.write("CHALLENGE.md", critique)
         self._resolved_builder_profile["code_state"] = reviewed_state
         self._resolved_builder_profile["challenge_result_hash"] = content_hash(critique)
-        self._resolved_builder_profile["execution_path"] = "headless_challenge"
         return self._outcome(CHALLENGED, 1, "challenge complete -- see CHALLENGE.md")
 
     def _resolve_builder_profile(

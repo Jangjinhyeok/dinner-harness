@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-09-17T08:14:14.304143+00:00",
+  "input_sha256": "39be16eae9f5822a505c2fc5b79d68886e6aa94a08cc9b7bc3ecbd09b71765ed",
+  "baseline": "6356dfff9ef3890b51408a573b1b479c003e6826 + current unstaged changes",
+  "policy_sha256": {
+    "assets/codex/AGENTS.md": "641cb84ea9b4cc0f0a7937489d025cbb2c52dc1d0ebf15242da26f8782532b62",
+    "content/rules/autonomy-policy.md": "ce6a72d2f1a434792028beea1429095c92a1e2dc8d21e5e87074e13c423dc584",
+    "content/skills/verification-loop/SKILL.md": "3b7db254d45bb0ba3e4c4f1c55fa4b6743009d3195e90164604a90fa78fa3550",
+    "content/skills/strategic-compact/SKILL.md": "927551b0b3401fe4436137645d344af95b692e058d32ddc445bbdacf7dba3e9a"
+  },
+  "attempt": 2,
+  "retry_budget": 0,
+  "usage": "unknown",
+  "recorded_at": "2026-09-17T08:16:24.858246+00:00",
+  "elapsed_wall_seconds_to_record": 130.554,
+  "target": "native subagent /root/evidence_eval; fresh context; concrete runtime model not independently verified",
+  "response_sha256": "ecd4b0c0c6f2ab9d5f0baccf4ecd0707c6cc1b14ffc6aefe67a89c2c67d4eb11",
+  "grader_exit_code": 1,
+  "cases": 16,
+  "grader_errors": [
+    "context_lost: incorrect or missing claims"
+  ],
+  "semantic_review": "PASS: independent native reviewer /root/implementation_review inspected explanations and provenance hashes; context_lost formal mismatch is fixture taxonomy ambiguity, not a reread behavior defect; grader FAIL retained",
+  "engine_mcp_execution": "not_run"
+}

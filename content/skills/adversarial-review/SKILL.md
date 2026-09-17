@@ -6,8 +6,12 @@ description: Perform evidence-based independent review of important changes, add
 # Independent Review
 
 Read [autonomy policy](../../rules/autonomy-policy.md). Review is read-only.
-Give one available native reviewer a fresh context with the requested outcome, baseline diff,
-affected callers and actual verification records, not the author's desired verdict.
+Give one available native reviewer a fresh context with the latest requested outcome and completion
+conditions, removal/change targets and constraints to preserve, baseline delta and unresolved findings.
+Include the actual execution path/callers, revision plus staged/unstaged/untracked state, relevant
+artifact or job/run, and executed checks with results and not_run limits. Use the existing dispatch
+message or handoff; no new document is required. Missing essential inputs must remain explicit,
+not be replaced by the author's desired verdict.
 A design challenge examines the proposed approach; a post-implementation review examines the code.
 Reassess risk from the actual diff rather than trusting the caller's label; retain HIGH
 when either the declaration or supported review findings requires it.

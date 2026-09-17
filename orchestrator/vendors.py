@@ -63,6 +63,17 @@ class Turn:
     usage: dict = field(default_factory=dict)
     elapsed_s: float = 0.0
     dispatch_id: str = ""
+    usage_source: str = "unknown"
+    usage_status: str = "unknown"
+
+    def observation(self, role: str, retry_reason: str = "") -> dict:
+        """One invocation snapshot, not additive lifecycle or billing events."""
+        return {
+            "role": role, "dispatch_id": self.dispatch_id, "thread_id": self.thread_id,
+            "usage": self.usage, "usage_source": self.usage_source,
+            "usage_status": self.usage_status, "elapsed_s": self.elapsed_s,
+            "retry_reason": retry_reason, "failed": bool(self.error),
+        }
 
 
 class Backend:
@@ -347,17 +358,23 @@ def _run(
                             result.thread_id = thread_id
                     elif kind == "turn.completed":
                         usage = event.get("usage")
+                        result.usage = {}
+                        result.usage_source = "codex.exec.turn.completed"
+                        result.usage_status = "unknown"
                         if isinstance(usage, dict):
                             result.usage = {
                                 key: value for key, value in usage.items()
                                 if key in ("input_tokens", "cached_input_tokens", "output_tokens")
                                 and isinstance(value, int) and not isinstance(value, bool) and value >= 0
                             }
+                            if result.usage:
+                                result.usage_status = "estimated" if usage.get("estimated") is True else "reported"
                     elif kind in ("error", "turn.failed"):
                         # Raw error messages may contain source/prompt data.
                         event_error = f"Codex {kind} event; inspect CLI diagnostics"
                     if on_event and kind in ("thread.started", "turn.completed", "turn.failed", "error"):
-                        on_event({"type": kind, "thread_id": result.thread_id, "usage": result.usage})
+                        on_event({"type": kind, "thread_id": result.thread_id, "usage": result.usage,
+                                  "usage_source": result.usage_source, "usage_status": result.usage_status})
             except (OSError, ValueError) as exc:
                 reader_errors.append(type(exc).__name__)
             finally:
@@ -540,7 +557,8 @@ class CodexBackend(Backend):
             turn.dispatch_id = dispatch_id
             metadata.update(status="failed" if turn.error else "completed",
                             elapsed_s=turn.elapsed_s, thread_id=turn.thread_id,
-                            usage=turn.usage)
+                            usage=turn.usage, usage_source=turn.usage_source,
+                            usage_status=turn.usage_status)
             _write_session_marker(dispatch_id, metadata, cfg)
             return turn
         finally:

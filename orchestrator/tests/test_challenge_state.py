@@ -234,6 +234,53 @@ class ChallengeStateTests(unittest.TestCase):
             self.assertIn("stale before Builder", outcome[3].reason)
         backend.invoke.assert_called_once()
 
+    def test_challenge_observations_keep_audit_and_invocation_identity(self):
+        backend = mock.Mock(spec=Backend)
+        backend.invoke.return_value = Turn(
+            text="offline critique", dispatch_id="backend-invocation", thread_id="thread-fixture",
+            usage={"input_tokens": 10, "cached_input_tokens": 3},
+            usage_source="codex.exec.turn.completed", usage_status="reported", elapsed_s=1.5)
+        with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+            result = self.controller(backend).run_challenge()
+        self.assertEqual(result.status, CHALLENGED)
+        records = [json.loads(line) for line in (self.audit / "build-audit.jsonl").read_text().splitlines()]
+        self.assertEqual(len(records), 2)
+        self.assertNotIn("turns", records[0])
+        terminal = records[1]
+        self.assertEqual(terminal["dispatch_id"], records[0]["dispatch_id"])
+        self.assertNotEqual(terminal["dispatch_id"], "backend-invocation")
+        self.assertEqual(terminal["turns"], [backend.invoke.return_value.observation("challenger")])
+        self.assertEqual(terminal, json.loads(result.receipt_path.read_text()))
+        self.assertNotIn("offline critique", json.dumps(terminal))
+
+    def test_challenge_failed_timeout_and_missing_usage_are_observed(self):
+        for error in ("", "vendor exit 1", "vendor turn timed out after 5s"):
+            with self.subTest(error=error):
+                backend = mock.Mock(spec=Backend)
+                backend.invoke.return_value = Turn(text="offline critique", error=error)
+                with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+                    result = self.controller(backend).run_challenge()
+                self.assertEqual(result.status, BLOCKED if error else CHALLENGED)
+                terminal = json.loads((self.audit / "build-audit.jsonl").read_text().splitlines()[-1])
+                self.assertEqual(len(terminal["turns"]), 1)
+                observed = terminal["turns"][0]
+                self.assertEqual(observed["usage"], {})
+                self.assertEqual(observed["usage_status"], "unknown")
+                self.assertEqual(observed["failed"], bool(error))
+                if "timed out" in error:
+                    self.assertEqual(terminal["status"], "timeout")
+
+    def test_challenge_invocation_exception_is_redacted_and_observed(self):
+        backend = mock.Mock(spec=Backend)
+        backend.invoke.side_effect = RuntimeError("private prompt must not be audited")
+        with mock.patch("orchestrator.controller.make_backend", return_value=backend):
+            result = self.controller(backend).run_challenge()
+        self.assertEqual(result.status, BLOCKED)
+        terminal = json.loads((self.audit / "build-audit.jsonl").read_text().splitlines()[-1])
+        self.assertTrue(terminal["turns"][0]["failed"])
+        self.assertNotIn("private prompt", json.dumps(terminal))
+        self.assertEqual(list(self.audit.glob("receipt-*.json")), [])
+
     def test_snapshot_failure_before_challenge_never_invokes_model(self):
         backend = mock.Mock(spec=Backend)
         with mock.patch("orchestrator.controller.make_backend", return_value=backend), mock.patch(

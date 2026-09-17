@@ -40,6 +40,25 @@ class VendorMigrationTests(unittest.TestCase):
         self.assertEqual(turn.thread_id, "thread-123")
         self.assertEqual(turn.text, '{"version":1}')
         self.assertEqual(turn.usage, {"input_tokens": 12, "cached_input_tokens": 2, "output_tokens": 3})
+        self.assertEqual(turn.usage_source, "codex.exec.turn.completed")
+        self.assertEqual(turn.usage_status, "reported")
+
+    def test_usage_snapshots_are_not_summed_or_filled_and_estimates_stay_estimated(self):
+        for usage, expected, status in (
+            ({"input_tokens": 7, "estimated": True}, {"input_tokens": 7}, "estimated"),
+            ({"input_tokens": 0}, {"input_tokens": 0}, "reported"),
+            ({"input_tokens": True, "output_tokens": -1}, {}, "unknown"),
+            (None, {}, "unknown"),
+        ):
+            with self.subTest(usage=usage):
+                events = [{"type": "turn.completed", "usage": {"input_tokens": 50}},
+                          {"type": "turn.completed", "usage": usage},
+                          {"type": "turn.completed", "usage": usage}]
+                turn = self.run_script("print(" + repr("\n".join(map(json.dumps, events))) + ")",
+                                       json_events=True)
+                self.assertEqual(turn.error, "")
+                self.assertEqual(turn.usage, expected)
+                self.assertEqual(turn.usage_status, status)
 
     def test_missing_final_never_falls_back_to_events(self):
         turn = self.run_script('print(\'{"type":"turn.completed"}\')',
