@@ -132,7 +132,16 @@ def _agent_toml(src, rel_group, routing=None):
         raise RuntimeError(f"native Codex agent {name!r} resolves to {profile.vendor!r}")
     sandbox = "read-only" if role in {"architect", "reviewer", "explorer"} else "workspace-write"
     preamble = (f"Source: dinner-harness content/agents/{rel_group}/{src.name}.\n"
-                "Work only within the parent's assigned scope. Return findings and verification evidence to the parent.\n\n")
+                "Work only within the parent's assigned scope. Return findings and verification evidence to the parent.\n")
+    if role.startswith("builder_"):
+        preamble += (
+            "For implementation assignments, stay within the parent-assigned ownership. "
+            "Do not duplicate implementation or delegate work unless the parent assigns that scope. "
+            "Return changed files, the verification commands actually run and their results, and "
+            "limitations or unresolved dependencies. Stop and hand off to the parent instead of "
+            "widening scope.\n"
+        )
+    preamble += "\n"
     return "\n".join([
         f"name = {_toml_string(name)}",
         f"description = {_toml_string(description)}",

@@ -67,12 +67,12 @@ effort = "low"
 
 [presets.hybrid.builder_low]
 vendor = "codex"
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 effort = "medium"
 
 [presets.hybrid.builder_normal]
 vendor = "codex"
-model = "gpt-5.6-terra"
+model = "gpt-6-sol"
 effort = "medium"
 
 [presets.hybrid.builder_high]
@@ -121,7 +121,7 @@ model = "claude-sonnet-5"
 effort = "medium"
 
 # --- codex_only: default, no Claude Code in the loop ---
-# Independent HIGH Challenger; Luna/Terra/Astra scale delegated compute by tier.
+# Independent HIGH Challenger; Luna/Sol/Astra scale delegated compute by tier.
 # Safety gates are unchanged.
 
 [presets.codex_only.architect]
@@ -136,12 +136,12 @@ effort = "high"
 
 [presets.codex_only.builder_low]
 vendor = "codex"
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 effort = "medium"
 
 [presets.codex_only.builder_normal]
 vendor = "codex"
-model = "gpt-5.6-terra"
+model = "gpt-6-sol"
 effort = "medium"
 
 [presets.codex_only.builder_high]
@@ -151,5 +151,5 @@ effort = "high"
 
 [presets.codex_only.reviewer]
 vendor = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 effort = "high"

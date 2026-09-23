@@ -7,8 +7,15 @@ description: Complete authorized implementation with relevant checks and evidenc
 
 Read [autonomy policy](../../rules/autonomy-policy.md) for risk classification.
 The user's request supplies the implementation authority already granted. Define observable
-completion criteria, explain important risk and implement in the main session by default.
-Ordinary clear tasks need no HANDOFF or role switch.
+completion criteria and explain important risk. Main owns decomposition, design decisions,
+integration and final responsibility; it need not write every implementation itself.
+Before nontrivial implementation, read [agent routing](../../rules/agent-routing.md) and choose
+direct work, a named native implementation role, or existing headless dispatch. Delegate a
+bounded implementation with clear acceptance/verification when separation is useful; do small
+work directly when context-transfer/review cost is greater. Consider uncertainty, impact,
+verifiability and dependencies, not just file count. Record the choice briefly in the existing plan.
+Ordinary native delegation needs no HANDOFF or Two-CLI role switch. Assign ownership and do not
+duplicate the builder's implementation. Inspect returned changes and actual checks before integration.
 For nontrivial work, start with `Risk / rationale / verification / acceptance conditions`.
 Risk is LOW/HIGH, distinct from Compute LOW/NORMAL/HIGH; this policy applies without Two-CLI.
 At completion report planning, implementation, actual checks, independent review and human

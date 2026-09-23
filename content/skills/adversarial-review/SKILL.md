@@ -6,6 +6,10 @@ description: Perform evidence-based independent review of important changes, add
 # Independent Review
 
 Read [autonomy policy](../../rules/autonomy-policy.md). Review is read-only.
+Use the explicit `code-reviewer` role for general review or `cpp-reviewer` for C++ specialist review,
+following [agent routing](../../rules/agent-routing.md). A review task name on a `default` agent does
+not select the reviewer profile. Record the reason for an exceptional role/model choice; distinguish
+independent review from requested/observed model agreement, and mark unavailable model evidence unknown.
 Give one available native reviewer a fresh context with the latest requested outcome and completion
 conditions, removal/change targets and constraints to preserve, baseline delta and unresolved findings.
 Include the actual execution path/callers, revision plus staged/unstaged/untracked state, relevant

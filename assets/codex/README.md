@@ -1,7 +1,9 @@
 # Codex target
 
 AGENTS.md is the concise native policy; the adapter installs it into the selected Codex home.
-The default workflow keeps design, implementation and verification in the main session.
+The main session owns design, integration and final responsibility. It selects direct work or useful
+bounded implementation delegation using rules/agent-routing.md; installed references are not auto-injected.
+General independent review explicitly selects code-reviewer rather than a default agent named "review".
 Independent native review and optional headless challenge/build are separate execution paths.
 
 Model/effort/role permissions come from the logical routing profiles. Interactive model selection

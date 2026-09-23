@@ -9,10 +9,15 @@ Codex 중심으로 설계·구현·검증을 이어가는 개인 harness의 sour
 
 ## 기본 workflow
 
-요청 → 필요한 탐색과 짧은 계획 → 메인 세션의 구현 → 프로젝트 검증 →
+요청 → main의 탐색·설계와 직접 수행/위임 판단 → 직접 또는 지정 역할의 구현 → main의 통합·프로젝트 검증 →
 필요한 독립 review → 결과 보고.
 
 보통 작업은 HANDOFF/RESULT/CHALLENGE나 Builder 역할 전환 없이 진행한다.
+main은 최종 책임을 유지하며, 분리할 실익이 있는 구현은 지정 역할에 위임한다.
+작은 작업은 문맥 전달·검토 비용이 더 크면 직접 수행한다. 설계 불확실성·영향·검증 가능성·
+의존성이 판단 기준이며 항상 위임하거나 비율을 맞추지 않는다.
+[agent routing](content/rules/agent-routing.md)에 선택·소유권·인계 계약이 있다.
+일반 review는 `code-reviewer`를 명시한다. `default`의 작업명만으로 reviewer 모델이 선택되지 않는다.
 파일 수 자체는 위임 기준이 아니다. 독립 작업에 실익이 있을 때 native subagent를 쓰며,
 동일 tree에서 병렬 구현하지 않는다. 병렬 writer는 소유 범위·격리·통합을 먼저 정한다.
 parent가 통합과 완료 책임을 유지한다.
@@ -59,17 +64,19 @@ codex -m gpt-6-astra -c model_reasoning_effort="medium"
 ## 모델 정책과 적용 범위
 
 구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다.
-아래는 2026-09-10 초기 운영 제안이며 벤치마크로 최적성을 입증한 값이 아니다.
+아래는 2026-09-23에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
 
-| 역할 | 초기 모델 / effort | 적용 |
+| 역할 | 모델 / effort | 적용 |
 |---|---|---|
-| Main / architect | Astra / medium | interactive 권장값, 실제 선택은 앱/CLI |
-| 작은 명확한 위임 | Luna / medium | 선택된 headless LOW 또는 native logical profile |
-| 일반 구현 위임 | Terra / medium | headless NORMAL/native 구현 profile |
-| 복잡한/HIGH 구현 | Astra / high | HIGH 최소 compute |
-| 중요한 독립 review | Sol / high | fresh-context reviewer |
-| HIGH design challenge | Astra / high | 구현과 별도 read-only 호출 |
+| Main / architect | GPT-6 Astra / medium | interactive 권장값, 실제 선택은 앱/CLI |
+| 작은 명확한 위임 | GPT-6 Luna / medium | 선택된 headless LOW |
+| 일반 구현 위임 | GPT-6 Sol / medium | headless NORMAL/native 구현 profile |
+| 복잡한/HIGH 구현 | GPT-6 Astra / high | HIGH 최소 compute |
+| 중요한 독립 review | GPT-6 Sol / high | fresh-context reviewer |
+| HIGH design challenge | GPT-6 Astra / high | 구현과 별도 read-only 호출 |
 
+현재 native 구현 specialist는 `builder_normal`이며 LOW/HIGH를 자동 선택하지 않는다.
+headless는 선택 gate의 risk/compute를 해석한다. 이 지침은 자동 위임 scheduler가 아니다.
 risk와 compute는 별개다. profile 형식 검증, 설치 CLI의 schema/capability,
 계정의 실제 모델 접근성도 별개다. 확인하지 못한 접근은 unknown이다.
 effort 이름을 추측 변환하거나 인증/모델 실패를 다른 vendor·API 과금으로 조용히 fallback하지 않는다.

@@ -33,6 +33,19 @@ class TestCodexInstallMigration(unittest.TestCase):
         cfg = dict(self.manifest["targets"]["codex"], adopt_existing=adopt)
         return codex.install(ROOT, cfg, self.manifest.get("vars", {}), self.dest, "", dry_run)
 
+    def assert_agents_match_routing(self, root, destination):
+        routing = load_routing_config(root / "content/routing.toml")
+        agents = list((destination / "agents").glob("*.toml"))
+        self.assertEqual({p.stem for p in agents}, set(routing["native_agents"]))
+        for agent in agents:
+            data = tomllib.loads(agent.read_text(encoding="utf-8"))
+            role = routing["native_agents"][data["name"]]
+            profile = resolve_profile(routing, "codex_only", role)
+            self.assertEqual(data["model"], profile.model)
+            self.assertEqual(data["model_reasoning_effort"], profile.effort)
+            expected_sandbox = "read-only" if role in {"architect", "reviewer", "explorer"} else "workspace-write"
+            self.assertEqual(data["sandbox_mode"], expected_sandbox)
+
     def test_toml_roundtrip_preserves_exact_text(self):
         original = '\n한글 C:\\Users\\name\\test """ quote\n\tbackslash\\end'
         self.assertEqual(tomllib.loads("text = " + codex._toml_multiline(original))["text"], original)
@@ -44,6 +57,7 @@ class TestCodexInstallMigration(unittest.TestCase):
             "AGENTS.md": "assets/codex/AGENTS.md",
             "templates/AGENTS.md": "content/templates/AGENTS.md",
             "rules/autonomy-policy.md": "content/rules/autonomy-policy.md",
+            "rules/agent-routing.md": "content/rules/agent-routing.md",
             "rules/routing-reference.md": "content/rules/routing-reference.md",
             "orchestrator/controller.py": "orchestrator/controller.py",
             "orchestrator/vendors.py": "orchestrator/vendors.py",
@@ -62,6 +76,11 @@ class TestCodexInstallMigration(unittest.TestCase):
                 self.assertEqual(generated, canonical)
         agents = (self.dest / "AGENTS.md").read_text(encoding="utf-8")
         primary = agents.split("## 선택적 경로")[0]
+        # The decision reference must be reachable from the default loaded policy,
+        # not only copied as an inert rule or mentioned in the optional headless path.
+        self.assertIn("rules/agent-routing.md", primary)
+        self.assertIn("`code-reviewer`", primary)
+        self.assertTrue((self.dest / "rules/agent-routing.md").is_file())
         for marker in ("rules/autonomy-policy.md", "Risk: LOW|HIGH", "근거:", "검증:",
                        "수용 조건:", "REQUEST CHANGES", "재검토", "not_run", "사람의 결과 수용"):
             self.assertIn(marker, primary)
@@ -192,19 +211,49 @@ class TestCodexInstallMigration(unittest.TestCase):
 
     def test_agents_use_logical_policy_and_read_only_consult(self):
         self.render()
-        routing = load_routing_config(ROOT / "content/routing.toml")
-        agents = list((self.dest / "agents").glob("*.toml"))
-        self.assertEqual({p.stem for p in agents}, set(routing["native_agents"]))
-        for agent in agents:
-            data = tomllib.loads(agent.read_text(encoding="utf-8"))
-            role = routing["native_agents"][data["name"]]
-            profile = resolve_profile(routing, "codex_only", role)
-            self.assertEqual(data["model"], profile.model)
-            self.assertEqual(data["model_reasoning_effort"], profile.effort)
-            if role in {"architect", "reviewer", "explorer"}:
-                self.assertEqual(data["sandbox_mode"], "read-only")
-            else:
-                self.assertEqual(data["sandbox_mode"], "workspace-write")
+        self.assert_agents_match_routing(ROOT, self.dest)
+
+    def test_reinstall_refreshes_builder_handoff_guidance_and_preserves_user_files(self):
+        fixture = Path(self.temp.name) / "canonical-source"
+        shutil.copytree(ROOT, fixture, ignore=shutil.ignore_patterns(".git", "__pycache__", "logs"))
+        destination = Path(self.temp.name) / "reinstalled-home"
+        manifest = tomllib.loads((fixture / "harness.toml").read_text(encoding="utf-8"))
+        cfg = dict(manifest["targets"]["codex"])
+        codex.install(fixture, cfg, manifest.get("vars", {}), destination, "", False)
+
+        personal = destination / "skills/personal/SKILL.md"
+        personal.parent.mkdir(parents=True)
+        personal.write_text("user owned", encoding="utf-8")
+        (fixture / "assets/codex/AGENTS.md").write_text(
+            (fixture / "assets/codex/AGENTS.md").read_text(encoding="utf-8") + "\nREFRESH_AGENTS\n",
+            encoding="utf-8",
+        )
+        (fixture / "content/rules/agent-routing.md").write_text(
+            (fixture / "content/rules/agent-routing.md").read_text(encoding="utf-8") + "\nREFRESH_ROUTING\n",
+            encoding="utf-8",
+        )
+        builder_source = fixture / "content/agents/_gamedev/tools-programmer.md"
+        builder_source.write_text(builder_source.read_text(encoding="utf-8") + "\nREFRESH_BUILDER\n", encoding="utf-8")
+
+        codex.install(fixture, cfg, manifest.get("vars", {}), destination, "", False)
+
+        self.assertIn("REFRESH_AGENTS", (destination / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("REFRESH_ROUTING", (destination / "rules/agent-routing.md").read_text(encoding="utf-8"))
+        builder = tomllib.loads((destination / "agents/tools-programmer.toml").read_text(encoding="utf-8"))
+        for instruction in (
+            "stay within the parent-assigned ownership",
+            "Do not duplicate implementation or delegate work unless the parent assigns that scope.",
+            "Return changed files, the verification commands actually run and their results",
+            "limitations or unresolved dependencies.",
+            "Stop and hand off to the parent instead of widening scope.",
+            "REFRESH_BUILDER",
+        ):
+            self.assertIn(instruction, builder["developer_instructions"])
+        reviewer = tomllib.loads((destination / "agents/code-reviewer.toml").read_text(encoding="utf-8"))
+        self.assertNotIn("Do not duplicate implementation or delegate work", reviewer["developer_instructions"])
+        self.assertNotIn("Stop and hand off to the parent instead of widening scope.", reviewer["developer_instructions"])
+        self.assertEqual(personal.read_text(encoding="utf-8"), "user owned")
+        self.assert_agents_match_routing(fixture, destination)
 
     def test_repeat_install_preserves_user_hooks_and_extra_skill(self):
         self.dest.mkdir()

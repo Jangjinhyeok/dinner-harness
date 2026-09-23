@@ -44,7 +44,15 @@ Mark unavailable runtime validation not_run. Do not impose a universal coverage 
 - Infer routine details from repo conventions, state material assumptions, ask only when
   the missing choice changes scope, outcome or authority.
 - Implement authorized local changes and relevant verification without per-file consent.
-  Main Codex can design and implement in the same session. Ordinary tasks need no HANDOFF.
+  Main owns requirements, decomposition, design, integration and final responsibility.
+  Before nontrivial implementation, read `rules/agent-routing.md` in the active harness home.
+  Delegate useful bounded implementation to a named implementation role with ownership,
+  acceptance criteria and verification; work directly when transfer/review overhead is greater.
+  Consider uncertainty, impact, verifiability and dependencies, not file count or a delegation quota.
+  Do not duplicate the builder's work; inspect its diff and actual checks before integration.
+  Ordinary native delegation needs no HANDOFF. General independent review uses `code-reviewer`
+  (`cpp-reviewer` for C++); explain any default-agent/model exception and report model agreement
+  separately from review independence. Existing risk/authority boundaries still apply.
 - Preserve current user-selected branch and existing staged/unstaged/untracked edits.
   No branch changes, commit, push, merge or deployment without the user's explicit authority.
 - Keep changes scoped; review the task delta against its baseline. Report actual checks,

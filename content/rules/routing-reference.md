@@ -12,6 +12,11 @@
 일반 위임 Terra medium, Compute HIGH 구현 Astra high, 중요한 독립 review Sol high,
 Risk HIGH design challenge Astra high의 별도 호출이다. 벤치마크로 최적성을 입증한 조합이 아니다.
 
+2026-09-23 운영 설정은 GPT-6 Luna(builder_low), GPT-6 Sol(builder_normal/reviewer),
+GPT-6 Astra(architect/builder_high/challenger_high)다. effort와 구체 ID는 TOML을 따른다.
+codex_only와 hybrid의 Codex builder만 갱신하며 Claude profile·preset 선택은 유지한다.
+위의 2026-09-10 제안은 당시 기록이다. 현재 설정 역시 벤치마크 최적값을 뜻하지 않는다.
+
 2026-09-11 builder 비용 계층 결정은 [ADR-0020 addendum](https://github.com/Jangjinhyeok/dinner-harness/blob/main/docs/architecture/ADR-0020-routing-preset-architecture.md#addendum-2026-09-11-codex-builder-cost-tiers)을 참고한다.
 기본/hybrid builder는 같은 비용 계층을 사용하며,
 일반 작업을 자동으로 frontier 모델에 올리지 않는다. 실제 값은 TOML이 결정한다.
@@ -39,6 +44,14 @@ Logical keys는 `architect`, `builder_low`, `builder_normal`, `builder_high`,
   risk와 compute는 다르며 mixed scope의 Risk HIGH를 첫 gate Risk LOW로 숨기지 않는다.
 - Native custom agents: logical role에서 생성된 model/effort/permissions를 사용한다.
   읽기 전용 reviewer/planner/architect가 구현 권한을 받지 않도록 확인한다.
+
+직접 수행/native/headless의 판단과 인계 계약은 [agent routing](agent-routing.md)을 따른다.
+Codex native adapter는 `[native_agents]`를 `codex_only` preset으로 생성하며, headless의
+active preset 선택과 다르다. 현재 native 구현 specialist는 `builder_normal`에 연결된다.
+native 호출에 LOW/HIGH 자동 분류·승격은 없고, headless는 선택 gate 집합의 risk/compute로
+`builder_low/normal/high`를 결정한다. Risk HIGH는 effective Compute HIGH를 유지한다.
+`default`/일반 worker와 review라는 작업명은 `[native_agents]` 역할 선택을 대신하지 않는다.
+일반 review는 `code-reviewer`, C++ 전문 review는 `cpp-reviewer`를 명시한다.
 
 명시 preset/override가 없으면 설치 TOML active preset을 따른다.
 부분 override는 나머지 필드를 active preset의 명시적 호환 관계로 결정해야 하며

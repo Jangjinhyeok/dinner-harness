@@ -2,9 +2,13 @@
 
 [한국어](README.md) | **English**
 
-Source of truth for a Codex-first personal harness. The main Astra session can design, implement,
-verify and finish ordinary work itself. Native agents provide useful independent exploration,
-bounded delegation and important review. Existing hybrid and claude_only presets remain optional
+Source of truth for a Codex-first personal harness. Main Astra owns requirements, decomposition,
+design, integration and final responsibility. Delegate useful bounded implementation to named native
+roles; do small work directly when context-transfer/review overhead is greater. Choose by uncertainty,
+impact, verifiability and dependencies, not file count or a delegation quota. General independent review
+uses `code-reviewer`; naming a `default` task "review" does not select the reviewer profile.
+See [agent routing](content/rules/agent-routing.md) for route and handoff contracts.
+Existing hybrid and claude_only presets remain optional
 compatibility paths.
 
 ## Start with Codex
@@ -47,17 +51,19 @@ unperformed review is not_run. Add specialists only for distinct unresolved risk
 ## Models
 
 [content/routing.toml](content/routing.toml) is the profile SSOT; codex_only is the default.
-The 2026-09-10 initial proposal is a usage policy, not a benchmark-proven optimum.
+The configuration selected on 2026-09-23 is a usage policy, not a benchmark-proven optimum.
 
 | Role | Model / effort | Meaning |
 |---|---|---|
-| Main / architect | Astra / medium | Interactive recommendation, selected separately |
-| Small clear delegation | Luna / medium | LOW/native logical profile |
-| General delegation | Terra / medium | NORMAL/native implementation |
-| Complex/HIGH implementation | Astra / high | HIGH compute floor |
-| Important independent review | Sol / high | Fresh-context reviewer |
-| HIGH design challenge | Astra / high | Separate read-only invocation |
+| Main / architect | GPT-6 Astra / medium | Interactive recommendation, selected separately |
+| Small clear delegation | GPT-6 Luna / medium | Selected headless LOW |
+| General delegation | GPT-6 Sol / medium | NORMAL/native implementation |
+| Complex/HIGH implementation | GPT-6 Astra / high | HIGH compute floor |
+| Important independent review | GPT-6 Sol / high | Fresh-context reviewer |
+| HIGH design challenge | GPT-6 Astra / high | Separate read-only invocation |
 
+Native implementation specialists currently map to `builder_normal`; they do not automatically select
+LOW/HIGH. Headless resolves the selected gates' risk/compute. These instructions are not an automatic scheduler.
 Risk and compute differ. Static profile validity, CLI capability and actual account model access
 are separate evidence; unknown access stays unknown. Never silently fallback across vendors or
 billing methods. Pro does not imply included API usage or maximum reasoning for every call.
