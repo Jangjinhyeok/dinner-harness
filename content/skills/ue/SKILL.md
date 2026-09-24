@@ -14,6 +14,8 @@ Read only relevant references:
 Preserve engine lifetime/ownership, gameplay invariants, replication/save compatibility and
 frame/memory budgets. Apply project build, automation, PIE/multiplayer procedures as relevant;
 state unavailable engine checks as not_run.
+For UE5 interactive PIE validation, follow the user-vs-Computer-Use choice in
+[verification guidance](../verification-loop/SKILL.md) before starting the validation.
 
 The main session can design and implement authorized work. Use a native unreal-specialist only
 when independent assistance adds value; no mandatory hub dispatch or per-file approval.

@@ -17,6 +17,15 @@ coverage threshold or install a generic stack.
   apply when configured or relevant.
 - Other stacks: follow documented project build/test commands.
 
+Before UE5 interactive PIE validation, ask whether the user will test directly or wants
+Computer Use to perform it. Wait for the choice before starting that validation; do not infer
+Computer Use consent from a general implementation/test request or from silence. Reuse an
+explicit choice already made for the current validation scope instead of asking again.
+If the user chooses direct testing, provide concise steps and expected results, keep PIE
+validation not_run until results arrive, and distinguish user-reported results from directly
+observed evidence. Independent build/Automation checks may proceed while awaiting the choice
+or results. Do not switch tools to bypass this choice for the same interactive PIE validation.
+
 Before interactive Editor checks, state the final handoff state in the existing execution plan
 (for example, PIE stopped with the requested map open, or Editor closed). Distinguish restarts
 needed for verification from reopening for user handoff, and record the reason for each.
