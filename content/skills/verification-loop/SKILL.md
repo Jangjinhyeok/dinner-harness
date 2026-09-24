@@ -17,6 +17,12 @@ coverage threshold or install a generic stack.
   apply when configured or relevant.
 - Other stacks: follow documented project build/test commands.
 
+Before interactive Editor checks, state the final handoff state in the existing execution plan
+(for example, PIE stopped with the requested map open, or Editor closed). Distinguish restarts
+needed for verification from reopening for user handoff, and record the reason for each.
+Preserve applicable fresh-process/save-reload, input/focus and exit checks. Follow the active
+computer-use tool's action/observation contract; do not batch state-dependent inputs to cut calls.
+
 Run useful targeted checks followed by required regressions. Preserve the process exit code,
 timeout and error status; output head/tail must not hide failure. Separate actual command
 execution from model claims and mock tests from live CLI/engine validation. Mark unavailable

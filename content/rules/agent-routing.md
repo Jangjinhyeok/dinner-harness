@@ -39,6 +39,9 @@ Codex native 설정은 `[native_agents]`의 역할을 `codex_only` profile로 �
 `default`에 review라는 작업명/프롬프트를 주는 것은 reviewer routing이 아니다.
 별도 model이나 `default`가 필요한 예외는 이유와 적용 profile을 남긴다. 중요한 변경에는
 fresh-context reviewer 1회, 추가 specialist는 다른 미해결 위험 축이 있을 때만 배치한다.
+Codex native reviewer는 `fork_turns:"none"`을 명시해 parent 대화 이력을 상속하지 않는다.
+검토에 필요한 요구사항·계약·baseline·대상 diff와 실제 검증 증거의 위치를 별도로 전달하고,
+reviewer가 원본 코드와 증거를 직접 확인하게 한다. 별도 agent 생성만으로 문맥 분리가 되지는 않는다.
 검토의 독립성과 요청/실행 model 일치 여부는 서로 다른 검증 항목이다.
 
 ## 엔진과 전문 자료
@@ -63,6 +66,9 @@ fresh-context reviewer 1회, 추가 specialist는 다른 미해결 위험 축이
 
 읽기 전용 explorer/reviewer는 구현 쓰기 권한을 받지 않는다.
 parent는 목표·소유 파일·현재 baseline·제약·완료 조건·검증 명령을 전달한다.
+완료 인계 또는 검토 가능한 checkpoint와 새 증거의 전달 조건도 정한다. blocker·범위 변경은
+즉시 보고한다. parent/reviewer는 해당 알림이나 관련 변경 후 코드·로그를 확인하고,
+새 정보 없는 목록·로그 polling은 피한다. 알림이 없거나 진행 정체가 의심되면 상태를 확인한다.
 builder는 그 범위의 구현과 해당 검증을 소유하고, main은 같은 구현을 중복 수행하지 않는다.
 builder는 변경 파일·실제 실행한 검사와 결과·미해결 의존성·한계를 반환한다.
 범위 밖 변경이 필요하면 임의 확장하지 않고 parent에 인계한다. parent가 실제 diff와
