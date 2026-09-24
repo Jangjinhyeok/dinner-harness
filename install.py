@@ -2,6 +2,7 @@
 
 Usage:
   py -3 install.py --target claude [--dest PATH] [--username NAME] [--dry-run]
+  py -3 install.py --target codex [--dest PATH] [--username NAME] [--dry-run]
 
 stdlib only (tomllib, argparse, importlib). The per-target rendering lives in
 adapters/<target>.py; this entry point just loads harness.toml and dispatches.
@@ -41,20 +42,20 @@ def is_live_dest(target, path):
     return any(destination == root or root in destination.parents for root in roots)
 
 
-def main(argv=None):
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+def _parse_args(argv):
     ap = argparse.ArgumentParser(description="Install the dinner-harness into a target.")
     ap.add_argument("--target", required=True, choices=["claude", "codex"])
-    ap.add_argument("--dest", default=None, help="install root (default: ~/.<target>)")
+    ap.add_argument("--dest", default=None, help="install root (default: CODEX_HOME for codex when set, else ~/.<target>)")
     ap.add_argument("--username", default=os.environ.get("USERNAME") or os.environ.get("USER") or "")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--adopt-existing", action="store_true",
                     help="Codex only: explicitly adopt conflicting manifest files after backing them up; review --dry-run first")
     ap.add_argument("--allow-live", action="store_true",
-                    help="permit installing onto the live ~/.<target> (guarded off by default)")
-    args = ap.parse_args(argv)
+                    help="permit installing under the live target root (including CODEX_HOME for codex; guarded off by default)")
+    return ap.parse_args(argv)
 
+
+def _install(args):
     with open(REPO_ROOT / "harness.toml", "rb") as f:
         manifest = tomllib.load(f)
 
@@ -79,7 +80,10 @@ def main(argv=None):
         username=args.username,
         dry_run=args.dry_run,
     )
+    return dest, plan
 
+
+def _report_plan(args, dest, plan):
     mode = "DRY-RUN" if args.dry_run else "INSTALL"
     print(f"[{mode}] target={args.target} dest={dest} username={args.username!r}")
     counts = {}
@@ -89,6 +93,14 @@ def main(argv=None):
     for action, p in plan:
         if action in ("template", "skip", "write", "backup", "retire_owned") or action.startswith("retire_hook:"):
             print(f"  {action:8} {p}")
+
+
+def main(argv=None):
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    args = _parse_args(argv)
+    dest, plan = _install(args)
+    _report_plan(args, dest, plan)
     return 0
 
 

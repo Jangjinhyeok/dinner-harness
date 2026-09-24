@@ -1,28 +1,30 @@
 """dinner-harness drift-check — advisory, stdlib only.
 
-Three checks (manual; no CI/pre-commit — run after editing content):
+Checks (CI runs source checks with --no-install; live checks are local):
   1. catalog completeness — the README capability catalog (`## 하네스 구성` / `## What's inside`)
      must list exactly the repo's skills (`content/skills/*/`) + agents (`content/agents`
      frontmatter `name`) + hooks (`assets/claude/hooks/handlers/*.py`), in BOTH READMEs with
      KO/EN parity. Description text is NOT checked — only the item set + group-header counts.
-  2. curation drift — `content/instructions/CLAUDE.md` whole-file SHA-256 vs the blessed hash
-     in `curation.toml`. `assets/codex/AGENTS.md` was curated from CLAUDE.md, so a change may
-     need re-curation (advisory; §2 Two-CLI changes are irrelevant to the codex curation).
-  3. install drift — repo vs the LIVE `~/.claude` / `~/.codex`. Checks 1-2 are repo-only, so an
-     edited-but-uninstalled harness looked clean while the live copy ran the old behaviour;
-     that hole bit twice on 2026-08-05. Renders the manifest into a temp dir through install.py's
-     own adapters and compares content only — path substitutions are normalized, `skip_if_exists`
+  2. legacy Claude curation — compare `content/instructions/CLAUDE.md` with the blessed hash
+     in `curation.toml`. This is not a Codex validation check.
+  3. Codex generated output — render into a temp dir and validate native routing, sandbox,
+     JSON, and required references, including with `--no-install`.
+  4. install drift — compare the repo with LIVE `~/.claude` / `~/.codex`. Render through
+     install.py's adapters; normalize path substitutions. `skip_if_exists`
      workflow files (HANDOFF/RESULT) are runtime state and are excluded, a `merge` JSON dest is
      compared on template-owned keys only, and the manifest's own exclude lists apply. Live-only
      leftovers are reported separately for manifest-owned directories and require manual deletion:
      Codex retires only unchanged receipt-owned obsolete skill/agent entrypoints, with backups.
      Other leftovers require manual review. `shared_dirs` leftovers are advisory-only; other
      leftovers affect exit status. Machine-local by nature: `--no-install` skips it.
+  5. Codex skill discovery — report duplicate local skill names as advisory; ownership and
+     runtime loading are not inferred.
 
 Usage:
-  py -3 check.py            run all three; exit 0 if clean, 1 if drift (human-readable report)
-  py -3 check.py --no-install   skip the install-drift axis (repo-only checks)
-  py -3 check.py --update   re-bless: store the current CLAUDE.md hash in curation.toml
+  py -3 check.py            run all checks; exit 0 if clean, 1 if drift (human-readable report)
+  py -3 check.py --target codex  check Codex generated output and live install
+  py -3 check.py --no-install   skip install drift; keep source/generated checks
+  py -3 check.py --update   re-bless the legacy Claude source hash
 """
 import argparse
 import hashlib
@@ -457,11 +459,7 @@ def report_skill_duplicates(roots):
           "advisory only, separate from install drift; activation not verified")
 
 
-def main(argv=None):
-    try:  # report uses em-dash + Korean; force UTF-8 stdout regardless of console codepage
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
+def _parse_args(argv):
     ap = argparse.ArgumentParser(description="dinner-harness drift-check (advisory).")
     ap.add_argument("--update", action="store_true", help="re-bless the current CLAUDE.md hash")
     ap.add_argument("--target", choices=["codex", "claude", "all"], default="all")
@@ -473,15 +471,17 @@ def main(argv=None):
     if args.update:
         if args.target == "codex":
             ap.error("--update is only a legacy Claude curation check; Codex validates generated artifacts")
-        do_update()
-        return 0
+    return args
 
+
+def _collect_source_checks(targets):
     declared, cat_problems = check_catalog()
-    targets = INSTALL_TARGETS if args.target == "all" else (args.target,)
     cur_problems = check_curation() if "claude" in targets else []
     generated_problems = check_codex_generated() if "codex" in targets else []
-    inst_problems = []
+    return declared, cat_problems, cur_problems, generated_problems
 
+
+def _report_source_checks(targets, declared, cat_problems, cur_problems, generated_problems):
     if not cat_problems:
         print(f"[catalog] skills {declared['Skills']} / agents {declared['Agents']} / "
               f"hooks {declared['Hooks']} — 카탈로그 일치 (README.md + README.en.md, parity OK)")
@@ -502,46 +502,72 @@ def main(argv=None):
         for problem in generated_problems:
             print("  -", problem)
 
-    if args.no_install:
-        print("[install] skipped (--no-install)")
-    else:
-        for target in targets:
-            present, problems, leftovers = check_install(target)
-            if not present:
-                print(f"[install:{target}] {_installer().default_dest(target)} 없음 — skip")
-                continue
-            if not problems and not leftovers:
-                print(f"[install:{target}] repo == 설치본 — drift 없음")
-            if problems:
-                inst_problems += problems
-                print(f"[install:{target}] DRIFT ({len(problems)}건) — "
-                      f"`py -3 install.py --target {target} --allow-live` 필요:")
-                for p in problems[:20]:
-                    print("  -", p)
-                if len(problems) > 20:
-                    print(f"  … 외 {len(problems) - 20}건")
-            blocking = [rel for rel, advisory in leftovers if not advisory]
-            advisory = [rel for rel, advisory in leftovers if advisory]
-            if blocking:
-                inst_problems += blocking
-                print(f"[install:{target}] LEFTOVERS ({len(blocking)}건, exit 1) — 수동 삭제 필요:")
-                for rel in blocking[:20]:
-                    print(f"  - {rel}: repo에 없는 설치본 잔존")
-                if len(blocking) > 20:
-                    print(f"  … 외 {len(blocking) - 20}건")
-            if advisory:
-                print(f"[install:{target}] ADVISORY LEFTOVERS ({len(advisory)}건, exit 0) — "
-                      "공유 디렉터리이므로 수동 정리 여부만 확인:")
-                for rel in advisory[:20]:
-                    print(f"  - {rel}: repo에 없는 설치본 잔존")
-                if len(advisory) > 20:
-                    print(f"  … 외 {len(advisory) - 20}건")
 
+def _collect_install_target(target):
+    present, problems, leftovers = check_install(target)
+    missing_dest = _installer().default_dest(target) if not present else None
+    blocking = [rel for rel, advisory in leftovers if not advisory]
+    advisory = [rel for rel, advisory in leftovers if advisory]
+    return present, problems, blocking, advisory, missing_dest
+
+
+def _report_install_target(target, present, problems, blocking, advisory, missing_dest):
+    if not present:
+        print(f"[install:{target}] {missing_dest} 없음 — skip")
+        return
+    if not problems and not blocking and not advisory:
+        print(f"[install:{target}] repo == 설치본 — drift 없음")
+    if problems:
+        print(f"[install:{target}] DRIFT ({len(problems)}건) — "
+              f"`py -3 install.py --target {target} --allow-live` 필요:")
+        for p in problems[:20]:
+            print("  -", p)
+        if len(problems) > 20:
+            print(f"  … 외 {len(problems) - 20}건")
+    if blocking:
+        print(f"[install:{target}] LEFTOVERS ({len(blocking)}건, exit 1) — 수동 삭제 필요:")
+        for rel in blocking[:20]:
+            print(f"  - {rel}: repo에 없는 설치본 잔존")
+        if len(blocking) > 20:
+            print(f"  … 외 {len(blocking) - 20}건")
+    if advisory:
+        print(f"[install:{target}] ADVISORY LEFTOVERS ({len(advisory)}건, exit 0) — "
+              "공유 디렉터리이므로 수동 정리 여부만 확인:")
+        for rel in advisory[:20]:
+            print(f"  - {rel}: repo에 없는 설치본 잔존")
+        if len(advisory) > 20:
+            print(f"  … 외 {len(advisory) - 20}건")
+
+
+def _run_discovery(targets, args):
     if "codex" in targets and (not args.no_install or args.skill_root):
         report_skill_duplicates([*skill_discovery_roots(), *map(Path, args.skill_root)])
     elif "codex" in targets:
         print("[discovery:codex] skipped (--no-install; use --skill-root to include local diagnostics)")
 
+
+def main(argv=None):
+    try:  # report uses em-dash + Korean; force UTF-8 stdout regardless of console codepage
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    args = _parse_args(argv)
+    if args.update:
+        do_update()
+        return 0
+    targets = INSTALL_TARGETS if args.target == "all" else (args.target,)
+    declared, cat_problems, cur_problems, generated_problems = _collect_source_checks(targets)
+    _report_source_checks(targets, declared, cat_problems, cur_problems, generated_problems)
+    inst_problems = []
+    if args.no_install:
+        print("[install] skipped (--no-install)")
+    else:
+        for target in targets:
+            present, problems, blocking, advisory, missing_dest = _collect_install_target(target)
+            _report_install_target(target, present, problems, blocking, advisory, missing_dest)
+            if present:
+                inst_problems += problems + blocking
+    _run_discovery(targets, args)
     return 0 if not (cat_problems or cur_problems or generated_problems or inst_problems) else 1
 
 

@@ -29,36 +29,48 @@ def _run(callable_, argv: list[str]) -> int:
     return 0 if result is None else result
 
 
+def _preflight(check_args: list[str]) -> int:
+    print("[refresh] source preflight")
+    return _run(check.main, ["--no-install", *check_args])
+
+
+def _install_targets(targets: tuple[str, ...], *, dry_run: bool) -> int:
+    for target in targets:
+        print(f"[refresh] {'preview' if dry_run else 'install'} target={target}")
+        argv = ["--target", target, "--allow-live"]
+        if dry_run:
+            argv.append("--dry-run")
+        status = _run(install.main, argv)
+        if status:
+            return status
+    return 0
+
+
 def refresh(*, apply: bool, target: str = "all") -> int:
     """Validate source, preview selected targets, and apply only on explicit request."""
-    print("[refresh] source preflight")
     selected = _TARGETS if target == "all" else (target,)
     check_args = [] if target == "all" else ["--target", target]
-    status = _run(check.main, ["--no-install", *check_args])
+    status = _preflight(check_args)
     if status:
         return status
 
-    for target in selected:
-        print(f"[refresh] preview target={target}")
-        status = _run(install.main, ["--target", target, "--allow-live", "--dry-run"])
-        if status:
-            return status
+    status = _install_targets(selected, dry_run=True)
+    if status:
+        return status
 
     if not apply:
         print("[refresh] PREVIEW complete - rerun with --apply and the same --target to install.")
         return 0
 
-    for target in selected:
-        print(f"[refresh] install target={target}")
-        status = _run(install.main, ["--target", target, "--allow-live"])
-        if status:
-            return status
+    status = _install_targets(selected, dry_run=False)
+    if status:
+        return status
 
     print("[refresh] live conformance check")
     return _run(check.main, check_args)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parse_args(argv: list[str] | None):
     parser = argparse.ArgumentParser(
         description="Preview or explicitly apply selected harness targets."
     )
@@ -68,8 +80,11 @@ def main(argv: list[str] | None = None) -> int:
         help="install selected live targets after preflight; omitted means dry-run only",
     )
     parser.add_argument("--target", choices=["codex", "claude", "all"], default="all")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
 
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
     return refresh(apply=args.apply, target=args.target)
 
 
