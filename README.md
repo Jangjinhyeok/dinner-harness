@@ -64,14 +64,14 @@ codex -m gpt-6-astra -c model_reasoning_effort="medium"
 ## 모델 정책과 적용 범위
 
 구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다.
-아래는 2026-09-23에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
+아래는 2026-10-02에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
 
 | 역할 | 모델 / effort | 적용 |
 |---|---|---|
 | Main / architect | GPT-6 Astra / medium | interactive 권장값, 실제 선택은 앱/CLI |
-| 작은 명확한 위임 | GPT-6 Luna / medium | 선택된 headless LOW |
-| 일반 구현 위임 | GPT-6 Sol / medium | headless NORMAL/native 구현 profile |
-| 복잡한/HIGH 구현 | GPT-6 Astra / high | HIGH 최소 compute |
+| 작은 명확한 위임 | GPT-6.1 Sol / xhigh | 선택된 headless LOW |
+| 일반 구현 위임 | GPT-6.1 Sol / xhigh | headless NORMAL/native 구현 profile |
+| 복잡한/HIGH 구현 | GPT-6.1 Sol / xhigh | HIGH 최소 compute |
 | 중요한 독립 review | GPT-6 Sol / high | fresh-context reviewer |
 | HIGH design challenge | GPT-6 Astra / high | 구현과 별도 read-only 호출 |
 

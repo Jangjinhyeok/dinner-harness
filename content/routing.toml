@@ -18,8 +18,8 @@
 #   reviewer         — interactive-session recommended policy (primary path);
 #                       native reviewer agents also use this policy; legacy run does not.
 #
-# Codex builder cost tiers (default and hybrid) share the policy documented in
-# ADR-0020's 2026-09-11 addendum. Risk/review gates remain independent of compute.
+# Codex builder compute tiers (default and hybrid) use the same Sol 6.1/xhigh profile.
+# Risk/review gates remain independent of compute.
 
 [routing]
 preset = "codex_only"
@@ -67,18 +67,18 @@ effort = "low"
 
 [presets.hybrid.builder_low]
 vendor = "codex"
-model = "gpt-6-luna"
-effort = "medium"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.hybrid.builder_normal]
 vendor = "codex"
-model = "gpt-6-sol"
-effort = "medium"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.hybrid.builder_high]
 vendor = "codex"
-model = "gpt-6-astra"
-effort = "high"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.hybrid.reviewer]
 vendor = "claude"
@@ -121,7 +121,7 @@ model = "claude-sonnet-5"
 effort = "medium"
 
 # --- codex_only: default, no Claude Code in the loop ---
-# Independent HIGH Challenger; Luna/Sol/Astra scale delegated compute by tier.
+# Independent HIGH Challenger; all delegated compute tiers use Sol 6.1/xhigh.
 # Safety gates are unchanged.
 
 [presets.codex_only.architect]
@@ -136,18 +136,18 @@ effort = "high"
 
 [presets.codex_only.builder_low]
 vendor = "codex"
-model = "gpt-6-luna"
-effort = "medium"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.codex_only.builder_normal]
 vendor = "codex"
-model = "gpt-6-sol"
-effort = "medium"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.codex_only.builder_high]
 vendor = "codex"
-model = "gpt-6-astra"
-effort = "high"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.codex_only.reviewer]
 vendor = "codex"

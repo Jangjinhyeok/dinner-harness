@@ -37,7 +37,7 @@ class RoutingMigrationTests(unittest.TestCase):
                 role = self.config["native_agents"][name]
                 self.assertEqual(role, "builder_normal")
                 self.assertEqual(routing.resolve_profile(self.config, self.preset, role),
-                                 routing.ModelProfile("codex", "gpt-6-sol", "medium"))
+                                 routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"))
 
     def test_profiles_reject_empty_invalid_fields_and_vendor_effort(self):
         for key, value in (("model", ""), ("model", " "), ("model", "bad name"),
@@ -49,12 +49,12 @@ class RoutingMigrationTests(unittest.TestCase):
                 with self.assertRaises(routing.RoutingConfigError):
                     routing.resolve_profile(config, self.preset, "builder_low")
 
-    def test_codex_builder_cost_tiers_match_in_default_and_hybrid(self):
+    def test_codex_builder_tiers_use_sol_xhigh_in_default_and_hybrid(self):
         # Policy acceptance contract; runtime selection still comes only from TOML.
         expected = {
-            "builder_low": routing.ModelProfile("codex", "gpt-6-luna", "medium"),
-            "builder_normal": routing.ModelProfile("codex", "gpt-6-sol", "medium"),
-            "builder_high": routing.ModelProfile("codex", "gpt-6-astra", "high"),
+            "builder_low": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
+            "builder_normal": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
+            "builder_high": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
         }
         self.assertEqual(self.preset, "codex_only")
         for preset in (self.preset, "hybrid"):
@@ -74,7 +74,7 @@ class RoutingMigrationTests(unittest.TestCase):
 
     def test_codex_manual_efforts_and_vendor_mismatch_contract(self):
         for model in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
-                      "gpt-6-luna", "gpt-6-sol", "gpt-6-astra"):
+                      "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra"):
             for effort in ("low", "medium", "high", "xhigh"):
                 with self.subTest(model=model, effort=effort):
                     profile = routing.ModelProfile("codex", model, effort)

@@ -2561,7 +2561,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         make_backend.assert_not_called()
 
     def test_real_high_with_builder_effort_override_is_blocked(self):
-        orchestrator, _ = self._resolve_builder_profile(builder_effort="xhigh")
+        orchestrator, _ = self._resolve_builder_profile(builder_effort="high")
         with mock.patch("orchestrator.controller.make_backend") as make_backend:
             outcome = orchestrator._resolve_builder_profile(
                 "HANDOFF text",
@@ -2571,6 +2571,22 @@ class TestBuildFromHandoff(unittest.TestCase):
         self.assertEqual(outcome.status, BLOCKED)
         self.assertIn("override", outcome.reason)
         make_backend.assert_not_called()
+
+    def test_real_high_with_exact_builder_profile_override_is_allowed(self):
+        profile = _policy_profile("builder_high")
+        orchestrator, _ = self._resolve_builder_profile(
+            builder_model=profile.model, builder_effort=profile.effort,
+        )
+        self._record_challenge_evidence(orchestrator, "HANDOFF text")
+        with mock.patch("orchestrator.controller.make_backend", return_value=object()) as make_backend:
+            outcome = orchestrator._resolve_builder_profile(
+                "HANDOFF text",
+                {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_NORMAL}
+            )
+        self.assertIsNone(outcome)
+        self.assertEqual(orchestrator.cfg.builder_model, profile.model)
+        self.assertEqual(orchestrator.cfg.builder_effort, profile.effort)
+        make_backend.assert_called_once_with("codex")
 
     def test_real_high_claude_vendor_uses_claude_builder_high_profile(self):
         orchestrator, _ = self._resolve_builder_profile(builder_vendor="claude")
@@ -5218,7 +5234,7 @@ class TestRouting(unittest.TestCase):
         self.assertIn(routing_copy, manifest["targets"]["claude"]["copy"])
         self.assertIn(routing_copy, manifest["targets"]["codex"]["copy"])
 
-    def test_codex_only_uses_codex_for_all_roles_and_preserves_builder_tiers(self):
+    def test_codex_only_uses_codex_for_all_roles_and_unifies_builder_tiers(self):
         repo_root = Path(__file__).resolve().parents[2]
         config = routing.load_routing_config(repo_root / "content" / "routing.toml")
         self.assertEqual(routing.active_preset_name(config), "codex_only")
@@ -5228,7 +5244,7 @@ class TestRouting(unittest.TestCase):
                 self.assertEqual(profile.vendor, "codex")
         builders = [routing.resolve_profile(config, "codex_only", f"builder_{tier}")
                     for tier in ("low", "normal", "high")]
-        self.assertEqual(len({profile.model for profile in builders}), 3)
+        self.assertEqual({profile.model for profile in builders}, {"gpt-6.1-sol"})
         self.assertEqual([profile.effort for profile in builders],
                          [config["presets"]["codex_only"][f"builder_{tier}"]["effort"]
                           for tier in ("low", "normal", "high")])

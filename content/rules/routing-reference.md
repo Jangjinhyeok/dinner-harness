@@ -12,14 +12,15 @@
 일반 위임 Terra medium, Compute HIGH 구현 Astra high, 중요한 독립 review Sol high,
 Risk HIGH design challenge Astra high의 별도 호출이다. 벤치마크로 최적성을 입증한 조합이 아니다.
 
-2026-09-23 운영 설정은 GPT-6 Luna(builder_low), GPT-6 Sol(builder_normal/reviewer),
-GPT-6 Astra(architect/builder_high/challenger_high)다. effort와 구체 ID는 TOML을 따른다.
+2026-10-02 운영 설정은 Codex builder_low/builder_normal/builder_high를
+GPT-6.1 Sol xhigh로 통일한다. architect는 GPT-6 Astra medium, challenger_high는
+GPT-6 Astra high, reviewer는 GPT-6 Sol high다. effort와 구체 ID는 TOML을 따른다.
 codex_only와 hybrid의 Codex builder만 갱신하며 Claude profile·preset 선택은 유지한다.
 위의 2026-09-10 제안은 당시 기록이다. 현재 설정 역시 벤치마크 최적값을 뜻하지 않는다.
 
 2026-09-11 builder 비용 계층 결정은 [ADR-0020 addendum](https://github.com/Jangjinhyeok/dinner-harness/blob/main/docs/architecture/ADR-0020-routing-preset-architecture.md#addendum-2026-09-11-codex-builder-cost-tiers)을 참고한다.
-기본/hybrid builder는 같은 비용 계층을 사용하며,
-일반 작업을 자동으로 frontier 모델에 올리지 않는다. 실제 값은 TOML이 결정한다.
+해당 addendum은 당시 비용 계층의 기록이다. 현재 기본/hybrid Codex builder는
+모든 compute 단계에서 같은 Sol 6.1 xhigh profile을 사용한다. 실제 값은 TOML이 결정한다.
 LOW compute는 명확하고 국소적이며 기존 pattern을 복제하는 구현,
 NORMAL compute는 기존 abstraction을 활용하는 일반 feature/moderate refactor,
 HIGH compute는 architecture·ownership·invariant 판단과 큰 영향 범위의 구현에 사용한다.

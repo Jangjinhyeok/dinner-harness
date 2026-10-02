@@ -51,14 +51,14 @@ unperformed review is not_run. Add specialists only for distinct unresolved risk
 ## Models
 
 [content/routing.toml](content/routing.toml) is the profile SSOT; codex_only is the default.
-The configuration selected on 2026-09-23 is a usage policy, not a benchmark-proven optimum.
+The configuration selected on 2026-10-02 is a usage policy, not a benchmark-proven optimum.
 
 | Role | Model / effort | Meaning |
 |---|---|---|
 | Main / architect | GPT-6 Astra / medium | Interactive recommendation, selected separately |
-| Small clear delegation | GPT-6 Luna / medium | Selected headless LOW |
-| General delegation | GPT-6 Sol / medium | NORMAL/native implementation |
-| Complex/HIGH implementation | GPT-6 Astra / high | HIGH compute floor |
+| Small clear delegation | GPT-6.1 Sol / xhigh | Selected headless LOW |
+| General delegation | GPT-6.1 Sol / xhigh | NORMAL/native implementation |
+| Complex/HIGH implementation | GPT-6.1 Sol / xhigh | HIGH compute floor |
 | Important independent review | GPT-6 Sol / high | Fresh-context reviewer |
 | HIGH design challenge | GPT-6 Astra / high | Separate read-only invocation |
 
