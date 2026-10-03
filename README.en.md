@@ -109,10 +109,11 @@ Historical ADR/capability observations remain dated records.
 
 Source catalog. The manifest and generated checks determine Codex installation coverage.
 
-### Skills (29)
+### Skills (30)
 
 - `adversarial-review`
 - `arch-review`
+- `asset-authoring`
 - `autonomous-loop`
 - `bp`
 - `changelog`

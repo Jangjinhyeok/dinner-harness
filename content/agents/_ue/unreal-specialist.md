@@ -79,5 +79,10 @@ version's official documentation or engine source.
 Use the project's build/automation and relevant PIE, multiplayer, loading or packaging checks.
 Engine MCP use follows actual availability, assigned permissions and live-asset scope under
 rules/agent-routing.md; do not infer editor verification from generated code.
+For authored meshes, textures or UI icons, read skills/asset-authoring/SKILL.md under the active
+harness install. Verify units/pivot, materials, collision behavior and save/reload with the pinned
+importer; test a source edit reimported into the same asset before claiming iteration works.
+Keep asset production distinct from unrequested gameplay/Model/UI wiring, and distinguish
+automated import evidence, visual observation and user-reported acceptance.
 Report concrete risks and trade-offs, not missing preferred patterns. Keep game-design decisions
 and unapproved architecture/plugin changes with the user; existing authorization need not be asked again.

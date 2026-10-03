@@ -47,6 +47,15 @@ Read the project's pinned engine version and configured target from project mani
 files. Verify uncertain/version-dependent APIs against that version's official documentation or
 engine source; a particular VERSION.md path is not required.
 
+### Asset Authoring
+
+For DCC automation, prop/texture/icon production or asset export pipelines, read
+skills/asset-authoring/SKILL.md under the active harness install. Preserve editable native sources
+and user edits; verify the actual MCP/Add-on connection and output paths when involved.
+For model-derived icons, render the final model and keep layered retouch separate. Return
+source/export recipes and observed evidence; installation, live config/trust and paid generation
+follow the user's existing authority and risk policy.
+
 ### Tool Design Principles
 
 - Tools must validate input and give clear, actionable error messages

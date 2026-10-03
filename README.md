@@ -130,10 +130,11 @@ native compaction을 우선하고 experimental context management는 자동 활�
 
 Source catalog입니다. Codex 설치 대상과 설정은 `harness.toml`과 생성 검증으로 확인합니다.
 
-### Skills (29)
+### Skills (30)
 
 - `adversarial-review`
 - `arch-review`
+- `asset-authoring`
 - `autonomous-loop`
 - `bp`
 - `changelog`
