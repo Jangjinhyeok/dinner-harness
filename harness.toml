@@ -32,7 +32,6 @@ vendor_dirs = ["skills/synced"]
 copy = [
   ["content/rules/agent-routing.md",      "rules/agent-routing.md"],
   ["content/rules/autonomy-policy.md",    "rules/autonomy-policy.md"],
-  ["content/rules/machine-env.md",        "rules/machine-env.md"],
   ["content/skills",                      "skills"],
   ["content/agents",                      "agents"],
   ["content/templates",                   "templates"],

@@ -12,6 +12,7 @@ project document.
 | engine-reference/unity/VERSION.md | docs/engine-reference/unity/VERSION.md |
 | architecture/ADR-template.md | docs/architecture/ADR-NNN-topic.md when a complex decision warrants it |
 | mcp.json | Claude-compatible project .mcp.json reference; use the chosen CLI's supported MCP registration for other targets |
+| machine-env.example.md | per-machine `~/.claude/rules/machine-env.md` (not a project file; local, never installed or reported as leftover) |
 
 Pin the real engine version and actual build/test commands; do not guess the model's knowledge
 cutoff or silently trust newer APIs. Record verification dates with sources. ADRs support meaningful

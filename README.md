@@ -54,6 +54,9 @@ Claude adapter에는 retire 로직이 없어 이전 설치의 해당 파일과 `
 `check.py --target claude`가 남은 파일을 leftover로 보고하지만 자동 삭제하지 않는다. 특히 `rules/`의 남은 파일은
 매 세션 auto-load되므로 반드시 직접 삭제한다. settings의 allow 규칙은 check.py가 보고하지 않으니
 `settings.json`에서 직접 제거한다.
+컴퓨터별 환경 사실(CLI 도구 유무, 콘솔 인코딩, computer use 대처 등)은 설치 대상이 아니다.
+필요하면 설치된 `~/.claude/templates/machine-env.example.md`를 `~/.claude/rules/machine-env.md`로 복사해
+그 컴퓨터에서 확인한 사실로 고친다. install은 이 로컬 파일을 건드리지 않고 check.py도 leftover로 보지 않는다.
 Codex가 필요하면 `--target codex`, 양쪽을 의도한 경우만 `--target all`을 쓴다.
 Codex 설치 절차와 기존 사용자 config 보존 규칙은 [전환 결과](docs/codex-migration-2026-09-10.md)에 있다.
 

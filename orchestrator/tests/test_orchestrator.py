@@ -506,6 +506,26 @@ class TestBuilderFirstGuard(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(leftovers, [("skills/synced-lookalike/SKILL.md", False)])
 
+    def test_claude_local_machine_env_rule_is_neither_installed_nor_a_leftover(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target = manifest["targets"]["claude"]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            self.assertFalse((dest / "rules" / "machine-env.md").exists())
+            self.assertTrue((dest / "templates" / "machine-env.example.md").is_file())
+            local = dest / "rules" / "machine-env.md"
+            local.write_text("local facts\n", encoding="utf-8")
+            claude_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            self.assertEqual(local.read_text(encoding="utf-8"), "local facts\n")
+            present, problems, leftovers = check.check_install(
+                "claude", live_root=dest, username="tester"
+            )
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [])
+
     def test_do_update_stamps_current_date(self):
         with tempfile.TemporaryDirectory() as d:
             claude_md = Path(d) / "CLAUDE.md"

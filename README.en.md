@@ -39,6 +39,10 @@ plus `claude-direct.cmd`, `dh*.cmd`, `watch-builder.ps1`, the `builder_guard` fi
 `orchestrate.py` allow rule, may remain in `~/.claude`. `check.py --target claude` reports the leftover
 files but never deletes them. Remove leftover `rules/` files by hand: Claude Code auto-loads them.
 check.py does not report the settings allow rule; remove it from `settings.json` by hand.
+Per-machine environment facts (CLI tools, console encoding, computer-use quirks) are not installed.
+If needed, copy the installed `~/.claude/templates/machine-env.example.md` to
+`~/.claude/rules/machine-env.md` and fill in facts verified on that machine; install never touches
+that local file and check.py does not report it as a leftover.
 Use --target codex or --target all only when intended. A plain `claude` session is the direct-edit
 session. App users select the interactive model in the supported model picker. Routing updates do
 not change an already open session.
