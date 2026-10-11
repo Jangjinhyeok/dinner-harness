@@ -44,7 +44,8 @@ _RULES_PATH = _HOOKS_ROOT / "rules" / "secret_patterns.json"
 # "apply_patch" is Codex 0.149.0's file-edit tool (CODEX-COVERAGE.md §6.2, re-verified 2026-08-21 — see §6.5); Claude
 # codex-cli 0.151.0 (re-verified 2026-08-31 — see CODEX-COVERAGE.md §6.6)
 # never emits it, so listing it here is inert on Claude and active on Codex.
-_TARGET_TOOLS = {"Edit", "Write", "Bash", "PowerShell", "apply_patch"}
+# NotebookEdit is Claude's .ipynb cell editor (notebook_path + new_source).
+_TARGET_TOOLS = {"Edit", "Write", "NotebookEdit", "Bash", "PowerShell", "apply_patch"}
 
 
 class Match(NamedTuple):
@@ -112,6 +113,14 @@ def _scan(tool_name: str, tool_input: dict, patterns: dict) -> Optional[Match]:
         if m:
             return m
         return _scan_against(content, content_rules, "content", file_path or "<content>")
+
+    if tool_name == "NotebookEdit":
+        notebook_path = tool_input.get("notebook_path", "") or ""
+        new_source = tool_input.get("new_source", "") or ""
+        m = _scan_against(notebook_path, path_rules, "path", notebook_path or "<notebook_path>")
+        if m:
+            return m
+        return _scan_against(new_source, content_rules, "content", notebook_path or "<content>")
 
     if tool_name in ("Bash", "PowerShell"):
         command = tool_input.get("command", "") or ""

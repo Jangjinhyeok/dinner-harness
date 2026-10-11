@@ -37,7 +37,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 
 # 공통 인프라
 
-hook들은 발화 흐름·fail-open 계약·로그 구조를 공유하지만 tool 범위는 서로 다르다. `secret_scan`은 Edit/Write/Bash/PowerShell, `scope_check`은 structured edit payload(Edit/Write; Codex에서는 apply_patch), `learning_log`은 Bash/PowerShell을 대상으로 한다. 차단형 `secret_scan`·`scope_check`은 `*_MODE` 모드 모델도 갖고, advisory형 `suggest_compact`·`learning_log`은 모드·차단이 없다. 새 hook을 추가하면 같은 인프라를 그대로 재사용한다.
+hook들은 발화 흐름·fail-open 계약·로그 구조를 공유하지만 tool 범위는 서로 다르다. `secret_scan`은 Edit/Write/NotebookEdit/Bash/PowerShell, `scope_check`은 structured edit payload(Edit/Write/NotebookEdit; Codex에서는 apply_patch), `learning_log`은 Bash/PowerShell을 대상으로 한다. 차단형 `secret_scan`·`scope_check`은 `*_MODE` 모드 모델도 갖고, advisory형 `suggest_compact`·`learning_log`은 모드·차단이 없다. 새 hook을 추가하면 같은 인프라를 그대로 재사용한다.
 
 ## 디렉터리 구조
 
@@ -56,7 +56,7 @@ hooks/
 `settings.json`의 `hooks.PreToolUse` 엔트리에 박힌 command를 Claude Code가 실행한다. 그 command는 **인자 없는 절대경로 BAT 한 줄**이다. 체인은 다음과 같다 (secret_scan 예시):
 
 ```
-Claude가 Edit/Write/Bash/PowerShell 호출
+Claude가 Edit/Write/NotebookEdit/Bash/PowerShell 호출
   → settings.json: matcher 매칭 시 발화, 도구 호출 내용을 JSON으로 stdin에 전달
   → launchers/secret_scan.cmd          (인자 없는 절대경로 BAT)
   → py -3 handlers/secret_scan.py
@@ -103,14 +103,14 @@ Claude가 Edit/Write/Bash/PowerShell 호출
 
 # secret_scan (ADR-0001)
 
-Edit/Write/Bash/PowerShell 입력을 regex로 훑어 AWS access key, GitHub PAT, Slack token, PEM block 같은 시크릿이나 `.env` / `.credentials` 류 파일 경로를 검출한다. Codex adapter에서는 apply_patch도 검사한다. 사용자가 무심코 시크릿이 박힌 파일을 만들거나 시크릿을 포함한 명령을 실행하기 전에 잡는 안전망이다.
+Edit/Write/NotebookEdit/Bash/PowerShell 입력을 regex로 훑어 AWS access key, GitHub PAT, Slack token, PEM block 같은 시크릿이나 `.env` / `.credentials` 류 파일 경로를 검출한다. Codex adapter에서는 apply_patch도 검사한다. 사용자가 무심코 시크릿이 박힌 파일을 만들거나 시크릿을 포함한 명령을 실행하기 전에 잡는 안전망이다.
 
 ## 잡는 패턴
 
 검출 패턴의 단일 출처는 `rules/secret_patterns.json`이다. 최상위는 `version` 정수와 `content_patterns` / `path_patterns` 두 배열로 구성된다.
 
-- `content_patterns` → Edit의 `new_string` / Write의 `content` / Bash·PowerShell의 `command` 전체 문자열에 매치.
-- `path_patterns` → Edit·Write의 `file_path` 또는 Bash·PowerShell의 `command` 전체에 매치.
+- `content_patterns` → Edit의 `new_string` / Write의 `content` / NotebookEdit의 `new_source` / Bash·PowerShell의 `command` 전체 문자열에 매치.
+- `path_patterns` → Edit·Write의 `file_path`, NotebookEdit의 `notebook_path` 또는 Bash·PowerShell의 `command` 전체에 매치.
 
 각 엔트리는 `name`·`regex`·`severity` 세 필드를 갖고, 첫 매치가 곧바로 반환된다. Bash/PowerShell command는 shell tokenize 없이 명령 전체 문자열에 naive하게 regex를 거는 것이 v1 정책이다 (heredoc/pipe/redirection 분해 없음).
 
@@ -124,19 +124,19 @@ Edit/Write/Bash/PowerShell 입력을 regex로 훑어 AWS access key, GitHub PAT,
 
 # scope_check (ADR-0005)
 
-secret_scan과 동일한 인프라를 재사용하는 두 번째 hook. matcher는 structured edit payload인 `Edit|Write`이며 Codex adapter에서는 `apply_patch`도 포함한다. Bash/PowerShell write는 이 layer의 범위 밖이다. 이는 누락이 아니라 workflow guard와 sandbox의 책임을 분리한 의도된 설계다. 목적은 Builder가 한 cycle에서 의도된 스코프 밖 파일을 수정하거나, cycle과 무관하게 보호돼야 할 인프라 파일을 건드리는 것을 막는 것이다.
+secret_scan과 동일한 인프라를 재사용하는 두 번째 hook. matcher는 structured edit payload인 `Edit|Write|NotebookEdit`이며 Codex adapter에서는 `apply_patch`도 포함한다. Bash/PowerShell write는 이 layer의 범위 밖이다. 이는 누락이 아니라 workflow guard와 sandbox의 책임을 분리한 의도된 설계다. 목적은 Builder가 한 cycle에서 의도된 스코프 밖 파일을 수정하거나, cycle과 무관하게 보호돼야 할 인프라 파일을 건드리는 것을 막는 것이다.
 
 ## 2-layer 판정
 
-- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 **hook-integrity 핵심 파일** 블랙리스트. `settings.json` / `settings.local.json`(hook 배선)과 `hooks/handlers/`·`hooks/lib/`·`hooks/launchers/`·`hooks/rules/`(hook 본체) **6 entries**. Edit/Write/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이고 `~/.claude/` 경로 안에서만 적용된다. Shell write의 containment는 sandbox 책임이다.
+- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 **hook-integrity 핵심 파일** 블랙리스트. `settings.json` / `settings.local.json`(hook 배선)과 `hooks/handlers/`·`hooks/lib/`·`hooks/launchers/`·`hooks/rules/`(hook 본체) **6 entries**. Edit/Write/NotebookEdit/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이고 `~/.claude/` 경로 안에서만 적용된다. Shell write의 containment는 sandbox 책임이다.
   - *(36ab046 이전엔 `CLAUDE.md`·`HANDOFF.md`·`rules/_mode/`·`roles/ROLE_*.md`도 always-block이었으나 제외했다 — 자가-config·워크플로우 정의는 ceremony 없이 편집 가능하게 두고, 이들의 보호는 scope codeblock layer의 advisory 차원과 `builder.md` 구두 규약에만 의존한다.)*
 - **scope codeblock** (`HANDOFF.md`의 첫 ` ```scope ` 블록): 그 cycle에서 Builder가 수정해도 되는 파일 화이트리스트. 블록이 없거나 비어 있으면 fail-open(allow)이라 ADR-0005 이전 cycle의 HANDOFF와도 호환된다.
 
-Edit/Write/apply_patch payload에서 두 layer가 충돌하면 **always-block이 우선**한다 — 화이트리스트에 있어도 always-block에 걸리면 막힌다. 유일한 escape는 `off` 모드(아래 ceremony).
+Edit/Write/NotebookEdit/apply_patch payload에서 두 layer가 충돌하면 **always-block이 우선**한다 — 화이트리스트에 있어도 always-block에 걸리면 막힌다. 유일한 escape는 `off` 모드(아래 ceremony).
 
 ## 모드별 동작과 off ceremony
 
-공통 모드 모델(위)에 더해, scope_check만의 핵심은 **structured edit payload(Edit/Write/apply_patch)의 always-block은 dryrun에서도 차단**된다는 점이다. Bash/PowerShell write는 이 layer가 아니라 sandbox가 통제한다.
+공통 모드 모델(위)에 더해, scope_check만의 핵심은 **structured edit payload(Edit/Write/NotebookEdit/apply_patch)의 always-block은 dryrun에서도 차단**된다는 점이다. Bash/PowerShell write는 이 layer가 아니라 sandbox가 통제한다.
 
 - `dryrun` (현재, 영구): scope codeblock 위반 → warn + exit 0. **always-block 매치 → block + exit 2** (dryrun 면제). 그 외 allow.
 - `enforce`: scope codeblock 위반도 block + exit 2 (always-block은 동일).

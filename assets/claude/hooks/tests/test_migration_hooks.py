@@ -12,10 +12,46 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib import common
-from handlers import learning_log, scope_check
+from handlers import learning_log, scope_check, secret_scan
 
 
 class MigrationHooks(unittest.TestCase):
+    def test_notebook_edit_is_scanned_for_secret_content_and_paths(self):
+        patterns = secret_scan._load_patterns()
+        fake_key = "AKIA" + "A" * 16
+        hit = secret_scan._scan("NotebookEdit", {"notebook_path": "C:/w/a.ipynb", "new_source": fake_key}, patterns)
+        self.assertEqual(hit.pattern_name, "aws_access_key")
+        hit = secret_scan._scan("NotebookEdit", {"notebook_path": "C:/w/.env", "new_source": "x = 1"}, patterns)
+        self.assertEqual(hit.pattern_name, "env_file")
+        self.assertIsNone(secret_scan._scan("NotebookEdit", {"notebook_path": "C:/w/a.ipynb",
+                                                             "new_source": "print(1)"}, patterns))
+        self.assertIn("NotebookEdit", secret_scan._TARGET_TOOLS)
+
+    def test_settings_template_routes_notebook_edit_to_safety_hooks(self):
+        template = json.loads((Path(__file__).resolve().parents[2] / "settings.json.template")
+                              .read_text(encoding="utf-8"))
+        matchers = {entry["hooks"][0]["command"].rsplit("/", 1)[-1]: entry["matcher"].split("|")
+                    for entry in template["hooks"]["PreToolUse"]}
+        for launcher in ("secret_scan.cmd", "scope_check.cmd"):
+            self.assertIn("NotebookEdit", matchers[launcher])
+            self.assertIn("Edit", matchers[launcher])
+            self.assertIn("Write", matchers[launcher])
+
+    def test_notebook_edit_on_protected_path_is_blocked(self):
+        self.assertEqual(scope_check._extract_paths("NotebookEdit", {"notebook_path": "C:/w/a.ipynb"}),
+                         ["C:/w/a.ipynb"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = {"tool_name": "NotebookEdit", "cwd": str(root),
+                       "tool_input": {"notebook_path": str(root / "config.toml"), "new_source": "safe"}}
+            env = dict(os.environ, CODEX_HOME=str(root), CLAUDE_SCOPE_WHITELIST_MODE="enforce",
+                       CLAUDE_HOOK_FAILS_CLOSED="1", PYTHONUTF8="1")
+            result = subprocess.run([sys.executable, str(Path(scope_check.__file__))],
+                                    input=json.dumps(payload), encoding="utf-8",
+                                    capture_output=True, env=env, timeout=5)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("always-block", result.stderr)
+
     def test_controller_cannot_allow_unreadable_scope_rules(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(common, "_FAILS_CLOSED", True), \
              mock.patch.object(common, "_LOGS_DIR", Path(tmp)), \

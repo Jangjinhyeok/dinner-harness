@@ -1,11 +1,11 @@
 """ADR-0005 scope-whitelist PreToolUse hook.
 
-Reads a Claude Code hook payload from stdin. For ``Edit`` / ``Write``
-calls, normalises ``file_path`` to an absolute POSIX path and runs two
+Reads a Claude Code hook payload from stdin. For ``Edit`` / ``Write`` / ``NotebookEdit``
+calls, normalises ``file_path`` (``notebook_path``) to an absolute POSIX path and runs two
 policy layers:
 
   1. always-block: for the structured file-edit tools in ``_TARGET_TOOLS``
-     (``Edit``, ``Write``, and ``apply_patch``), paths matching
+     (``Edit``, ``Write``, ``NotebookEdit`` and ``apply_patch``), paths matching
      ``rules/scope_protect.json`` are blocked unconditionally inside
      ``~/.claude/`` (dryrun-exempt, immediate enforce). Mode ``off`` is the only
      escape. Writes through ``Bash`` or PowerShell are intentionally outside
@@ -79,8 +79,9 @@ _FENCE_PINNED = _FENCE_ENV is not None
 # "apply_patch" is Codex 0.149.0's file-edit tool (CODEX-COVERAGE.md §6.2, re-verified 2026-08-21 — see §6.5); it
 # codex-cli 0.151.0 (re-verified 2026-08-31 — see CODEX-COVERAGE.md §6.6)
 # carries the patch in tool_input.command, not a single file_path. Inert on
-# Claude (never emitted), active on Codex.
-_TARGET_TOOLS = {"Edit", "Write", "apply_patch"}
+# Claude (never emitted), active on Codex. NotebookEdit is Claude's .ipynb cell
+# editor; it targets ``notebook_path`` instead of ``file_path``.
+_TARGET_TOOLS = {"Edit", "Write", "NotebookEdit", "apply_patch"}
 
 # Absolute-path detector. Matches Windows ``C:/...`` / ``C:\...`` and
 # POSIX-style ``/...``. Used in place of ``PurePath.is_absolute`` to
@@ -401,12 +402,16 @@ def _load_handoff_scope(cwd: Path) -> Optional[list[Pattern]]:
 def _extract_paths(tool_name: str, tool_input: dict) -> list[str]:
     """Return the file paths a tool call targets.
 
-    Edit/Write carry a single ``file_path``; Codex ``apply_patch`` carries a
-    patch body in ``command`` referencing one or more paths.
+    Edit/Write carry a single ``file_path``; NotebookEdit a ``notebook_path``;
+    Codex ``apply_patch`` carries a patch body in ``command`` referencing one
+    or more paths.
     """
     if tool_name == "apply_patch":
         command = tool_input.get("command", "") or ""
         return [p for p, _ in parse_apply_patch(command)]
+    if tool_name == "NotebookEdit":
+        notebook_path = tool_input.get("notebook_path", "") or ""
+        return [notebook_path] if notebook_path else []
     file_path = tool_input.get("file_path", "") or ""
     return [file_path] if file_path else []
 
