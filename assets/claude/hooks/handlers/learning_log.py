@@ -9,8 +9,9 @@ It NEVER blocks — always exits 0. The captured failures are later reviewed and
 promoted into CLAUDE.md rules by the ``learnings-review`` skill.
 
 Installed in ``hooks/handlers/``; launcher at ``hooks/launchers/learning_log.cmd``.
-Registered under ``PostToolUse`` (matcher ``Bash|PowerShell``) in ``settings.json``
-and ``settings.json.template``. (``parent.parent`` is ``hooks/``, so ``lib.common``
+Registered under ``PostToolUse`` and ``PostToolUseFailure`` (matcher ``Bash|PowerShell``)
+in ``settings.json`` and ``settings.json.template``: a command that exits non-zero fires
+only the failure event, so without it most real failures were never seen. (``parent.parent`` is ``hooks/``, so ``lib.common``
 resolves normally.)
 """
 from __future__ import annotations
@@ -67,7 +68,8 @@ def _extract_text(payload: dict) -> str:
             for x in v:
                 collect(x)
 
-    for key in ("tool_response", "tool_result", "result", "output"):
+    # PostToolUseFailure (non-zero exit) carries the command output in ``error``.
+    for key in ("tool_response", "tool_result", "result", "output", "error"):
         if key in payload:
             collect(payload[key])
     text = "\n".join(parts)
@@ -131,7 +133,7 @@ def main() -> None:
         fields["diag"] = diag
     log_event(
         _HOOK_NAME,
-        event=_EVENT,
+        event=str(payload.get("hook_event_name") or _EVENT),
         decision="capture",
         signal=name,
         cwd=str(get_cwd(payload)),

@@ -74,7 +74,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 | `secret_scan` | Pre · Edit·Write·NotebookEdit·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
 | `scope_check` | Pre · Edit·Write·NotebookEdit | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
-| `learning_log` | Post · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
+| `learning_log` | Post·PostFailure · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
 | `route_nudge` | UserPromptSubmit | 구현 의도마다 inline 기본 실행 route(ADR-0023)를 context에 주입하고, UE 도메인 신호에는 focused reference consult 권고도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0) | 2026-06-16, 2026-08-07 auto-route protocol |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
@@ -83,7 +83,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 
 `suggest_compact`는 위 두 차단형과 달리 룰셋·모드·차단이 없는 advisory-only hook이다 — 도구 호출이 누적되면 stderr로 `/compact`를 제안만 하고 항상 exit 0이다. 핸들러·런처(`hooks/handlers/suggest_compact.py`·`hooks/launchers/suggest_compact.cmd`)가 배치됐고 `settings.json.template`·로컬 `settings.json`(`PreToolUse`) 양쪽에 등록 완료다(새 머신은 template로 자동 적용). `settings.json`은 scope_check always-block 대상이라, 활성화는 본인이 직접 hand-edit하거나(에디터로 직접 수정 시 hook이 발화하지 않음) off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 추가했다 — 추가 즉시 hot-reload된다. (출처: `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅. 결정 이력은 `hooks/README.md` 참조.)
 
-`learning_log`은 첫 **PostToolUse** hook이다(예약돼 있던 ADR-0004 활성화 — gap #4). Bash/PowerShell 호출 직후 출력에서 강한 실패 신호만 골라 `learning_log.log`에 포착하고, `learnings-review` skill이 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습). advisory(항상 exit 0). off-ceremony로 `hooks/handlers/`·`hooks/launchers/`에 설치 + 로컬 `settings.json`의 `PostToolUse`에 등록 완료(2026-06-01). 새 머신은 `settings.json.template`의 `PostToolUse`로 자동 적용된다.
+`learning_log`은 첫 **PostToolUse** hook이다(예약돼 있던 ADR-0004 활성화 — gap #4). Bash/PowerShell 호출 직후 출력에서 강한 실패 신호만 골라 `learning_log.log`에 포착하고, `learnings-review` skill이 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습). advisory(항상 exit 0). off-ceremony로 `hooks/handlers/`·`hooks/launchers/`에 설치 + 로컬 `settings.json`의 `PostToolUse`에 등록 완료(2026-06-01). 새 머신은 `settings.json.template`의 `PostToolUse`로 자동 적용된다. 2026-10-11부터 exit≠0 명령이 발화시키는 `PostToolUseFailure`(출력은 `error` 필드)에도 같은 런처를 등록한다 — 그 전에는 실제 실패 대부분이 포착되지 않았다.
 
 상세 발화 흐름·운영 모드·ceremony·패턴 추가법은 `hooks/README.md` 참조.
 

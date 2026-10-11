@@ -32,7 +32,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 > **2026-06-01: "추가 hook 없음" 결정 번복** — 사용자 승인 하에 advisory-only hook `suggest_compact`를 도입(2026-05-24 운영 확정 → 갱신). **핸들러·런처는 `hooks/`에 배치됐고 `settings.json.template`·로컬 `settings.json`(개인 PC) 양쪽에 등록 완료다(always-block이라 hand-edit 또는 off ceremony로 추가).** 이 hook은 secret_scan/scope_check와 달리 룰셋·모드·차단이 없고 stderr로 `/compact`를 제안만 한다. 핸들러는 `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅한 것. 상세는 맨 아래 "결정 이력" 참조.
 
 > **2026-06-01: `learning_log` (PostToolUse, advisory) 도입 — 예약돼 있던 ADR-0004 활성화.** Bash/PowerShell 도구 호출 후 출력에서 강한 실패 신호(컴파일 `error C\d{4}`·`LNK`·`CS`·`undefined reference`·build failed·traceback 등)만 골라 `log_event`로 `logs/learning_log.log`에 한 줄씩 포착한다. 차단 불가(항상 exit 0), 룰셋 없음(핸들러 내장 패턴, 노이즈 최소화). 포착물은 `learnings-review` skill이 클러스터링해 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습, 승격해야 학습). **off-ceremony 설치 완료(2026-06-01)** — 핸들러는 `hooks/handlers/learning_log.py`, 런처는 `hooks/launchers/learning_log.cmd`, 로컬 `settings.json`·`settings.json.template`의 `PostToolUse`에 등록됨(스모크 + 라이브 배선 검증 완료).
-> **2026-10-11 노이즈 정리:** hook log·transcript를 읽는 명령(`hooks/logs`, `learning_log`, `*.jsonl`)과 JSON 로그 레코드 줄(`{"timestamp": …}`) 안의 실패 문자열은 포착하지 않는다(learnings-review 표본에서 재포착 7건/6세션 확인). 원인 군집화를 위해 메시지 대신 분류값 `diag`(Python 예외 클래스명 또는 `C####`/`CS####`/`TS####`/`LNK####` 코드)만 기록한다.
+> **2026-10-11 노이즈 정리:** hook log·transcript를 읽는 명령(`hooks/logs`, `learning_log`, `*.jsonl`)과 JSON 로그 레코드 줄(`{"timestamp": …}`) 안의 실패 문자열은 포착하지 않는다(learnings-review 표본에서 재포착 7건/6세션 확인). 원인 군집화를 위해 메시지 대신 분류값 `diag`(Python 예외 클래스명 또는 `C####`/`CS####`/`TS####`/`LNK####` 코드)만 기록한다. exit≠0 명령은 `PostToolUse`가 아니라 `PostToolUseFailure`(출력은 `error` 필드)만 발화하므로 같은 런처를 두 event에 모두 등록하고, 레코드의 `event`로 구분한다.
 
 ---
 

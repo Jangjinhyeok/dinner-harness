@@ -192,6 +192,22 @@ class MigrationHooks(unittest.TestCase):
         self.assertEqual(rec["signal"], "build_failed")
         self.assertNotIn("diag", rec)
 
+    def test_learning_log_captures_non_zero_exit_failure_event(self):
+        # Shape from the Claude Code hooks reference (PostToolUseFailure example).
+        payload = {"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "session_id": "s1",
+                   "tool_input": {"command": "py -3 x.py"}, "is_interrupt": False,
+                   "error": "Exit code 1\nTraceback (most recent call last):\nModuleNotFoundError: No module named 'x'"}
+        rec = self._run_learning_log(payload)
+        self.assertEqual((rec["event"], rec["signal"], rec["diag"]),
+                         ("PostToolUseFailure", "python_trace", "ModuleNotFoundError"))
+        template = json.loads((Path(__file__).resolve().parents[2] / "settings.json.template")
+                              .read_text(encoding="utf-8"))
+        for event in ("PostToolUse", "PostToolUseFailure"):
+            with self.subTest(event=event):
+                entry, = template["hooks"][event]
+                self.assertEqual(entry["matcher"], "Bash|PowerShell")
+                self.assertTrue(entry["hooks"][0]["command"].endswith("/learning_log.cmd"))
+
     def test_learning_log_ignores_quoted_failures_from_logs_and_transcripts(self):
         record = json.dumps({"timestamp": "2026-08-06T04:42:55Z", "signal": "python_trace",
                              "traceback": "Traceback (most recent call last):"})
