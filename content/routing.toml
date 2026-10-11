@@ -18,7 +18,7 @@
 #   reviewer         — interactive-session recommended policy (primary path);
 #                       native reviewer agents also use this policy; legacy run does not.
 #
-# Codex builder compute tiers (default and hybrid) use the same Sol 6.1/xhigh profile.
+# Every Codex profile uses Sol 6.1/xhigh, including architecture and review.
 # Risk/review gates remain independent of compute.
 
 [routing]
@@ -121,18 +121,18 @@ model = "claude-sonnet-5"
 effort = "medium"
 
 # --- codex_only: default, no Claude Code in the loop ---
-# Independent HIGH Challenger; all delegated compute tiers use Sol 6.1/xhigh.
+# Independent HIGH Challenger; all roles use Sol 6.1/xhigh.
 # Safety gates are unchanged.
 
 [presets.codex_only.architect]
 vendor = "codex"
-model = "gpt-6-astra"
-effort = "medium"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.codex_only.challenger_high]
 vendor = "codex"
-model = "gpt-6-astra"
-effort = "high"
+model = "gpt-6.1-sol"
+effort = "xhigh"
 
 [presets.codex_only.builder_low]
 vendor = "codex"
@@ -151,5 +151,5 @@ effort = "xhigh"
 
 [presets.codex_only.reviewer]
 vendor = "codex"
-model = "gpt-6-sol"
-effort = "high"
+model = "gpt-6.1-sol"
+effort = "xhigh"

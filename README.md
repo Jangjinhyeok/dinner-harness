@@ -3,8 +3,8 @@
 **한국어** | [English](README.en.md)
 
 Codex 중심으로 설계·구현·검증을 이어가는 개인 harness의 source of truth다.
-기본은 GPT-6 Astra 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
-추가 모델을 쓴다. 기존 hybrid/claude_only는 선택 가능한 호환 경로로 유지한다.
+기본은 GPT-6.1 Sol xhigh 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
+추가 agent를 쓴다. 기존 hybrid/claude_only는 선택 가능한 호환 경로로 유지한다.
 설치된 `~/.codex`·`~/.claude`는 생성 결과다. canonical source를 수정하고 검증 후 설치한다.
 
 ## 기본 workflow
@@ -55,7 +55,7 @@ Claude만 필요하면 `--target claude`, 양쪽을 의도한 경우만 `--targe
 새 프로젝트에서 Codex를 열고 평소처럼 요청한다. 초기 interactive 권장 실행 예시:
 
 ```text
-codex -m gpt-6-astra -c model_reasoning_effort="medium"
+codex -m gpt-6.1-sol -c model_reasoning_effort="xhigh"
 ```
 
 사용 중인 앱에서는 지원되는 모델 선택기를 쓴다. routing.toml 수정이나 harness 설치는
@@ -64,16 +64,16 @@ codex -m gpt-6-astra -c model_reasoning_effort="medium"
 ## 모델 정책과 적용 범위
 
 구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다.
-아래는 2026-10-02에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
+아래는 2026-10-03에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
 
 | 역할 | 모델 / effort | 적용 |
 |---|---|---|
-| Main / architect | GPT-6 Astra / medium | interactive 권장값, 실제 선택은 앱/CLI |
+| Main / architect | GPT-6.1 Sol / xhigh | interactive 권장값, 실제 선택은 앱/CLI |
 | 작은 명확한 위임 | GPT-6.1 Sol / xhigh | 선택된 headless LOW |
 | 일반 구현 위임 | GPT-6.1 Sol / xhigh | headless NORMAL/native 구현 profile |
 | 복잡한/HIGH 구현 | GPT-6.1 Sol / xhigh | HIGH 최소 compute |
-| 중요한 독립 review | GPT-6 Sol / high | fresh-context reviewer |
-| HIGH design challenge | GPT-6 Astra / high | 구현과 별도 read-only 호출 |
+| 중요한 독립 review | GPT-6.1 Sol / xhigh | fresh-context reviewer |
+| HIGH design challenge | GPT-6.1 Sol / xhigh | 구현과 별도 read-only 호출 |
 
 현재 native 구현 specialist는 `builder_normal`이며 LOW/HIGH를 자동 선택하지 않는다.
 headless는 선택 gate의 risk/compute를 해석한다. 이 지침은 자동 위임 scheduler가 아니다.

@@ -12,10 +12,10 @@
 일반 위임 Terra medium, Compute HIGH 구현 Astra high, 중요한 독립 review Sol high,
 Risk HIGH design challenge Astra high의 별도 호출이다. 벤치마크로 최적성을 입증한 조합이 아니다.
 
-2026-10-02 운영 설정은 Codex builder_low/builder_normal/builder_high를
-GPT-6.1 Sol xhigh로 통일한다. architect는 GPT-6 Astra medium, challenger_high는
-GPT-6 Astra high, reviewer는 GPT-6 Sol high다. effort와 구체 ID는 TOML을 따른다.
-codex_only와 hybrid의 Codex builder만 갱신하며 Claude profile·preset 선택은 유지한다.
+2026-10-03 운영 설정은 Codex의 architect/challenger_high/reviewer와
+builder_low/builder_normal/builder_high를 모두 GPT-6.1 Sol xhigh로 통일한다.
+codex_only의 모든 역할과 hybrid의 Codex builder에 적용하며 Claude profile·preset 선택은 유지한다.
+effort와 구체 ID는 TOML을 따른다.
 위의 2026-09-10 제안은 당시 기록이다. 현재 설정 역시 벤치마크 최적값을 뜻하지 않는다.
 
 2026-09-11 builder 비용 계층 결정은 [ADR-0020 addendum](https://github.com/Jangjinhyeok/dinner-harness/blob/main/docs/architecture/ADR-0020-routing-preset-architecture.md#addendum-2026-09-11-codex-builder-cost-tiers)을 참고한다.

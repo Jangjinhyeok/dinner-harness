@@ -2,7 +2,7 @@
 
 [한국어](README.md) | **English**
 
-Source of truth for a Codex-first personal harness. Main Astra owns requirements, decomposition,
+Source of truth for a Codex-first personal harness. Main owns requirements, decomposition,
 design, integration and final responsibility. Delegate useful bounded implementation to named native
 roles; do small work directly when context-transfer/review overhead is greater. Choose by uncertainty,
 impact, verifiability and dependencies, not file count or a delegation quota. General independent review
@@ -28,7 +28,7 @@ Inspect the temporary output before a separately authorized live install:
 ```text
 py -3 install.py --target codex --allow-live
 py -3 check.py --target codex
-codex -m gpt-6-astra -c model_reasoning_effort="medium"
+codex -m gpt-6.1-sol -c model_reasoning_effort="xhigh"
 ```
 
 Respect custom CODEX_HOME and user-owned config/hooks/skills; do not replace the entire config.toml.
@@ -39,7 +39,7 @@ the supported model picker. Routing updates do not change an already open sessio
 
 Request → necessary exploration/short plan → main-session implementation → project verification →
 useful independent review → report. Ordinary work needs no HANDOFF/RESULT/CHALLENGE or Builder mode.
-Do not delegate based on file count or downgrade an Astra task solely because of risk.
+Do not delegate based on file count or downgrade a task solely because of risk.
 Parallel writers require explicit ownership, isolation and parent integration; avoid concurrent
 implementation in the same tree.
 
@@ -51,16 +51,16 @@ unperformed review is not_run. Add specialists only for distinct unresolved risk
 ## Models
 
 [content/routing.toml](content/routing.toml) is the profile SSOT; codex_only is the default.
-The configuration selected on 2026-10-02 is a usage policy, not a benchmark-proven optimum.
+The configuration selected on 2026-10-03 is a usage policy, not a benchmark-proven optimum.
 
 | Role | Model / effort | Meaning |
 |---|---|---|
-| Main / architect | GPT-6 Astra / medium | Interactive recommendation, selected separately |
+| Main / architect | GPT-6.1 Sol / xhigh | Interactive recommendation, selected separately |
 | Small clear delegation | GPT-6.1 Sol / xhigh | Selected headless LOW |
 | General delegation | GPT-6.1 Sol / xhigh | NORMAL/native implementation |
 | Complex/HIGH implementation | GPT-6.1 Sol / xhigh | HIGH compute floor |
-| Important independent review | GPT-6 Sol / high | Fresh-context reviewer |
-| HIGH design challenge | GPT-6 Astra / high | Separate read-only invocation |
+| Important independent review | GPT-6.1 Sol / xhigh | Fresh-context reviewer |
+| HIGH design challenge | GPT-6.1 Sol / xhigh | Separate read-only invocation |
 
 Native implementation specialists currently map to `builder_normal`; they do not automatically select
 LOW/HIGH. Headless resolves the selected gates' risk/compute. These instructions are not an automatic scheduler.

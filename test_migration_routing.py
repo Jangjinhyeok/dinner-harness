@@ -64,9 +64,9 @@ class RoutingMigrationTests(unittest.TestCase):
 
     def test_codex_architect_challenger_and_reviewer_targets(self):
         expected = {
-            "architect": routing.ModelProfile("codex", "gpt-6-astra", "medium"),
-            "challenger_high": routing.ModelProfile("codex", "gpt-6-astra", "high"),
-            "reviewer": routing.ModelProfile("codex", "gpt-6-sol", "high"),
+            "architect": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
+            "challenger_high": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
+            "reviewer": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
         }
         for role, profile in expected.items():
             with self.subTest(role=role):
