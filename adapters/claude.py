@@ -2,7 +2,7 @@
 
 stdlib only. Invoked by install.py. Three operations, driven by harness.toml's
 [targets.claude]:
-  - copy          : verbatim byte-exact copy (file or recursive dir, honoring excludes)
+  - copy          : verbatim byte-exact copy (file or recursive dir, honoring excludes and drop_dests)
   - template/merge: <USERNAME> + <CLAUDE_HOME> substitution; for JSON dests drop strip_keys; a `merge`
                     entry preserves existing dest keys the template does not own
   - skip_if_exists: write only when the dest does not already exist (never clobber)
@@ -54,7 +54,11 @@ def _excluded(rel, exclude_dirs, exclude_suffixes):
     return any(part in exclude_dirs for part in rel.parts) or rel.name.endswith(exclude_suffixes)
 
 
-def _copy_tree(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run):
+def _dropped(target, drop_dests):
+    return any(target == drop or drop in target.parents for drop in drop_dests)
+
+
+def _copy_tree(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run, drop_dests=()):
     for f in sorted(src.rglob("*")):
         if not f.is_file():
             continue
@@ -62,15 +66,17 @@ def _copy_tree(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run):
         if _excluded(rel, exclude_dirs, exclude_suffixes):
             continue
         target = dest / rel
+        if _dropped(target, drop_dests):
+            continue
         plan.append(("copy", target))
         if not dry_run:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(f, target)
 
 
-def _copy_one(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run):
+def _copy_one(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run, drop_dests=()):
     if src.is_dir():
-        _copy_tree(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run)
+        _copy_tree(src, dest, exclude_dirs, exclude_suffixes, plan, dry_run, drop_dests)
     else:
         plan.append(("copy", dest))
         if not dry_run:
@@ -86,11 +92,13 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     exclude_dirs = set(target_cfg.get("exclude_dir_names", []))
     exclude_suffixes = tuple(target_cfg.get("exclude_file_suffixes", []))
     templated_dests = {dest_root / entry["dest"] for entry in target_cfg.get("template", [])}
+    drop_dests = tuple(dest_root / rel for rel in target_cfg.get("drop_dests", []))
     plan = []
 
-    # 1. verbatim copies
+    # 1. verbatim copies (minus drop_dests)
     for src_rel, dest_rel in target_cfg.get("copy", []):
-        _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run)
+        _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run,
+                  drop_dests)
 
     # A bulk copy may include a path that the template pass overwrites. Keep the
     # copy itself, but report only the final rendered action for that destination.

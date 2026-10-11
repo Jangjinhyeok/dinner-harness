@@ -46,10 +46,14 @@ py -3 install.py --target claude --allow-live
 py -3 check.py --target claude
 ```
 
-Claude adapter에는 retire 로직이 없다. 이전 설치의 `claude-direct.cmd`, `dh.cmd`, `dh-architect.cmd`,
-`watch-builder.ps1`, `hooks/handlers/builder_guard.py`, `hooks/launchers/builder_guard.cmd`는
-`~/.claude`에 남을 수 있다(guard는 `settings.json`에 등록되지 않으면 inert). 자동 삭제하지 않으니
-live 설치 후 목록을 확인하고 직접 정리한다.
+Claude 설치는 1-CLI 구성이다. orchestrator·`routing.toml`·roles·`rules/_mode`·HANDOFF/RESULT 템플릿·
+two-cli/routing reference·`delegate` skill은 설치하지 않는다(orchestrator·routing·roles·reference는
+Codex target용으로 유지, `delegate`·`_mode`·HANDOFF/RESULT 템플릿은 source-only).
+Claude adapter에는 retire 로직이 없어 이전 설치의 해당 파일과 `claude-direct.cmd`, `dh*.cmd`,
+`watch-builder.ps1`, `builder_guard` 파일, settings의 `orchestrate.py` allow 규칙이 `~/.claude`에 남을 수 있다.
+`check.py --target claude`가 남은 파일을 leftover로 보고하지만 자동 삭제하지 않는다. 특히 `rules/`의 남은 파일은
+매 세션 auto-load되므로 반드시 직접 삭제한다. settings의 allow 규칙은 check.py가 보고하지 않으니
+`settings.json`에서 직접 제거한다.
 Codex가 필요하면 `--target codex`, 양쪽을 의도한 경우만 `--target all`을 쓴다.
 Codex 설치 절차와 기존 사용자 config 보존 규칙은 [전환 결과](docs/codex-migration-2026-09-10.md)에 있다.
 
@@ -86,8 +90,10 @@ Opus의 높은 effort 구간은 일부 Opus 4.8 fallback을 포함할 수 있다
 effort 이름을 추측 변환하거나 인증/모델 실패를 다른 vendor·API 과금으로 조용히 fallback하지 않는다.
 구독이 API 비용을 포함한다고 가정하지 않는다. `codex_only`(GPT-6.1 Sol xhigh)와 `hybrid`는 선택 가능한 호환 preset이다.
 
-## 선택적 headless dispatch
+## 선택적 headless dispatch (Codex target 전용)
 
+이 경로는 Claude 1-CLI 설치에 포함되지 않으며 Codex target에서만 설치된다. 위 표의 headless/challenge
+profile은 이 경로에만 적용되고, Claude 설치의 위임은 native subagent(frontmatter `model: opus`)를 쓴다.
 큰 작업을 다른 모델에 맡기거나 controller의 pinned scope/secret·baseline/delta 검사가 필요하면
 [Two-CLI reference](content/rules/two-cli-reference.md)를 사용한다.
 scope와 검증 기준이 있는 self-contained HANDOFF로 `orchestrate.py challenge/build`를 실행한다.

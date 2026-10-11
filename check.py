@@ -349,6 +349,11 @@ def check_install(target, live_root=None, username=None):
             if target == "codex" and rel not in codex_owned:
                 advisory = True  # Unknown user files are not proven stale harness output.
             leftovers.append((rel, advisory))
+    # Paths a former manifest installed outside owned dirs (e.g. rules/*.md, which
+    # Claude Code auto-loads). Reported, never deleted: removal stays a manual step.
+    for rel in target_cfg.get("retired_dests", []):
+        if (live / rel).exists():
+            leftovers.append((rel, False))
     return True, problems, leftovers
 
 

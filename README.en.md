@@ -31,10 +31,14 @@ py -3 check.py --target claude
 claude --model claude-opus-5-5 --effort medium
 ```
 
-The Claude adapter has no retire logic. Files from older installs (`claude-direct.cmd`, `dh.cmd`,
-`dh-architect.cmd`, `watch-builder.ps1`, `hooks/handlers/builder_guard.py`,
-`hooks/launchers/builder_guard.cmd`) may remain in `~/.claude`; the guard is inert once
-`settings.json` no longer registers it. Nothing is deleted automatically: review and remove them by hand.
+The Claude install is 1-CLI: the orchestrator, `routing.toml`, roles, `rules/_mode`, HANDOFF/RESULT
+templates, two-cli/routing references and the `delegate` skill are not installed (the orchestrator,
+routing, roles and references stay for the Codex target; `delegate`, `_mode` and the HANDOFF/RESULT
+templates are source-only). The Claude adapter has no retire logic, so those files from older installs,
+plus `claude-direct.cmd`, `dh*.cmd`, `watch-builder.ps1`, the `builder_guard` files and the settings
+`orchestrate.py` allow rule, may remain in `~/.claude`. `check.py --target claude` reports the leftover
+files but never deletes them. Remove leftover `rules/` files by hand: Claude Code auto-loads them.
+check.py does not report the settings allow rule; remove it from `settings.json` by hand.
 Use --target codex or --target all only when intended. A plain `claude` session is the direct-edit
 session. App users select the interactive model in the supported model picker. Routing updates do
 not change an already open session.
@@ -75,8 +79,10 @@ are separate evidence; unknown access stays unknown. Opus high-effort results pa
 Opus 4.8 fallback. Never silently fallback across vendors or billing methods. A subscription does
 not imply included API usage. codex_only (GPT-6.1 Sol xhigh) and hybrid stay selectable.
 
-## Optional dispatch and safety
+## Optional dispatch and safety (Codex target only)
 
+This path is not part of the Claude 1-CLI install; only the Codex target installs it. The headless and
+challenge profiles above apply here only; Claude delegation uses native subagents (`model: opus`).
 Use [headless challenge/build](content/rules/two-cli-reference.md) for substantial bounded delegation
 or controller scope/secret and baseline/delta checks. Explicit
 [Architect](content/roles/ROLE_ARCHITECT.md)/[Builder](content/roles/ROLE_BUILDER.md) contracts do not

@@ -55,7 +55,7 @@
 
 ## 2. 실행 모델 — inline 기본 (ADR-0023)
 
-기본은 메인 Claude 세션이 요구사항 해석·설계 판단·구현·검증·결과 통합과 최종 책임을 같은 세션에서 유지하는 것이다. 보통 작업에는 HANDOFF/RESULT/CHALLENGE나 Architect/Builder 역할 전환이 필요하지 않다. 평범한 `claude` 세션이 곧 직접 수정 세션이다.
+기본은 메인 Claude 세션이 요구사항 해석·설계 판단·구현·검증·결과 통합과 최종 책임을 같은 세션에서 유지하는 것이다. 역할 전환이나 HANDOFF 없이 같은 세션에서 완료한다. 평범한 `claude` 세션이 곧 직접 수정 세션이다.
 
 ### Risk 정책
 
@@ -67,19 +67,11 @@
 
 ### 위임
 
-- 비단순 구현 전 `~/.claude/rules/agent-routing.md`를 읽고 직접 수행/native subagent/headless를 고른다. 설계 불확실성·변경 영향·검증 가능성·문맥 전달 비용을 기준으로 하며 파일 수만으로 위임하지 않는다. 작은 작업은 위임 비용이 더 크면 직접 수행한다.
+- 비단순 구현 전 `~/.claude/rules/agent-routing.md`를 읽고 직접 수행/native subagent를 고른다. 설계 불확실성·변경 영향·검증 가능성·문맥 전달 비용을 기준으로 하며 파일 수만으로 위임하지 않는다. 작은 작업은 위임 비용이 더 크면 직접 수행한다.
 - 일반 독립 리뷰는 `code-reviewer`, C++ 전문 검토는 `cpp-reviewer` subagent를 명시한다. 엔진 신호가 있으면 `unreal-specialist`/`unity-specialist`와 `docs/specialists/`의 필요한 문서를 활용한다(필수 consult 아님).
 - 동일 tree에서 병렬 구현하지 않는다. 병렬 writer가 필요하면 소유 파일·격리 위치·통합 방식을 먼저 정한다. parent가 검증과 완료 책임을 유지한다.
-- 모델/effort는 `~/.claude/routing.toml`의 active preset(`claude_only`)이 정한다. routing 파일은 이미 열린 interactive 세션의 모델을 바꾸지 않는다.
-
-### 선택적 Two-CLI / headless dispatch
-
-큰 경계 작업을 다른 모델에 맡기거나 controller의 pinned scope/secret·baseline/delta 검사 또는 독립 challenge가 필요할 때만 쓴다(opt-in).
-
-- 사용자가 `architect 모드`/`builder 모드`(또는 아키텍트/빌더 모드)를 선언하면 `~/.claude/roles/ROLE_ARCHITECT.md` 또는 `ROLE_BUILDER.md`를 먼저 Read하고 그 규약을 따른다. 역할 제한은 이렇게 명시 선택한 모드에만 적용된다.
-- `HANDOFF.md`/`RESULT.md`/`INPUT.md`(프로젝트 루트)가 vendor-neutral 파일 버스다. 이 파일을 열어도 역할이 자동 선택되지는 않는다(`rules/_mode/*` 참고).
-- dispatch는 `~/.claude/rules/two-cli-reference.md`의 절차와 `rules/routing-reference.md`의 routing 계약을 따른다. 형태는 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`이며 `<CLAUDE_HOME>`은 설치된 `.claude`의 절대경로, `<ABSOLUTE_REPO_PATH>`는 원본 repository의 절대경로로 치환한다. `cd`, `&&`, pipe, redirection을 앞뒤에 붙이지 않는다(이 직접 호출 형태만 permission allowlist가 허용). 특정 vendor override는 `--builder claude`/`--builder codex`. dispatch 동안 같은 repository를 편집하지 않는다. BUILT는 독립 review나 수용 증거가 아니다.
-- 단일 목적 LOW 위임은 `/delegate` skill이 다룬다.
+- interactive 모델/effort는 앱 모델 선택기나 CLI 옵션으로 사용자가 고른다. native subagent는 frontmatter model alias(`opus`)를 따른다. 선정 근거는 harness repo의 ADR-0023이다.
+- 이 설치는 1-CLI 구성이다. Architect/Builder 역할 전환, HANDOFF/RESULT 파일 버스, headless `orchestrate.py` dispatch는 설치되지 않는다(필요하면 harness repo의 Codex target이 그 경로를 유지한다). 위임은 native subagent로 한다.
 
 ### `!` shell-output fast path
 
@@ -87,7 +79,7 @@
 
 ### 안전 경계
 
-- `secret_scan`(secret 노출 차단)과 `scope_check`(HANDOFF scope 밖 수정 차단) hook은 유지된다. hook·권한 제한을 우회하거나 자동 약화하지 않는다.
+- `secret_scan`(secret 노출 차단)과 `scope_check`(`~/.claude` 보호 경로 수정 차단; HANDOFF scope 검사는 HANDOFF.md가 없으면 통과) hook은 유지된다. hook·권한 제한을 우회하거나 자동 약화하지 않는다.
 - hook은 지원 도구의 사전 검사이며 모든 I/O를 막는 보안 경계가 아니다. 엄격한 scope 검사가 필요한 작업을 동등한 검사가 없는 inline 경로로 자동 이동시키지 않고 차이를 알린다.
 - 자격증명 파일·토큰 본문을 읽거나 출력하지 않는다.
 

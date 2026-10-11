@@ -376,19 +376,14 @@ class TestBuildPrompt(unittest.TestCase):
 
 
 class TestBuilderFirstGuard(unittest.TestCase):
-    def test_template_wires_one_narrow_rendered_builder_dispatch_allow(self):
-        template = json.loads(
-            (Path(__file__).resolve().parents[2] / "assets" / "claude" /
-             "settings.json.template").read_text(encoding="utf-8")
-        )
-        allow = template["permissions"].get("allow", [])
-        expected = 'Bash(py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo *)'
-        self.assertEqual(allow, [expected])
-        self.assertNotIn("Bash(py -3 *)", allow)
-        self.assertNotIn("Bash(py *)", allow)
-        self.assertNotIn("Bash(*)", allow)
+    def test_template_grants_no_allow_rules_for_the_1cli_install(self):
+        text = (Path(__file__).resolve().parents[2] / "assets" / "claude" /
+                "settings.json.template").read_text(encoding="utf-8")
+        template = json.loads(text)
+        self.assertNotIn("allow", template["permissions"])
+        self.assertNotIn("orchestrate.py", text)
 
-    def test_claude_install_preserves_permission_rules_and_check_detects_missing_dispatch_allow(self):
+    def test_claude_install_preserves_permission_rules_and_check_detects_missing_deny_rule(self):
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as d:
             dest = Path(d) / ".claude"
@@ -413,14 +408,12 @@ class TestBuilderFirstGuard(unittest.TestCase):
 
             installed = json.loads((dest / "settings.json").read_text(encoding="utf-8"))
             permissions = installed["permissions"]
-            dispatch = f'Bash(py -3 "{dest.as_posix()}/orchestrate.py" build --repo *)'
+            owned_deny = "Bash(git clean -f*)"
             self.assertTrue(installed["skipWorkflowUsageWarning"])
-            self.assertIn("Bash(git status *)", permissions["allow"])
-            self.assertIn(dispatch, permissions["allow"])
+            self.assertEqual(permissions["allow"], ["Bash(git status *)"])
             self.assertIn("Bash(npm publish *)", permissions["ask"])
             self.assertIn("Bash(custom destructive *)", permissions["deny"])
-            self.assertIn("Bash(git clean -f*)", permissions["deny"])
-            self.assertEqual(permissions["allow"].count(dispatch), 1)
+            self.assertEqual(permissions["deny"].count(owned_deny), 1)
             self.assertEqual(permissions["additionalDirectories"], ["C:/Tools"])
 
             present, problems, leftovers = check.check_install(
@@ -430,13 +423,13 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertEqual(problems, [])
             self.assertEqual(leftovers, [])
 
-            permissions["allow"].remove(dispatch)
+            permissions["deny"].remove(owned_deny)
             (dest / "settings.json").write_text(json.dumps(installed), encoding="utf-8")
             present, problems, leftovers = check.check_install(
                 "claude", live_root=dest, username="tester"
             )
             self.assertTrue(present)
-            self.assertTrue(any("permissions.allow" in problem for problem in problems), problems)
+            self.assertTrue(any("permissions.deny" in problem for problem in problems), problems)
             self.assertEqual(leftovers, [])
 
     def test_write_agents_raises_on_duplicate_stem(self):
@@ -548,20 +541,60 @@ class TestBuilderFirstGuard(unittest.TestCase):
             if line.startswith("py -3 "):
                 self.assertNotIn("|", line)
                 self.assertNotIn("&&", line)
-        # Vendor-specific compatibility entrypoints still keep explicit absolute arguments.
+        # The Claude 1-CLI install no longer documents a headless dispatch entrypoint.
         for rel in ("content/instructions/CLAUDE.md", "assets/claude/README.md"):
             text = (root / rel).read_text(encoding="utf-8")
-            self.assertIn('py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo '
-                          '"<ABSOLUTE_REPO_PATH>" --backend real', text)
+            self.assertNotIn("orchestrate.py\" build", text)
 
-    def test_reference_docs_are_wired_into_claude_install_manifest(self):
+    def test_reference_docs_are_wired_into_codex_but_not_claude_install_manifest(self):
         root = Path(__file__).resolve().parents[2]
-        harness_text = (root / "harness.toml").read_text(encoding="utf-8")
         with (root / "harness.toml").open("rb") as f:
             manifest = tomllib.load(f)
         claude_copy_dests = {dest for _src, dest in manifest["targets"]["claude"]["copy"]}
-        self.assertIn("rules/two-cli-reference.md", claude_copy_dests)
-        self.assertIn("rules/routing-reference.md", claude_copy_dests)
+        codex_copy_dests = {dest for _src, dest in manifest["targets"]["codex"]["copy"]}
+        for rel in ("rules/two-cli-reference.md", "rules/routing-reference.md"):
+            self.assertNotIn(rel, claude_copy_dests)
+            self.assertIn(rel, codex_copy_dests)
+
+    def test_claude_install_is_1cli_without_headless_infrastructure(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, manifest["targets"]["claude"], manifest["vars"], dest,
+                                   "tester", dry_run=False)
+            for rel in ("orchestrate.py", "orchestrator", "routing.toml", "roles", "rules/_mode",
+                        "rules/two-cli-reference.md", "rules/routing-reference.md",
+                        "skills/delegate", "HANDOFF.md", "RESULT.md"):
+                with self.subTest(rel=rel):
+                    self.assertFalse((dest / rel).exists())
+            self.assertTrue((dest / "skills" / "verification-loop" / "SKILL.md").is_file())
+            self.assertTrue((dest / "rules" / "agent-routing.md").is_file())
+            present, problems, leftovers = check.check_install("claude", live_root=dest, username="tester")
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [])
+
+    def test_check_reports_retired_claude_paths_from_an_older_install(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, manifest["targets"]["claude"], manifest["vars"], dest,
+                                   "tester", dry_run=False)
+            (dest / "rules" / "two-cli-reference.md").write_text("stale\n", encoding="utf-8")
+            (dest / "orchestrator").mkdir()
+            (dest / "orchestrator" / "controller.py").write_text("stale\n", encoding="utf-8")
+            (dest / "skills" / "delegate").mkdir()
+            (dest / "skills" / "delegate" / "SKILL.md").write_text("stale\n", encoding="utf-8")
+            present, problems, leftovers = check.check_install("claude", live_root=dest, username="tester")
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertCountEqual(leftovers, [
+            ("skills/delegate/SKILL.md", False),
+            ("rules/two-cli-reference.md", False),
+            ("orchestrator", False),
+        ])
 
     def test_routing_reference_doc_exists_and_is_pointed_to(self):
         root = Path(__file__).resolve().parents[2]
@@ -571,8 +604,8 @@ class TestBuilderFirstGuard(unittest.TestCase):
         for needle in ("hybrid", "claude_only", "builder_low", "builder_normal",
                        "builder_high", "challenger_high", "routing.toml"):
             self.assertIn(needle, ref_text)
-        claude_md = (root / "content" / "instructions" / "CLAUDE.md").read_text(encoding="utf-8")
-        self.assertIn("routing-reference.md", claude_md)
+        codex_agents = (root / "assets" / "codex" / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("routing-reference.md", codex_agents)
 
     def test_no_install_time_builder_vendor_token_remains(self):
         root = Path(__file__).resolve().parents[2]
@@ -601,9 +634,11 @@ class TestBuilderFirstGuard(unittest.TestCase):
             (root / "assets" / "claude" / "settings.json.template").read_text(encoding="utf-8")
         )
         self.assertNotIn("builder_guard", json.dumps(template))
-        manifest = (root / "harness.toml").read_text(encoding="utf-8")
+        claude_cfg = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))["targets"]["claude"]
+        installed = {path for entry in claude_cfg["copy"] for path in entry}
         for retired in ("claude-direct.cmd", "dh.cmd", "dh-architect.cmd", "watch-builder.ps1"):
-            self.assertNotIn(retired, manifest)
+            self.assertNotIn(retired, installed)
+            self.assertIn(retired, claude_cfg["retired_dests"])
             self.assertFalse((root / "assets" / "claude" / retired).exists())
         self.assertFalse((root / "assets" / "claude" / "hooks" / "handlers" / "builder_guard.py").exists())
 
@@ -647,7 +682,8 @@ class TestDefaultSessionRouting(unittest.TestCase):
         message, domains = route
         self.assertEqual(domains, ["default"])
         self.assertIn("implement in this session", message)
-        self.assertIn("opt-in", message)
+        self.assertIn("native subagent", message)
+        self.assertIn("no HANDOFF/Builder dispatch", message)
         self.assertNotIn("goes through Codex", message)
         self.assertNotIn("delegate workflow", message)
 
@@ -5082,7 +5118,7 @@ class TestRouting(unittest.TestCase):
         routing_copy = ["content/routing.toml", "routing.toml"]
         codex_cfg = manifest["targets"]["codex"]
 
-        self.assertIn(routing_copy, manifest["targets"]["claude"]["copy"])
+        self.assertNotIn(routing_copy, manifest["targets"]["claude"]["copy"])
         self.assertNotIn(routing_copy, codex_cfg["copy"])
         self.assertEqual(codex_cfg["routing_src"], "content/routing.toml")
         self.assertEqual(codex_cfg["routing_preset"], "codex_only")

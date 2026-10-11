@@ -18,7 +18,7 @@
 |---|---|---|
 | main 직접 수행 | 작은 작업의 위임 비용이 더 큼, 또는 아직 설계/의존성 분리가 어려움 | main이 구현·검증; 중요한 변경/HIGH의 독립 review 유지 |
 | native 구현 agent | 범위·완료 조건이 명확하고 현재 세션에서 독립 구현할 실익이 있음 | 해당 구현 `agent_type` 명시, 소유 범위 전달, 결과 인계 후 main 검증 |
-| headless `challenge/build` | self-contained 작업에 controller의 pinned scope·baseline/delta 검사가 필요하거나 명시적 compute profile 선택이 적합함 | [Two-CLI reference](two-cli-reference.md)의 HANDOFF·risk/compute·검증 계약 유지 |
+| headless `challenge/build` (orchestrator가 설치된 target만; Claude 1-CLI 설치에는 없음) | self-contained 작업에 controller의 pinned scope·baseline/delta 검사가 필요하거나 명시적 compute profile 선택이 적합함 | 설치본 `rules/two-cli-reference.md`의 HANDOFF·risk/compute·검증 계약 유지 |
 
 native는 controller net과 동등하지 않다. 엄격한 scope 검사가 필요한 작업을 편의상
 native/main으로 바꾸지 않는다. 이미 승인된 구현의 위임에 매번 새 승인을 요구하지 않지만,
@@ -26,13 +26,13 @@ native/main으로 바꾸지 않는다. 이미 승인된 구현의 위임에 매�
 
 ## 역할과 모델 선택
 
-구체적인 vendor/model/effort는 [routing 정책](routing-reference.md)과 설치 `routing.toml`에서
-읽는다. main의 interactive 모델 선택은 별개이며 위임 때문에 변경하지 않는다.
+구체적인 vendor/model/effort는 설치본에 `routing.toml`과 `rules/routing-reference.md`가 있으면
+거기서 읽는다(Claude 1-CLI 설치는 agent frontmatter alias를 쓴다). main의 interactive 모델 선택은 별개이며 위임 때문에 변경하지 않는다.
 Codex native 설정은 `[native_agents]`의 역할을 `codex_only` profile로 생성한다. Claude native agent는
 frontmatter의 model alias(`opus`)를 쓰며 claude_only 기본 profile(Opus 5.5)과 맞춘 값이다.
 현재 native 구현 specialist는 모두 `builder_normal`이다. 작은 작업이라는 설명이나
 작업 이름만으로 `builder_low`가 되지 않으며, HIGH risk라고 자동 승격되지도 않는다.
-필요한 compute와 native profile이 맞지 않으면 적절한 main profile 또는 기존 headless
+필요한 compute와 native profile이 맞지 않으면 적절한 main profile 또는 (설치된 경우) headless
 경로를 선택한다. 호출 도구가 명시 override를 지원할 때만 SSOT 값과 기존 risk 정책을
 지켜 사용하고 이유를 기록한다. 모델 불가/권한 실패를 다른 모델로 조용히 우회하지 않는다.
 

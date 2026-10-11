@@ -88,8 +88,9 @@ def _default_route_message() -> str:
     return (
         "[execution-route] CLAUDE.md inline routing applies (ADR-0023): inspect the code, "
         "implement in this session, run the project's deterministic checks, and report "
-        "the result. HANDOFF/Builder dispatch is opt-in, for an explicitly requested or "
-        "clearly bounded heavy task. HIGH-signal work (replication, save format, live "
+        "the result. Delegate a clearly bounded independent unit to a native subagent only "
+        "when that beats doing it inline; there is no HANDOFF/Builder dispatch in this "
+        "install. HIGH-signal work (replication, save format, live "
         "config, migration, security, public API, build pipeline) needs independent "
         "review and your acceptance before it is called done."
     )

@@ -8,11 +8,7 @@
 .
 ├── CLAUDE.md                  # User-level 행동 원칙 + inline 기본 실행 모델 (ADR-0023)
 ├── MCP-UNREAL-SETUP.md        # 엔진 MCP(UE 5.7) 구체 셋업 walkthrough + 트러블슈팅
-├── HANDOFF.md                 # Architect → Builder 통신 (현재 빈 템플릿)
-├── RESULT.md                  # Builder → Architect 통신 (현재 빈 템플릿)
 ├── settings.json.template     # hook 등록 템플릿 (실 settings.json은 machine-specific, git 제외)
-├── orchestrate.py             # Cross-vendor 오케스트레이터 CLI (run / build) — Two-CLI를 headless로 구동
-├── orchestrator/              # 오케스트레이터 패키지 (controller·vendors·bus·safety·config; stdlib only)
 ├── agents/                    # User-level agents
 │   ├── _core/                 # ECC 출신 (planner, code-reviewer, cpp-reviewer 등)
 │   ├── _gamedev/              # Game Studios 출신 (gameplay, network, ui 등)
@@ -23,9 +19,6 @@
 │   ├── verification-loop/
 │   ├── ue-umg-review/         # 본인 자작 (구 _personal/ — 2026-06-10 직하 이동, 나머지 둘은 중복 삭제)
 │   └── harness-review/        # 본인 자작 (2026-06-16 — harness 구조 정합 리뷰, propose+apply)
-├── roles/                     # Two-CLI workflow 역할 정의
-│   ├── ROLE_ARCHITECT.md      # 설계·영향분석·검토 세션
-│   └── ROLE_BUILDER.md        # 구현·빌드검증·self-review 세션
 ├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
 │   ├── launchers/             # 인자 없는 절대경로 BAT wrapper
 │   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge)
@@ -34,8 +27,8 @@
 │   ├── tests/                 # run_handler 안전 계약 unittest (stdlib only)
 │   └── logs/                  # JSON-lines 로그 (동기화·git 제외)
 ├── rules/                     # auto-load 영역 (paths 없으면 매 세션 로드)
-│   ├── agent-routing.md       # 엔진 orchestration 라우팅 규칙 (always-on)
-│   └── _mode/                 # architect/builder reminder (통신 파일 paths 매칭 inject)
+│   ├── agent-routing.md       # 위임 판단 규칙 (always-on)
+│   └── autonomy-policy.md     # Risk LOW/HIGH와 수용 경계 (always-on)
 ├── templates/                 # 프로젝트로 복사하는 템플릿 (agent·skill이 참조하는 컨벤션)
 │   ├── AGENTS.md              # project-root용 cross-tool 에이전트 진입점 (Codex/Gemini CLI 등 → CLAUDE.md 참조)
 │   ├── mcp.json               # project-root .mcp.json 템플릿 — UE/Unity 엔진 MCP 등록 (project scope)
@@ -47,29 +40,27 @@
     └── common/                # coding-style, security, testing 등 10개
 ```
 
-루트의 `HANDOFF.md` / `RESULT.md`, `roles/`, `rules/_mode/`, 그리고 `orchestrate.py`/`orchestrator/`는 **선택적(opt-in) Two-CLI / headless dispatch** 인프라다. **기본은 inline** — 평범한 `claude` 세션이 직접 설계·구현·검증하고(ADR-0023), 큰 경계 작업이나 controller 검사·독립 challenge가 필요할 때만 `HANDOFF.md`를 쓰고 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`로 headless dispatch한 뒤 RESULT.md를 같은 세션이 리뷰한다. 두 placeholder는 dispatch 직전에 절대경로로 치환하며 `cd`, `&&`, pipe, redirection을 붙이지 않는다. vendor/model은 `routing.toml`의 active preset(기본 `claude_only`)이 정하며(ADR-0020, ADR-0023), 특정 vendor override는 `--builder claude`/`--builder codex`를 덧붙인다. 통신 파일이 컨텍스트에 들어와도 역할이 자동 선택되지는 않으며 `rules/_mode/`의 reminder만 inject된다. 상세 규약은 `CLAUDE.md` §2, routing preset 상세는 `rules/routing-reference.md` 참조.
+**1-CLI 설치다(ADR-0023 addendum).** 평범한 `claude` 세션이 직접 설계·구현·검증하고, 위임은 native subagent(`agents/`)로 한다. Two-CLI/headless 인프라(`orchestrate.py`·`orchestrator/`·`routing.toml`·`roles/`·`rules/_mode/`·HANDOFF/RESULT 템플릿·`delegate` skill)는 이 설치에 포함되지 않으며 harness repo의 Codex target에만 남아 있다.
 
 `templates/`는 `~/.claude/` 동작과 무관한 **프로젝트 복사용 템플릿**이다. `_gamedev` agent들("Engine Version Safety" → `docs/engine-reference/<engine>/VERSION.md`)과 `architect`·`arch-review`(ADR → `docs/architecture/`)가 이미 참조하지만 비어 있던 프로젝트 컨벤션을 채운다. 새 프로젝트에서 해당 파일을 프로젝트 `docs/`로 복사해 쓴다. 상세는 `templates/README.md` 참조.
 
 ## 작동 방식 — 무엇이 어떻게 켜지는가
 
-파일 목록보다 **각 부분이 어떤 방식으로 활성화되는가**가 핵심이다. 4가지뿐이다.
+파일 목록보다 **각 부분이 어떤 방식으로 활성화되는가**가 핵심이다. 3가지뿐이다.
 
 | 방식 | 누가 | 설명 |
 |---|---|---|
-| ① 항상 자동 로드 | `CLAUDE.md`, `rules/agent-routing.md`, `rules/` 중 `paths` 없는 파일 | 매 세션 시작 시 context에 박힘 |
-| ② 조건부 자동 inject | `rules/_mode/*` (`paths: [글로브]`) | 매칭 파일이 context에 들어올 때만 (`HANDOFF`→builder, `RESULT`→architect) |
-| ③ 명시 호출 | `skills/`, `agents/`, `roles/` | `/명령` · Task 위임 · "모드" 선언으로 직접 부름 |
-| ④ 도구 호출 시 자동 발화 | `hooks/` | hook별 matcher에 따라 자동 검사: secret_scan은 Edit/Write/Bash/PowerShell, scope_check은 Edit/Write, learning_log은 Bash/PowerShell |
+| ① 항상 자동 로드 | `CLAUDE.md`, `rules/` 중 `paths` 없는 파일 | 매 세션 시작 시 context에 박힘 |
+| ② 명시 호출 | `skills/`, `agents/` | `/명령` · Task 위임으로 직접 부름 |
+| ③ 도구 호출 시 자동 발화 | `hooks/` | hook별 matcher에 따라 자동 검사: secret_scan은 Edit/Write/Bash/PowerShell, scope_check은 Edit/Write, learning_log은 Bash/PowerShell |
 
 > **핵심 — `rules/`는 auto-load 영역이다.** `paths` 필드가 없으면 매 세션 무조건 로드, `paths: [글로브]`면 매칭 시에만 로드된다 (`paths: []` 빈 배열은 미정의 동작이라 의존 금지). 따라서 "매 세션 로드하지 않는 lookup-only 참고자료"는 `rules/` **밖**에 둬야 한다 — ECC 카탈로그를 `ecc-reference/`로 옮긴 이유다 (필요할 때만 Read).
 
-**③ 명시 호출 심화:**
+**② 명시 호출 심화:**
 - **skills** — `/이름`으로 직접 부르거나, description의 트리거 문구를 모델이 인식하면 자동 발동. SKILL.md 본문은 호출 시점에만 context로 들어온다 (평소엔 이름·description만 인덱스). heavy-read 분석 skill(`scope-check`·`perf-profile`)은 frontmatter `context: fork`로 별도 subagent context에서 실행돼 대량 파일 읽기가 메인 context를 오염시키지 않는다.
 - **agents** — Task 도구로 별도 context 세션에 위임 → 결과만 회수해 메인 context를 아낀다. 독립 작업은 병렬 호출. 코드 작성 agent는 frontmatter `skills:`로 메타 원칙(`simplicity-first`·`surgical-changes`)을 시작 시점에 preload해, trigger 인식 의존 없이 항상 적재되도록 보장한다.
-- **roles** — "architect/builder 모드" 텍스트 선언 시 해당 ROLE 파일을 Read하여 규약 적재. ②의 `_mode` reminder가 백업으로 자동 박힌다.
 
-**매일 관점**: 평소엔 ①(CLAUDE.md)과 ④(hooks)만 백그라운드로 돈다. ②③은 큰 작업/모드 진입 때만 등장한다. 가벼운 질문은 role 없이 일반 모드(필요하면 Plan Mode read-only)로 충분하다.
+**매일 관점**: 평소엔 ①(CLAUDE.md·rules)과 ③(hooks)만 백그라운드로 돈다. ②는 필요할 때만 등장한다. 가벼운 질문은 일반 모드(필요하면 Plan Mode read-only)로 충분하다.
 
 ## hooks (PreToolUse + PostToolUse + UserPromptSubmit 안전망)
 
@@ -155,7 +146,7 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 
 `hooks/`는 위 콘텐츠 레이어(L0–L5) 축과 별개인 런타임 enforcement 인프라다 — 본인 자작(ADR-0001 / ADR-0005). 상세는 위 "hooks" 절 및 `hooks/README.md` 참조.
 
-`roles/`, `rules/_mode/`, 루트 `HANDOFF.md` / `RESULT.md` 역시 콘텐츠 레이어와 별개인 Two-CLI workflow 인프라다 (위 "구조" 절 참조).
+Two-CLI workflow 인프라(`roles/`, `rules/_mode/`, HANDOFF/RESULT)는 이 1-CLI 설치에 포함되지 않는다 (위 "구조" 절 참조).
 
 **디렉터/리드 계층 비설치 — 조합 정합 모델.** Game Studios 원본의 Tier-1(creative/technical-director, producer)·Tier-2(lead-programmer, game-designer, art-director) 계층은 의도적으로 가져오지 않았다. **사람 + Architect 세션이 그 역할**(설계·아키텍처 결정·검토)을 한다. 이에 맞춰 ① specialist agent들의 보고·에스컬레이션 문구, ② gamedev skill의 `agent:` 바인딩(`code-review`→`code-reviewer`, `perf-profile`→`performance-analyst`), ③ skill·agent 본문의 명령/agent 참조가 모두 **실존 대상(사용자·Architect·설치된 agent)만** 가리키도록 정합돼 있다. 라우팅 진입 규칙은 `rules/agent-routing.md`. ECC 쪽도 같은 원칙으로 정리됐다 — research-first는 `CLAUDE.md §1.5`로 always-on 복원, 미설치 ECC skill·command·MCP를 가리키던 dangling 참조는 제거했다.
 
@@ -177,13 +168,14 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 | 컨텍스트·검증 skills | `verification-loop`, `eval-harness`, `strategic-compact`, `iterative-retrieval`, `scope-check`, `perf-profile`, `tech-debt` | 유한 context window + 내장 검증/압축 부재 | context가 사실상 무한 + 하네스가 검증·압축을 자동 수행 → 해당 skill 우선 일몰 |
 | Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: **필수 규칙 하에서도** 허브 자체가 미사용이면 허브 축소 검토 |
 | Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소; architect-route(다파일·구조 결정·HIGH)에서 도메인 매칭 시 HANDOFF 전 consult가 누락되면 ADR-0011 규칙 점검 |
-| Two-CLI workflow infra (cross-vendor) | `roles/`, 루트 `HANDOFF.md`/`RESULT.md`, `rules/_mode/` (+ Codex `AGENTS.md` §7) | 단일 세션이 깊은 설계+구현을 plan drift 없이 동시 보유 못 함; 협업은 vendor를 가로질러 양방향(Codex/Claude × Architect/Builder) | 한 세션이 설계+구현 전체를 plan 손실 없이 보유 → 모드 분리 해제 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
 | hooks (enforcement) | `secret_scan`, `scope_check`, `suggest_compact`, `learning_log`, `route_nudge` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`, 적합 specialist를 self-route→`route_nudge`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
 
 ### 주요 변경 이력
 
 세부 변경은 git log에 있다. 아래는 milestone 수준 요약이다.
+
+**2026-10-11 — Claude-only 1-CLI 전환 (ADR-0023).** 기본 실행을 Claude inline으로 바꾸고 `builder_guard`·direct-edit launcher를 폐기했다. 이어서 Two-CLI 요소(orchestrator·routing.toml·roles·`_mode`·HANDOFF/RESULT 템플릿·`delegate`)를 Claude 설치에서 제외했다 — 일몰 표에 있던 Two-CLI 행의 제거 신호("한 세션이 설계+구현 전체를 보유 → 모드 분리 해제")를 적용한 것이다.
 
 **2026-08-11 — 엔진 허브 consult를 HANDOFF 전 필수 단계로 승격.** parent 32세션 + subagent 8세션(2026-06-16~08-11)의 전체 transcript 스크립트 감사에서 엔진 신호 13세션 중 허브 호출 0회, 라우터 skill 호출 0회가 측정됐다. 그러나 GAS 설계 질문을 문서 위치 힌트 없이 던진 live probe에서는 첫 번째이자 유일한 tool call이 install root의 `ue-gas.md` Read여서 배선은 정상이었다. 원인은 도달 불가가 아니라 Builder-first 경로 앞에 놓인 "선택 단계" 포지셔닝으로 판정했다. 따라서 엔진 신호 구현은 HANDOFF 작성 전에 vendor-aware 허브 consult를 1회 수행하고 그 산출을 HANDOFF에 반영하게 했다. 다음 감사 지표는 엔진 신호 세션당 허브 호출률이며, 필수 규칙 하에서도 0이면 일몰한다. (출처: `docs/architecture/ADR-0010-engine-hub-required-before-handoff.md`.)
 

@@ -51,3 +51,15 @@ Limits: 23 tasks, one attempt per cell, implementation-only (review/design roles
 - Baseline before change (2026-10-11): `py -3 -m unittest discover -p "test_*.py"` 408 OK (4 skipped); `assets/claude/hooks/tests` 25 OK; `py -3 check.py --target claude --no-install` catalog parity OK.
 - After change: same suites green; `py -3 install.py --target claude --dest <scratch>` and inspect rendered `settings.json` (no `builder_guard`) and `CLAUDE.md`; `py -3 check.py --target claude`.
 - Independent review (code-reviewer) before acceptance. Live install (`--allow-live`) only after explicit user acceptance. The Claude adapter has no retire logic: stale live files (`claude-direct.cmd`, `dh*.cmd`, `hooks/handlers/builder_guard.py`, `hooks/launchers/builder_guard.cmd`, `HANDOFF_DELEGATE.md`, `AGENTS.md` in `~/.claude`; the guard files are inert once `settings.json` no longer registers them) must be listed for the user, not silently deleted.
+
+## Addendum 2026-10-11: Claude install becomes 1-CLI
+
+Decision (user-selected option B): the Claude target no longer installs Two-CLI/headless infrastructure — `orchestrate.py`, `orchestrator/`, `routing.toml`, `roles/`, `rules/_mode/`, HANDOFF/RESULT templates, `rules/two-cli-reference.md`, `rules/routing-reference.md`, the `delegate` skill (`drop_dests` in `adapters/claude.py`) and the settings `orchestrate.py build` allow rule. The orchestrator, `routing.toml`, roles and the two references stay installed by the Codex target; `content/routing.toml` stays the SSOT for headless profiles. The `delegate` skill (already in Codex `skills_drop`), `rules/_mode/` and the HANDOFF/RESULT templates are now source-only — no target installs them; deleting them is a separate decision.
+
+Rationale: in a 1-CLI session these were never invoked but cost about 9.8KB of always-loaded context per session (`rules/routing-reference.md`, `rules/two-cli-reference.md`, the CLAUDE.md opt-in section), and opening a HANDOFF.md could still inject role reminders. Delegation uses native subagents.
+
+`challenger_high` remains in every preset: the Claude install no longer reaches it, but the Codex headless path requires it (`routing.policy_digest`, HIGH build evidence gate).
+
+Alternatives: A (only move the references out of auto-load) kept unused infrastructure in the Claude install; C (delete the orchestrator from the repo) would reverse the decision to keep Codex compatibility.
+
+Live leftovers from earlier installs are not deleted automatically. `harness.toml [targets.claude] retired_dests` lists the paths earlier manifests placed outside owned dirs; `check.py` reports any that still exist as blocking leftovers. This matters most for `rules/*.md`: Claude Code auto-loads them, so stale references would keep consuming context and contradict CLAUDE.md until removed. `route_nudge` no longer mentions HANDOFF/Builder dispatch.
