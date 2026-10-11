@@ -15,7 +15,8 @@ Checks (CI runs source checks with --no-install; live checks are local):
      compared on template-owned keys only, and the manifest's own exclude lists apply. Live-only
      leftovers are reported separately for manifest-owned directories and require manual deletion:
      Codex retires only unchanged receipt-owned obsolete skill/agent entrypoints, with backups.
-     Other leftovers require manual review. `shared_dirs` leftovers are advisory-only; other
+     Other leftovers require manual review. `vendor_dirs` subtrees are skipped entirely;
+     `shared_dirs` leftovers are advisory-only; other
      leftovers affect exit status. Machine-local by nature: `--no-install` skips it.
   5. Codex skill discovery — report duplicate local skill names as advisory; ownership and
      runtime loading are not inferred.
@@ -281,6 +282,10 @@ def check_install(target, live_root=None, username=None):
         Path(dir_rel).as_posix().rstrip("/")
         for dir_rel in target_cfg.get("shared_dirs", [])
     }
+    vendor_dirs = tuple(
+        Path(dir_rel).as_posix().rstrip("/") + "/"
+        for dir_rel in target_cfg.get("vendor_dirs", [])
+    )
 
     with tempfile.TemporaryDirectory(prefix="dh-check-") as td:
         scratch = (Path(td) / f".{target}").resolve()
@@ -344,6 +349,10 @@ def check_install(target, live_root=None, username=None):
             # manifest installs no dot-named path inside an owned dir, so a dot entry here
             # can never be a stale render of ours.
             if any(part.startswith(".") for part in sub.parts):
+                continue
+            # Vendor-managed subtrees without a dot prefix (Claude desktop syncs
+            # `skills/synced/**`) are the runtime's, never a stale render of ours.
+            if rel.startswith(vendor_dirs):
                 continue
             advisory = _shared_dir(dir_rel, shared_dirs)
             if target == "codex" and rel not in codex_owned:

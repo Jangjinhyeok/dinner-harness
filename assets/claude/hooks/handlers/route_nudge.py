@@ -76,7 +76,7 @@ _META_AUDIT = re.compile(r"harness-review|route_nudge|hook log|conformance 감�
 # suppressed legitimate work such as "fix the harness routing"; intent is the
 # reliable boundary now that this handler also serves non-UE repositories.
 _WORK_INTENT = re.compile(
-    r"구현|작성|수정|만들|고쳐|고치|짜|추가|리팩|디버그|버그|최적화|정리|개선|"
+    r"구현|작성|수정|만들|고쳐|고치|(?<!진)짜[줘자봐]|추가|리팩|디버그|버그|최적화|정리|개선|"
     r"\bimplement\b|\bwrite\b|\badd\b|\bfix\b|\brefactor\b|\bcreate\b|\bbuild\b|"
     r"\bdebug\b|\boptimi[sz]e\b",
     re.IGNORECASE,

@@ -374,6 +374,10 @@ def _load_handoff_scope(cwd: Path) -> Optional[list[Pattern]]:
         return _to_patterns(_FENCE_ENV.splitlines(), cwd)
 
     if not _HANDOFF_PATH.is_file():
+        # An unnamed, absent handoff is the ordinary 1-CLI session, not an
+        # internal error; logging it drowned real failures in the telemetry.
+        if not _HANDOFF_NAME_EXPLICIT:
+            return None
         log_event(
             _HOOK_NAME,
             event=_EVENT,

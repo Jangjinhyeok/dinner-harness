@@ -18,6 +18,12 @@
       "Bash(cat *.env*)",
       "Bash(type *.env*)",
       "Bash(*>.env*)",
+      "PowerShell(Remove-Item *-Recurse*)",
+      "PowerShell(Get-Content *.env*)",
+      "PowerShell(gc *.env*)",
+      "PowerShell(cat *.env*)",
+      "PowerShell(type *.env*)",
+      "PowerShell(*>.env*)",
       "Read(**/.env*)",
       "Read(**/.credentials*)"
     ]

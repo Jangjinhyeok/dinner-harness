@@ -19,6 +19,10 @@ claude_home_token = "<CLAUDE_HOME>"
 # other manifest-owned directory leftovers remain exit-code-affecting.
 shared_dirs = []
 
+# Subtrees inside owned dirs that a vendor runtime manages (Claude desktop syncs
+# account skills into skills/synced/). check.py skips them in the leftover scan.
+vendor_dirs = ["skills/synced"]
+
 # Verbatim copies. Each entry: [src (repo-relative), dest (target-root-relative)].
 # src may be a file or a directory (recursive). Directories honor the exclude lists below.
 # The Claude target is a 1-CLI install (ADR-0023 addendum): headless/Two-CLI

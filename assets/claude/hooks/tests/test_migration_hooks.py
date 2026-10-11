@@ -27,6 +27,43 @@ class MigrationHooks(unittest.TestCase):
                                                              "new_source": "print(1)"}, patterns))
         self.assertIn("NotebookEdit", secret_scan._TARGET_TOOLS)
 
+    def test_llm_provider_api_keys_are_detected(self):
+        patterns = secret_scan._load_patterns()
+        # Built at runtime so this source file never contains a key-shaped literal.
+        keys = {
+            "anthropic_api_key": "sk-" + "ant-api03-" + "Ab_9-" * 18,
+            "openai_api_key": "sk-" + "proj-" + "Ab_9-" * 12,
+            "google_api_key": "AI" + "za" + "Sy" + "B" * 33,
+        }
+        for name, key in keys.items():
+            with self.subTest(name=name):
+                hit = secret_scan._scan("Write", {"file_path": "C:/w/a.py", "content": f"k = '{key}'"},
+                                        patterns)
+                self.assertEqual(hit.pattern_name, name)
+                hit = secret_scan._scan("PowerShell", {"command": f"$env:K = '{key}'"}, patterns)
+                self.assertEqual(hit.pattern_name, name)
+        legacy_openai = "sk-" + "A" * 20 + "T3Blbk" + "FJ" + "B" * 20
+        self.assertEqual(secret_scan._scan("Bash", {"command": f"echo {legacy_openai}"}, patterns).pattern_name,
+                         "openai_api_key")
+        variants = {
+            "anthropic_api_key": "sk-" + "ant-ort01-" + "Ab_9-" * 18,
+            "openai_api_key": "sk-" + "None-" + "Ab_9-" * 30,
+        }
+        for name, key in variants.items():
+            with self.subTest(variant=name):
+                self.assertEqual(secret_scan._scan("Bash", {"command": f"echo {key}"}, patterns).pattern_name,
+                                 name)
+        # Kebab-case identifiers that merely start with a key prefix (also runtime-built).
+        sk = "sk-"
+        for benign in ("sk-ant-api03-xxxx", "use the sk-proj- prefix", "task-ant-api03-short",
+                       "AIza" + "B" * 10, "task-proj-alpha-implementation-plan-v2",
+                       f'<div class="{sk}admin-dashboard-container-wrapper">',
+                       f"git checkout feature/{sk}proj-migration-v2-cleanup",
+                       f"--{sk}proj-feature-flag-long-name-x"):
+            with self.subTest(benign=benign):
+                self.assertIsNone(secret_scan._scan("Write", {"file_path": "C:/w/a.md", "content": benign},
+                                                    patterns))
+
     def test_settings_template_routes_notebook_edit_to_safety_hooks(self):
         template = json.loads((Path(__file__).resolve().parents[2] / "settings.json.template")
                               .read_text(encoding="utf-8"))
@@ -36,6 +73,27 @@ class MigrationHooks(unittest.TestCase):
             self.assertIn("NotebookEdit", matchers[launcher])
             self.assertIn("Edit", matchers[launcher])
             self.assertIn("Write", matchers[launcher])
+
+    def test_settings_template_denies_env_reads_and_recursive_delete_in_powershell(self):
+        template = json.loads((Path(__file__).resolve().parents[2] / "settings.json.template")
+                              .read_text(encoding="utf-8"))
+        deny = set(template["permissions"]["deny"])
+        for rule in ("PowerShell(Remove-Item *-Recurse*)", "PowerShell(Get-Content *.env*)",
+                     "PowerShell(gc *.env*)", "PowerShell(cat *.env*)", "PowerShell(type *.env*)",
+                     "PowerShell(*>.env*)"):
+            self.assertIn(rule, deny)
+
+    def test_absent_unnamed_handoff_allows_without_error_log(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(scope_check, "_HANDOFF_PATH", Path(tmp) / "HANDOFF.md"), \
+             mock.patch.object(scope_check, "_HANDOFF_NAME_EXPLICIT", False), \
+             mock.patch.object(scope_check, "_FENCE_ENV", None), \
+             mock.patch.object(scope_check, "log_event") as log:
+            self.assertIsNone(scope_check._load_handoff_scope(Path(tmp)))
+            log.assert_not_called()
+            with mock.patch.object(scope_check, "_HANDOFF_NAME_EXPLICIT", True):
+                self.assertIsNone(scope_check._load_handoff_scope(Path(tmp)))
+            self.assertEqual(log.call_args.kwargs["decision"], "error_internal")
 
     def test_notebook_edit_on_protected_path_is_blocked(self):
         self.assertEqual(scope_check._extract_paths("NotebookEdit", {"notebook_path": "C:/w/a.ipynb"}),

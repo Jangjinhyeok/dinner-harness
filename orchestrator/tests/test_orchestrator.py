@@ -487,6 +487,25 @@ class TestBuilderFirstGuard(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(leftovers, [("skills/foo.md", False)])
 
+    def test_claude_vendor_synced_skills_are_not_leftovers(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target = manifest["targets"]["claude"]
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, target, manifest["vars"], dest, "tester", dry_run=False)
+            synced = dest / "skills" / "synced" / "acct" / "pdf"
+            synced.mkdir(parents=True)
+            (synced / "SKILL.md").write_text("vendor\n", encoding="utf-8")
+            (dest / "skills" / "synced-lookalike").mkdir()
+            (dest / "skills" / "synced-lookalike" / "SKILL.md").write_text("x\n", encoding="utf-8")
+            present, problems, leftovers = check.check_install(
+                "claude", live_root=dest, username="tester"
+            )
+        self.assertTrue(present)
+        self.assertEqual(problems, [])
+        self.assertEqual(leftovers, [("skills/synced-lookalike/SKILL.md", False)])
+
     def test_do_update_stamps_current_date(self):
         with tempfile.TemporaryDirectory() as d:
             claude_md = Path(d) / "CLAUDE.md"
@@ -693,6 +712,12 @@ class TestDefaultSessionRouting(unittest.TestCase):
         message, domains = route
         self.assertEqual(domains, ["default"])
         self.assertIn("independent review", message)
+
+    def test_korean_jja_intent_requires_a_request_form(self):
+        self.assertIsNotNone(route_nudge.message_for_prompt("파서 코드 짜줘"))
+        for prompt in ("진짜 이게 맞아?", "날짜 형식이 뭐야?", "짜증나는 로그 설명해줘"):
+            with self.subTest(prompt=prompt):
+                self.assertIsNone(route_nudge.message_for_prompt(prompt))
 
     def test_multi_subsystem_ue_work_adds_architect_signal_without_direct_dispatch(self):
         route = route_nudge.message_for_prompt(
