@@ -2,7 +2,7 @@
 name: unreal-specialist
 description: "Focused Unreal Engine expertise in UObject/GC lifetime, reflection, gameplay framework, replication, loading, threading, packaging and measured performance. Evaluate engine-specific trade-offs against project requirements; use relevant specialist references on demand. Native consultation is optional."
 tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
-model: sonnet
+model: opus
 maxTurns: 20
 skills:
   - simplicity-first

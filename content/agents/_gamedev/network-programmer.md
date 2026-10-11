@@ -2,7 +2,7 @@
 name: network-programmer
 description: "The Network Programmer implements multiplayer networking: state replication, lag compensation, matchmaking, and network protocol design. Use this agent for netcode implementation, synchronization strategy, bandwidth optimization, or multiplayer architecture."
 tools: Read, Glob, Grep, Write, Edit, Bash, Skill
-model: sonnet
+model: opus
 maxTurns: 20
 skills:
   - simplicity-first

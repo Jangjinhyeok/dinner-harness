@@ -1,8 +1,8 @@
 # Optional Headless Dispatch / Two-CLI
 
-2026-09-10 운영 정책: Codex는 기본적으로 한 세션에서 탐색·설계·구현·검증한다.
+운영 정책(ADR-0022/0023): 메인 세션(Claude 기본, Codex 선택)은 한 세션에서 탐색·설계·구현·검증한다.
 다른 모델로 큰 경계 작업을 넘기거나 독립 challenge 및 controller 검사가 필요할 때만
-이 절차를 선택한다. Claude 전용 Builder-first entrypoint는 호환 경로다.
+이 절차를 선택한다. 과거 Claude Builder-first(`builder_guard`, `claude-direct.cmd`)는 ADR-0023으로 폐기되었다.
 
 ## 실행
 

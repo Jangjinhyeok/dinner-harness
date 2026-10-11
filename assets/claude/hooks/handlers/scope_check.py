@@ -9,7 +9,7 @@ policy layers:
      ``rules/scope_protect.json`` are blocked unconditionally inside
      ``~/.claude/`` (dryrun-exempt, immediate enforce). Mode ``off`` is the only
      escape. Writes through ``Bash`` or PowerShell are intentionally outside
-     this layer. Like ``builder_guard.py``, it is a workflow guard, not a
+     this layer. Like ``secret_scan.py``, it is a workflow guard, not a
      sandbox; containment belongs to the sandbox.
   2. scope codeblock: paths must match an entry in the first
      ``` ```scope ``` codeblock of the handoff named by

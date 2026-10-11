@@ -15,7 +15,6 @@ Registered under ``UserPromptSubmit`` in ``settings.json`` and ``settings.json.t
 """
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -86,24 +85,13 @@ _WORK_INTENT = re.compile(
 
 def _default_route_message() -> str:
     """Return the routing protocol injected before implementation work."""
-    if os.environ.get("DINNER_EXECUTION_MODE") != "direct":
-        return (
-            "[execution-route] CLAUDE.md \u00a72 Builder-first routing applies: read-only "
-            "stays in Claude; an Edit of 2 lines or fewer in one non-infra file may stay "
-            "inline (trivial fast-path, ADR-0012). Everything else goes through Codex "
-            "Builder \u2014 a single-purpose LOW change runs the delegate workflow now (no need "
-            "to ask for /delegate), while multi-file, multi-gate, design, or HIGH-signal "
-            "work drafts a HANDOFF and waits for human start approval before dispatch. A "
-            "request for a small direct edit cannot widen the fast path or bypass a HIGH "
-            "route. ! is not an override."
-        )
     return (
-        "[execution-route] CLAUDE.md \u00a72 direct-edit escape routing applies: read-only "
-        "or a truly trivial one- or two-line single-file edit may stay inline. A "
-        "single-purpose LOW change runs the delegate workflow now (no need to ask for "
-        "/delegate); multi-file, multi-gate, design, or HIGH-signal work drafts a HANDOFF "
-        "and waits for human start approval before dispatch. A request for a small direct "
-        "edit cannot bypass a HIGH route. ! is not an override."
+        "[execution-route] CLAUDE.md inline routing applies (ADR-0023): inspect the code, "
+        "implement in this session, run the project's deterministic checks, and report "
+        "the result. HANDOFF/Builder dispatch is opt-in, for an explicitly requested or "
+        "clearly bounded heavy task. HIGH-signal work (replication, save format, live "
+        "config, migration, security, public API, build pipeline) needs independent "
+        "review and your acceptance before it is called done."
     )
 
 
@@ -112,7 +100,7 @@ def message_for_prompt(prompt: str, cwd: str | None = None) -> tuple[str, list[s
 
     This is intentionally prompt-only for tier/scope/verification: exact tier,
     scope, and verification remain Claude's responsibility after repository
-    inspection and before a delegate or architect workflow writes its HANDOFF.
+    inspection and before implementing.
     ``cwd``, when supplied, gates the UE-domain branches on an actual repo
     signal (see ``_looks_like_unreal_repo``) so a keyword match alone cannot
     trigger an Unreal-specific nudge in a non-Unreal repository.
@@ -130,10 +118,10 @@ def message_for_prompt(prompt: str, cwd: str | None = None) -> tuple[str, list[s
             key, agent = matched[0]
             return (
                 f"{prefix} [route-nudge] This also looks like UE {key.upper()} work. "
-                f"For implementation work, you MUST consult `/{key}` "
-                f"(unreal-specialist + docs/specialists/{agent}) before writing the HANDOFF "
+                f"For implementation work, you should consult `/{key}` "
+                f"(unreal-specialist + docs/specialists/{agent}) before implementing "
                 "and incorporate the consult's design decisions, anti-patterns, and "
-                "verification points into it. Read-only questions and genuine 1-2-line "
+                "verification points. Read-only questions and genuine 1-2-line "
                 "changes are exceptions.",
                 [key],
             )
@@ -142,19 +130,19 @@ def message_for_prompt(prompt: str, cwd: str | None = None) -> tuple[str, list[s
             aliases = ", ".join(f"/{key}" for key in domains)
             return (
                 f"{prefix} [route-nudge] This prompt spans multiple UE subsystems "
-                f"[{aliases}], an additional architect-route signal. Use `/ue` only for "
-                "implementation work: you MUST consult it before writing the HANDOFF and "
+                f"[{aliases}], a design-care signal. Use `/ue` only for "
+                "implementation work: you should consult it before implementing and "
                 "incorporate the consult's design decisions, anti-patterns, and "
-                "verification points into it. Read-only questions and genuine 1-2-line "
+                "verification points. Read-only questions and genuine 1-2-line "
                 "changes are exceptions.",
                 domains,
             )
         if _UE_GENERIC.search(prompt):
             return (
                 f"{prefix} [route-nudge] This also has a generic Unreal signal; use `/ue` "
-                "for implementation work: you MUST consult it before writing the HANDOFF "
+                "for implementation work: you should consult it before implementing "
                 "and incorporate the consult's design decisions, anti-patterns, and "
-                "verification points into it. Read-only questions and genuine 1-2-line "
+                "verification points. Read-only questions and genuine 1-2-line "
                 "changes are exceptions.",
                 ["hub_generic"],
             )

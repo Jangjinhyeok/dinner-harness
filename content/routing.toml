@@ -18,11 +18,12 @@
 #   reviewer         — interactive-session recommended policy (primary path);
 #                       native reviewer agents also use this policy; legacy run does not.
 #
+# Default preset is claude_only (ADR-0023); codex_only and hybrid stay selectable.
 # Every Codex profile uses Sol 6.1/xhigh, including architecture and review.
 # Risk/review gates remain independent of compute.
 
 [routing]
-preset = "codex_only"
+preset = "claude_only"
 
 [native_agents]
 architect = "architect"
@@ -57,13 +58,13 @@ claude = "claude_only"
 
 [presets.hybrid.architect]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "medium"
 
 [presets.hybrid.challenger_high]
 vendor = "claude"
-model = "claude-opus-5"
-effort = "low"
+model = "claude-opus-5-5"
+effort = "high"
 
 [presets.hybrid.builder_low]
 vendor = "codex"
@@ -82,45 +83,46 @@ effort = "xhigh"
 
 [presets.hybrid.reviewer]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "medium"
 
-# --- claude_only: no Codex in the loop ----------------------------------- #
-# Same role boundaries as hybrid (Architect/Challenger/Builder/Reviewer stay
-# separate, independent invocations — not single-agent mode), all resolved to
-# Claude models. Builder strength still scales with compute tier.
+# --- claude_only: default, no Codex in the loop (ADR-0023) --------------- #
+# Basis: VulcanBench Frontier v4 (2026-10-08). Opus 5.5 low/medium dominates
+# Sonnet 5.5 at the same cost point; Sonnet 5.5 max is the top HIGH-compute
+# score. reviewer/challenger are extrapolated from implementation results.
+# Role boundaries stay separate invocations, not single-agent mode.
 
 [presets.claude_only.architect]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "medium"
 
 [presets.claude_only.challenger_high]
 vendor = "claude"
-model = "claude-opus-5"
-effort = "low"
+model = "claude-opus-5-5"
+effort = "high"
 
 [presets.claude_only.builder_low]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "low"
 
 [presets.claude_only.builder_normal]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "medium"
 
 [presets.claude_only.builder_high]
 vendor = "claude"
-model = "claude-opus-5"
-effort = "low"
+model = "claude-sonnet-5-5"
+effort = "max"
 
 [presets.claude_only.reviewer]
 vendor = "claude"
-model = "claude-sonnet-5"
+model = "claude-opus-5-5"
 effort = "medium"
 
-# --- codex_only: default, no Claude Code in the loop ---
+# --- codex_only: optional compatibility, no Claude Code in the loop ---
 # Independent HIGH Challenger; all roles use Sol 6.1/xhigh.
 # Safety gates are unchanged.
 

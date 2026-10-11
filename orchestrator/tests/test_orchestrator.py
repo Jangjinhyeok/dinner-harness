@@ -59,7 +59,7 @@ from orchestrator.safety import Change
 _HOOKS_ROOT = Path(__file__).resolve().parents[2] / "assets" / "claude" / "hooks"
 if str(_HOOKS_ROOT) not in sys.path:
     sys.path.insert(0, str(_HOOKS_ROOT))
-from handlers import builder_guard, route_nudge  # noqa: E402
+from handlers import route_nudge  # noqa: E402
 
 # Pin tempfile.tempdir to the OS-reported temp dir directly, bypassing
 # tempfile's own candidate-search fallback. Under some sandboxed test runs,
@@ -91,7 +91,7 @@ _BACKEND_GUARDS = [
 ]
 
 
-def _policy_profile(role, preset="codex_only"):
+def _policy_profile(role, preset="claude_only"):
     return routing.resolve_profile(routing.load_routing_config(routing.default_routing_path()), preset, role)
 
 
@@ -161,18 +161,12 @@ class TestVendorRunner(unittest.TestCase):
         self.assertNotIn("--effort", argv)
 
     @mock.patch("orchestrator.vendors._run")
-    def test_claude_challenger_clears_inherited_direct_mode(self, run_mock: mock.Mock):
-        with mock.patch.dict(os.environ, {"DINNER_EXECUTION_MODE": "direct"}):
-            vendors.ClaudeBackend().invoke(
-                vendors.ROLE_CHALLENGER, "prompt", Config()
-            )
+    def test_claude_challenger_runs_in_plan_permission_mode(self, run_mock: mock.Mock):
+        vendors.ClaudeBackend().invoke(vendors.ROLE_CHALLENGER, "prompt", Config())
 
         argv, _ = run_mock.call_args.args
         self.assertEqual(argv[argv.index("--permission-mode") + 1], "plan")
-        self.assertNotEqual(
-            run_mock.call_args.kwargs["env"].get("DINNER_EXECUTION_MODE"),
-            "direct",
-        )
+        self.assertNotIn("env", run_mock.call_args.kwargs)
 
     @mock.patch("orchestrator.vendors._run", return_value=Turn())
     def test_codex_backend_passes_builder_effort(self, run_mock: mock.Mock):
@@ -600,30 +594,18 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertNotIn("<BUILDER_VENDOR>", text, rel)
             self.assertNotIn("builder_vendor_token", text, rel)
 
-    def test_direct_escape_launcher_and_manifest_are_installed(self):
-        root = Path(__file__).resolve().parents[2] / "assets" / "claude"
-        direct = (root / "claude-direct.cmd").read_text(encoding="utf-8")
-        manifest = (Path(__file__).resolve().parents[2] / "harness.toml").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('set "DINNER_EXECUTION_MODE=direct"', direct)
-        self.assertIn("claude %*", direct)
-        self.assertIn('["assets/claude/claude-direct.cmd",     "claude-direct.cmd"]', manifest)
-
-    def test_claude_template_wires_guard_for_structured_file_edits(self):
-        # A correct handler that is absent from settings is indistinguishable
-        # from no guard at all. Pin the installed Claude matcher and launcher.
+    def test_builder_guard_and_direct_escape_are_retired(self):
+        # ADR-0023: a plain `claude` session is the direct-edit session.
+        root = Path(__file__).resolve().parents[2]
         template = json.loads(
-            (Path(__file__).resolve().parents[2] / "assets" / "claude" /
-             "settings.json.template").read_text(encoding="utf-8")
+            (root / "assets" / "claude" / "settings.json.template").read_text(encoding="utf-8")
         )
-        commands = [
-            hook["command"]
-            for entry in template["hooks"]["PreToolUse"]
-            if entry.get("matcher") == "Edit|Write"
-            for hook in entry["hooks"]
-        ]
-        self.assertIn("<CLAUDE_HOME>/hooks/launchers/builder_guard.cmd", commands)
+        self.assertNotIn("builder_guard", json.dumps(template))
+        manifest = (root / "harness.toml").read_text(encoding="utf-8")
+        for retired in ("claude-direct.cmd", "dh.cmd", "dh-architect.cmd", "watch-builder.ps1"):
+            self.assertNotIn(retired, manifest)
+            self.assertFalse((root / "assets" / "claude" / retired).exists())
+        self.assertFalse((root / "assets" / "claude" / "hooks" / "handlers" / "builder_guard.py").exists())
 
     def test_codex_hooks_exclude_the_claude_only_route_nudge(self):
         # Codex is the Builder, so running Claude's dispatch nudge inside a
@@ -636,124 +618,6 @@ class TestBuilderFirstGuard(unittest.TestCase):
         self.assertNotIn("UserPromptSubmit", hooks["hooks"])
         commands = json.dumps(hooks)
         self.assertNotIn("route_nudge.py", commands)
-
-    def test_only_bus_and_architecture_artifacts_are_allowed(self):
-        # The guard is deliberately narrow: it reserves implementation edits
-        # for Codex without preventing an Architect from writing its spec/ADR.
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
-        try:
-            cwd = Path(tempfile.gettempdir()) / "builder-guard-test"
-            code = {"tool_name": "Edit", "cwd": str(cwd),
-                    "tool_input": {"file_path": "src/feature.py"}}
-            handoff = {"tool_name": "Write", "cwd": str(cwd),
-                       "tool_input": {"file_path": "HANDOFF_DELEGATE.md"}}
-            adr = {"tool_name": "Write", "cwd": str(cwd),
-                   "tool_input": {"file_path": "docs/architecture/ADR-0008.md"}}
-            self.assertEqual(builder_guard.guarded_paths(code), ["src/feature.py"])
-            self.assertEqual(builder_guard.guarded_paths(handoff), [])
-            self.assertEqual(builder_guard.guarded_paths(adr), [])
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
-
-    def test_repo_root_allows_root_handoff_from_nested_cwd_but_not_code(self):
-        if not _git_available():
-            self.skipTest("git not on PATH")
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
-        try:
-            with tempfile.TemporaryDirectory() as d:
-                repo = Path(d)
-                _git_init(repo)
-                nested = repo / "nested"
-                nested.mkdir()
-                handoff = {
-                    "tool_name": "Write",
-                    "cwd": str(nested),
-                    "tool_input": {"file_path": str(repo / "HANDOFF.md")},
-                }
-                code = {
-                    "tool_name": "Write",
-                    "cwd": str(nested),
-                    "tool_input": {"file_path": str(repo / "orchestrator" / "vendors.py")},
-                }
-
-                self.assertEqual(builder_guard.guarded_paths(handoff), [])
-                self.assertEqual(
-                    builder_guard.guarded_paths(code),
-                    [str(repo / "orchestrator" / "vendors.py")],
-                )
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
-
-    def test_direct_mode_is_an_explicit_direct_edit_escape(self):
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ["DINNER_EXECUTION_MODE"] = "direct"
-        try:
-            payload = {
-                "tool_name": "Edit",
-                "cwd": tempfile.gettempdir(),
-                "tool_input": {"file_path": "src/tiny_fix.py"},
-            }
-            self.assertEqual(builder_guard.guarded_paths(payload), [])
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
-
-    def test_apply_patch_cannot_hide_a_code_edit_behind_an_allowed_handoff(self):
-        # A mixed patch is one structured file-edit call. Allowing it because
-        # its first target is HANDOFF.md would reopen the inline-code path.
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
-        try:
-            payload = {
-                "tool_name": "apply_patch",
-                "cwd": tempfile.gettempdir(),
-                "tool_input": {"command": """*** Begin Patch
-*** Update File: HANDOFF.md
-+spec
-*** Update File: src/feature.py
-+implementation
-*** End Patch
-"""},
-            }
-            self.assertEqual(builder_guard.guarded_paths(payload), ["src/feature.py"])
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
-
-    def test_guard_audit_hashes_a_blocked_path_instead_of_retaining_it(self):
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
-        nonce = "customer-project-path-must-not-be-logged.py"
-        payload = {"tool_name": "Edit", "cwd": tempfile.gettempdir(),
-                   "tool_input": {"file_path": nonce}}
-        try:
-            with mock.patch.object(builder_guard, "read_hook_input", return_value=payload), \
-                 mock.patch.object(builder_guard, "log_event") as log_event, \
-                 mock.patch.object(builder_guard, "exit_block", side_effect=SystemExit(2)):
-                with self.assertRaises(SystemExit):
-                    builder_guard.main()
-            fields = log_event.call_args.kwargs
-            self.assertNotIn(nonce, json.dumps(fields))
-            self.assertEqual(fields["blocked_path_count"], 1)
-            self.assertEqual(fields["blocked_path_sha256"], builder_guard._path_digest(nonce))
-            self.assertNotIn("file_path", fields)
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
 
 
 class TestDefaultSessionRouting(unittest.TestCase):
@@ -777,35 +641,22 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertNotIn("/umg", msg)
         self.assertNotIn("UMG", msg)
 
-    def test_default_nudge_routes_even_a_tiny_write_to_builder(self):
-        old = os.environ.get("DINNER_EXECUTION_MODE")
-        os.environ.pop("DINNER_EXECUTION_MODE", None)
-        try:
-            route = route_nudge.message_for_prompt("Fix a typo in this document.")
-            self.assertIsNotNone(route)
-            message, domains = route
-            self.assertEqual(domains, ["default"])
-            self.assertIn("Everything else goes through Codex Builder", message)
-            self.assertIn("delegate workflow now", message)
-            self.assertIn("may stay inline (trivial fast-path, ADR-0012)", message)
-        finally:
-            if old is None:
-                os.environ.pop("DINNER_EXECUTION_MODE", None)
-            else:
-                os.environ["DINNER_EXECUTION_MODE"] = old
+    def test_default_nudge_keeps_implementation_inline(self):
+        route = route_nudge.message_for_prompt("Fix a typo in this document.")
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["default"])
+        self.assertIn("implement in this session", message)
+        self.assertIn("opt-in", message)
+        self.assertNotIn("goes through Codex", message)
+        self.assertNotIn("delegate workflow", message)
 
-    def test_clear_low_write_intent_injects_delegate_without_user_slash_command(self):
-        # The desired UX starts from an ordinary request, not a ritual command.
-        # If the generic path regresses to the former UE-only nudge, this becomes
-        # None and the automatic Codex route disappears for most repositories.
-        with mock.patch.dict(os.environ, {"DINNER_EXECUTION_MODE": ""}):
-            route = route_nudge.message_for_prompt("Implement a local date formatter.")
-            self.assertIsNotNone(route)
-            message, domains = route
-            self.assertEqual(domains, ["default"])
-            self.assertIn("a single-purpose LOW change runs the delegate workflow now", message)
-            self.assertIn("no need to ask for /delegate", message)
-            self.assertIn("goes through Codex Builder", message)
+    def test_ordinary_write_intent_gets_inline_route_in_any_repo(self):
+        route = route_nudge.message_for_prompt("Implement a local date formatter.")
+        self.assertIsNotNone(route)
+        message, domains = route
+        self.assertEqual(domains, ["default"])
+        self.assertIn("independent review", message)
 
     def test_multi_subsystem_ue_work_adds_architect_signal_without_direct_dispatch(self):
         route = route_nudge.message_for_prompt(
@@ -814,9 +665,8 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg", "repl"])
-        self.assertIn("multi-file, multi-gate, design, or HIGH-signal work", message)
-        self.assertIn("human start approval", message)
-        self.assertIn("additional architect-route signal", message)
+        self.assertIn("HIGH-signal work", message)
+        self.assertIn("design-care signal", message)
         self.assertNotIn("orchestrate.py build --repo", message)
 
     def test_single_subsystem_ue_work_requires_consult_before_handoff(self):
@@ -825,8 +675,8 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg"])
-        self.assertIn("MUST consult `/umg`", message)
-        self.assertIn("before writing the HANDOFF", message)
+        self.assertIn("should consult `/umg`", message)
+        self.assertIn("before implementing", message)
         self.assertIn("incorporate the consult's design decisions", message)
         self.assertIn("genuine 1-2-line changes are exceptions", message)
 
@@ -838,7 +688,7 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg", "repl"])
-        self.assertIn("MUST consult it before writing the HANDOFF", message)
+        self.assertIn("should consult it before implementing", message)
         self.assertIn("incorporate the consult's design decisions", message)
         self.assertIn("genuine 1-2-line changes are exceptions", message)
 
@@ -848,7 +698,7 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["hub_generic"])
-        self.assertIn("MUST consult it before writing the HANDOFF", message)
+        self.assertIn("should consult it before implementing", message)
         self.assertIn("incorporate the consult's design decisions", message)
         self.assertIn("genuine 1-2-line changes are exceptions", message)
 
@@ -2109,8 +1959,8 @@ class TestChallenge(unittest.TestCase):
                 outcome = orchestrator.run_challenge()
                 self.assertEqual(outcome.status, CHALLENGED, outcome.reason)
                 factory.assert_called_once_with("codex")
-                self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("challenger_high").model)
-                self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("challenger_high").effort)
+                self.assertEqual(orchestrator.cfg.builder_model, _policy_profile("challenger_high", "codex_only").model)
+                self.assertEqual(orchestrator.cfg.builder_effort, _policy_profile("challenger_high", "codex_only").effort)
                 # Builder dispatch starts with the original config, not challenge overrides.
                 builder = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
                 resolved = builder._resolve_builder_profile(
@@ -2118,7 +1968,7 @@ class TestChallenge(unittest.TestCase):
                 )
                 self.assertIsNone(resolved)
                 self.assertEqual(factory.call_args_list, [mock.call("codex"), mock.call("codex")])
-                self.assertEqual(builder.cfg.builder_model, _policy_profile("builder_high").model)
+                self.assertEqual(builder.cfg.builder_model, _policy_profile("builder_high", "codex_only").model)
                 stale = Orchestrator(cfg, backend, backend, AutoApprove(), log=lambda m: None)
                 changed = stale._resolve_builder_profile(
                     draft + "changed", {"1": bus.TIER_HIGH}, {"1": bus.COMPUTE_HIGH}
@@ -2250,7 +2100,7 @@ class TestChallenge(unittest.TestCase):
             ]
             self.assertEqual(records[0]["event"], "challenge_dispatch")
             self.assertEqual(records[-1]["status"], "challenged")
-            self.assertEqual(records[-1]["routing_preset"], "codex_only")
+            self.assertEqual(records[-1]["routing_preset"], "claude_only")
             self.assertEqual(records[-1]["logical_profile"], "challenger_high")
             self.assertEqual(records[-1]["model"], _policy_profile("challenger_high").model)
             self.assertEqual(records[-1]["effort"], _policy_profile("challenger_high").effort)
@@ -2430,16 +2280,16 @@ class TestBuildFromHandoff(unittest.TestCase):
 
         self.assertIsNone(outcome)
         config = routing.load_routing_config(routing.default_routing_path())
-        profile = routing.resolve_profile(config, "codex_only", "builder_normal")
+        profile = routing.resolve_profile(config, "claude_only", "builder_normal")
         self.assertEqual(
             orchestrator._resolved_builder_profile,
             {
-                "routing_preset": "codex_only",
+                "routing_preset": "claude_only",
                 "logical_profile": "builder_normal",
                 "model": profile.model,
                 "effort": profile.effort,
                 "override_fields": [],
-                "policy_hash": routing.policy_digest(config, "codex_only"),
+                "policy_hash": routing.policy_digest(config, "claude_only"),
                 "account_access": "unknown",
             },
         )
@@ -2456,7 +2306,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         self.assertEqual(orchestrator._resolved_builder_profile["override_fields"], ["model"])
         self.assertEqual(orchestrator._resolved_builder_profile["model"], "existing-model")
         self.assertTrue(orchestrator._resolved_builder_profile["effort"])
-        make_backend.assert_called_once_with("codex")
+        make_backend.assert_called_once_with("claude")
 
     def test_real_low_normal_resolves_hybrid_builder_normal(self):
         orchestrator, _ = self._resolve_builder_profile(routing_preset="hybrid")
@@ -2586,7 +2436,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         self.assertIsNone(outcome)
         self.assertEqual(orchestrator.cfg.builder_model, profile.model)
         self.assertEqual(orchestrator.cfg.builder_effort, profile.effort)
-        make_backend.assert_called_once_with("codex")
+        make_backend.assert_called_once_with("claude")
 
     def test_real_high_claude_vendor_uses_claude_builder_high_profile(self):
         orchestrator, _ = self._resolve_builder_profile(builder_vendor="claude")
@@ -2614,7 +2464,7 @@ class TestBuildFromHandoff(unittest.TestCase):
         self.assertEqual(orchestrator.cfg.builder_model, "existing-model")
         self.assertIs(orchestrator.builder, make_backend.return_value)
         self.assertTrue(orchestrator.cfg.builder_effort)
-        make_backend.assert_called_once_with("codex")
+        make_backend.assert_called_once_with("claude")
 
     def test_real_unknown_preset_is_blocked_as_routing_config_error(self):
         orchestrator, _ = self._resolve_builder_profile(routing_preset="nonexistent")
@@ -5230,14 +5080,37 @@ class TestRouting(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[2]
         manifest = tomllib.loads((repo_root / "harness.toml").read_text(encoding="utf-8"))
         routing_copy = ["content/routing.toml", "routing.toml"]
+        codex_cfg = manifest["targets"]["codex"]
 
         self.assertIn(routing_copy, manifest["targets"]["claude"]["copy"])
-        self.assertIn(routing_copy, manifest["targets"]["codex"]["copy"])
+        self.assertNotIn(routing_copy, codex_cfg["copy"])
+        self.assertEqual(codex_cfg["routing_src"], "content/routing.toml")
+        self.assertEqual(codex_cfg["routing_preset"], "codex_only")
+
+    def test_codex_routing_renders_codex_only_preset_and_keeps_profiles(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((repo_root / "harness.toml").read_text(encoding="utf-8"))
+        source = routing.load_routing_config(repo_root / "content" / "routing.toml")
+        with tempfile.TemporaryDirectory() as directory:
+            plan = []
+            codex_adapter._write_routing(repo_root, manifest["targets"]["codex"], Path(directory), plan, False)
+            rendered = routing.load_routing_config(Path(directory) / "routing.toml")
+
+        self.assertEqual(plan, [("template", Path(directory) / "routing.toml")])
+        self.assertEqual(routing.active_preset_name(rendered), "codex_only")
+        self.assertEqual(routing.active_preset_name(source), "claude_only")
+        self.assertEqual(rendered["presets"], source["presets"])
+        self.assertEqual(rendered["native_agents"], source["native_agents"])
+
+    def test_codex_routing_render_rejects_unknown_preset(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        cfg = {"routing_src": "content/routing.toml", "routing_preset": "missing"}
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(RuntimeError):
+            codex_adapter._write_routing(repo_root, cfg, Path(directory), [], False)
 
     def test_codex_only_uses_codex_for_all_roles_and_unifies_builder_tiers(self):
         repo_root = Path(__file__).resolve().parents[2]
         config = routing.load_routing_config(repo_root / "content" / "routing.toml")
-        self.assertEqual(routing.active_preset_name(config), "codex_only")
         for role in ("architect", "challenger_high", "builder_low", "builder_normal", "builder_high", "reviewer"):
             with self.subTest(role=role):
                 profile = routing.resolve_profile(config, "codex_only", role)

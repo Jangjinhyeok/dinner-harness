@@ -36,9 +36,7 @@ from .safety import Change
 ROLE_ARCHITECT = "architect"
 ROLE_BUILDER = "builder"
 # Read-only challenger dispatch (ADR-0020 correction 5). Both backends default
-# non-ROLE_BUILDER challenger turns to read-only behavior. ClaudeBackend also
-# clears any inherited DINNER_EXECUTION_MODE=direct below so its builder_guard
-# hook stays active even when the parent process is a direct-edit session.
+# non-ROLE_BUILDER challenger turns to read-only behavior.
 ROLE_CHALLENGER = "challenger"
 ROLE_RECOVERY = "recovery"
 ROLE_REVIEWER = "reviewer"
@@ -479,26 +477,16 @@ class ClaudeBackend(Backend):
         effort = cfg.architect_effort if role == ROLE_ARCHITECT else cfg.builder_effort
         if effort:
             argv += ["--effort", effort]
-        env = None
         # A Builder edits files autonomously; without a non-interactive
         # permission posture the headless turn would stall on approval.
         # VERIFY this flag name/behaviour on your CLI version.
+        # The controller-side net (safety.py) remains the deterministic gate
+        # regardless of vendor.
         if role == ROLE_BUILDER:
             argv += ["--permission-mode", "acceptEdits"]
-            # This subprocess inherits the machine's installed ~/.claude hooks.json
-            # (it is a real `claude -p` session), including builder_guard -- which
-            # has no concept of "this Claude process IS the Builder" and blocks any
-            # non-bus-artifact Edit/Write outright. DINNER_EXECUTION_MODE=direct is
-            # the same escape claude-direct.cmd sets for a human direct-edit
-            # session; without it a Claude Builder turn can never write its
-            # implementation. The controller-side net (safety.py) remains the
-            # deterministic gate regardless of vendor.
-            env = {**os.environ, "DINNER_EXECUTION_MODE": "direct"}
         else:
-            env = {**os.environ}
-            env.pop("DINNER_EXECUTION_MODE", None)
             argv += ["--permission-mode", "plan"]
-        return _run(argv, cfg, stdin_text=prompt, env=env)
+        return _run(argv, cfg, stdin_text=prompt)
 
 
 class CodexBackend(Backend):

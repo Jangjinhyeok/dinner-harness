@@ -8,6 +8,7 @@ Current native rendering (historical runtime observations: CODEX-COVERAGE.md):
   - skills      : portable subset under Codex skills
   - hooks       : native hooks.json + copied Python handlers/lib/rules
   - agents      : content/agents/*.md -> agents/*.toml
+  - routing     : content/routing.toml with [routing].preset set for Codex
 
 Claude _mode path-glob injection remains target-specific. Engine entry skills
 use explicit reference reads; copied rules do not imply automatic injection.
@@ -15,6 +16,7 @@ use explicit reference reads; copied rules do not imply automatic injection.
 import json
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -177,6 +179,25 @@ def _write_agents(repo_root, dest_root, agents_src, agents_dest, plan, dry_run):
             target.write_text(rendered, encoding="utf-8", newline="\n")
 
 
+_ROUTING_PRESET_LINE = re.compile(r'^preset\s*=\s*"[^"]*"[^\n]*$', re.MULTILINE)
+
+
+def _write_routing(repo_root, target_cfg, dest_root, plan, dry_run):
+    """Render routing.toml with the target's active preset; every profile stays verbatim."""
+    preset = target_cfg["routing_preset"]
+    text = (repo_root / target_cfg["routing_src"]).read_text(encoding="utf-8")
+    rendered, count = _ROUTING_PRESET_LINE.subn(
+        f'preset = "{preset}"  # rendered for the Codex target (ADR-0023)', text, count=1)
+    data = tomllib.loads(rendered)
+    if count != 1 or data.get("routing", {}).get("preset") != preset or preset not in data.get("presets", {}):
+        raise RuntimeError(f"cannot render routing.toml with preset {preset!r}")
+    target = dest_root / target_cfg.get("routing_dest", "routing.toml")
+    plan.append(("template", target))
+    if not dry_run:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(rendered.encode("utf-8"))
+
+
 def _write_hooks_json(dest_root, plan, dry_run, command_root=None):
     hooks_root = (command_root or dest_root) / "hooks" / "handlers"
 
@@ -226,6 +247,8 @@ def _render(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     # 1. verbatim copies (inert reference dirs)
     for src_rel, dest_rel in target_cfg.get("copy", []):
         _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run)
+    if target_cfg.get("routing_src"):
+        _write_routing(repo_root, target_cfg, dest_root, plan, dry_run)
 
     # 2. portable skill bodies with supported Codex discovery frontmatter.
     skills_src = target_cfg.get("skills_src")

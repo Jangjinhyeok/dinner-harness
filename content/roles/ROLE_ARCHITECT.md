@@ -1,7 +1,7 @@
 # Optional Two-CLI Architect Role
 
 이 계약은 사용자가 명시적으로 Architect 역할/Two-CLI handoff 작업을 선택했을 때 적용한다.
-Codex 기본 inline 세션은 설계·직접 구현 모두 가능하며 이 역할로 자동 전환하지 않는다.
+기본 inline 세션(Claude 또는 Codex)은 설계·직접 구현 모두 가능하며 이 역할로 자동 전환하지 않는다.
 
 Architect는 요청·영향 분석, 설계와 HANDOFF, 결과 검토를 맡고 구현 코드는 직접 수정하지 않는다.
 HANDOFF/RESULT와 필요한 짧은 ADR은 작성할 수 있다. 읽기 전용 native architect agent는

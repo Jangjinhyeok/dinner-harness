@@ -50,8 +50,8 @@ HANDOFF/RESULT가 self-contained여야 하므로 각 turn은 repo와 bus를 매�
   Builder를 쓰거나, Codex Builder의 `run()` HIGH 결과는 추가 사람 검토가
   필요하다고 보는 걸 권장합니다.
 
-interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한다. 기본 Builder-first
-guard가 구현 edit을 `build` 경로로 보내며, `claude-direct.cmd`만 Claude 직접 수정 escape를 연다.
+interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한다. 기본은 inline 구현(ADR-0023)이며
+`build` 경로는 controller 검사가 필요한 경계 작업을 위한 opt-in dispatch다.
 
 ## 빠른 시작
 

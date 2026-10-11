@@ -1,7 +1,7 @@
 # Autonomy and Risk Policy
 
-2026-09-10: Codex 기본은 같은 세션의 설계·구현·검증이다. 기존 ADR의 강제 consult/jury와
-Codex 영구 degraded 설명은 당시 기록으로 보존하되 현재 운영 정책은 이 문서를 따른다.
+2026-09-10: 기본은 같은 세션의 설계·구현·검증이다(ADR-0022, Claude 기본은 ADR-0023). 기존 ADR의
+강제 consult/jury와 Codex 영구 degraded 설명은 당시 기록으로 보존하되 현재 운영 정책은 이 문서를 따른다.
 
 ## Risk와 compute
 
@@ -17,7 +17,7 @@ migration/schema, security(auth/crypto/trust/anti-cheat), public API/ABI, build/
 
 ## 기본 경로의 시작·완료 보고
 
-이 정책은 단일 Codex 세션의 탐색·계획·구현·검증에도 적용한다. Two-CLI는 선택적 실행
+이 정책은 단일 inline 세션(Claude 또는 Codex)의 탐색·계획·구현·검증에도 적용한다. Two-CLI는 선택적 실행
 방식이며 정책 적용 조건이 아니다. 비단순 작업은 계획 수립부터 이 원문을 읽는다.
 같은 세션에서 읽은 원문은 변경되지 않았다면 재사용한다.
 

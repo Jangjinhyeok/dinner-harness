@@ -36,12 +36,14 @@ class RoutingMigrationTests(unittest.TestCase):
             with self.subTest(implementation_agent=name):
                 role = self.config["native_agents"][name]
                 self.assertEqual(role, "builder_normal")
-                self.assertEqual(routing.resolve_profile(self.config, self.preset, role),
+                self.assertEqual(routing.resolve_profile(self.config, "codex_only", role),
                                  routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"))
+                self.assertEqual(routing.resolve_profile(self.config, self.preset, role),
+                                 routing.ModelProfile("claude", "claude-opus-5-5", "medium"))
 
     def test_profiles_reject_empty_invalid_fields_and_vendor_effort(self):
         for key, value in (("model", ""), ("model", " "), ("model", "bad name"),
-                           ("effort", "nonsense"), ("effort", "max"),
+                           ("effort", "nonsense"), ("effort", "xhigh"),
                            ("vendor", "unknown"), ("model", None), ("modle", "typo")):
             with self.subTest(key=key, value=value):
                 config = copy.deepcopy(self.config)
@@ -49,15 +51,14 @@ class RoutingMigrationTests(unittest.TestCase):
                 with self.assertRaises(routing.RoutingConfigError):
                     routing.resolve_profile(config, self.preset, "builder_low")
 
-    def test_codex_builder_tiers_use_sol_xhigh_in_default_and_hybrid(self):
+    def test_codex_builder_tiers_use_sol_xhigh_in_codex_only_and_hybrid(self):
         # Policy acceptance contract; runtime selection still comes only from TOML.
         expected = {
             "builder_low": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
             "builder_normal": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
             "builder_high": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
         }
-        self.assertEqual(self.preset, "codex_only")
-        for preset in (self.preset, "hybrid"):
+        for preset in ("codex_only", "hybrid"):
             for role, profile in expected.items():
                 with self.subTest(preset=preset, role=role):
                     self.assertEqual(routing.resolve_profile(self.config, preset, role), profile)
@@ -68,6 +69,20 @@ class RoutingMigrationTests(unittest.TestCase):
             "challenger_high": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
             "reviewer": routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"),
         }
+        for role, profile in expected.items():
+            with self.subTest(role=role):
+                self.assertEqual(routing.resolve_profile(self.config, "codex_only", role), profile)
+
+    def test_claude_only_profiles_follow_adr_0023(self):
+        expected = {
+            "architect": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
+            "challenger_high": routing.ModelProfile("claude", "claude-opus-5-5", "high"),
+            "builder_low": routing.ModelProfile("claude", "claude-opus-5-5", "low"),
+            "builder_normal": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
+            "builder_high": routing.ModelProfile("claude", "claude-sonnet-5-5", "max"),
+            "reviewer": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
+        }
+        self.assertEqual(self.preset, "claude_only")
         for role, profile in expected.items():
             with self.subTest(role=role):
                 self.assertEqual(routing.resolve_profile(self.config, self.preset, role), profile)
@@ -88,19 +103,19 @@ class RoutingMigrationTests(unittest.TestCase):
 
     def test_vendor_override_uses_explicit_active_mapping_for_every_tier(self):
         for role in ("builder_low", "builder_normal", "builder_high"):
-            actual = routing.resolve_profile_for_vendor(self.config, self.preset, role, "claude")
-            expected = routing.resolve_profile(self.config, "claude_only", role)
+            actual = routing.resolve_profile_for_vendor(self.config, self.preset, role, "codex")
+            expected = routing.resolve_profile(self.config, "codex_only", role)
             self.assertEqual(actual, expected)
 
     def test_unrelated_preset_cannot_supply_override(self):
         self.config["presets"][self.preset].pop("vendor_fallbacks")
         with self.assertRaises(routing.RoutingConfigError):
-            routing.resolve_builder_high_for_vendor(self.config, "claude")
+            routing.resolve_builder_high_for_vendor(self.config, "codex")
 
     def test_ambiguous_explicit_fallback_is_rejected(self):
-        self.config["presets"][self.preset]["vendor_fallbacks"]["claude"] = ["hybrid", "claude_only"]
+        self.config["presets"][self.preset]["vendor_fallbacks"]["codex"] = ["hybrid", "codex_only"]
         with self.assertRaises(routing.RoutingConfigError):
-            routing.resolve_profile_for_vendor(self.config, self.preset, "builder_normal", "claude")
+            routing.resolve_profile_for_vendor(self.config, self.preset, "builder_normal", "codex")
 
     def test_policy_digest_changes_with_relevant_profile(self):
         original = routing.policy_digest(self.config, self.preset)

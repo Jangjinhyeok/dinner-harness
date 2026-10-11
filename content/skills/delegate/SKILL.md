@@ -5,7 +5,7 @@ description: Explicitly hand a bounded LOW task to the optional headless Builder
 
 # Optional Delegation
 
-This compatibility skill is not the default Codex inline path. Use when the user explicitly wants
+This compatibility skill is not the default inline path. Use when the user explicitly wants
 a bounded task delegated and headless controller checks are appropriate. The main session retains
 completion responsibility. Follow [dispatch reference](../../rules/two-cli-reference.md).
 

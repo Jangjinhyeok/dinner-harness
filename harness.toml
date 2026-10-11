@@ -34,10 +34,6 @@ copy = [
   ["assets/claude/hooks",                 "hooks"],
   ["orchestrate.py",                      "orchestrate.py"],
   ["orchestrator",                        "orchestrator"],
-  ["assets/claude/dh.cmd",                "dh.cmd"],
-  ["assets/claude/dh-architect.cmd",      "dh-architect.cmd"],
-  ["assets/claude/claude-direct.cmd",     "claude-direct.cmd"],
-  ["assets/claude/watch-builder.ps1",     "watch-builder.ps1"],
   ["assets/claude/MCP-UNREAL-SETUP.md",   "MCP-UNREAL-SETUP.md"],
   ["assets/claude/settings.json.template", "settings.json.template"],
   ["assets/claude/gitignore",             ".gitignore"],
@@ -82,7 +78,6 @@ copy = [
   ["content/ecc-reference",   "ecc-reference"],
   ["content/docs",            "docs"],
   ["content/templates",       "templates"],
-  ["content/routing.toml",    "routing.toml"],
   ["content/rules/agent-routing.md", "rules/agent-routing.md"],
   ["content/rules/autonomy-policy.md", "rules/autonomy-policy.md"],
   ["content/rules/routing-reference.md", "rules/routing-reference.md"],
@@ -93,6 +88,13 @@ copy = [
 template = [
   { src = "assets/codex/AGENTS.md", dest = "AGENTS.md" },
 ]
+
+# routing.toml is rendered, not copied: the source default preset is claude_only
+# (ADR-0023), but a Codex-only machine must resolve to codex_only without a
+# Claude CLI. Only the [routing].preset line differs from the source.
+routing_src = "content/routing.toml"
+routing_dest = "routing.toml"
+routing_preset = "codex_only"
 
 # Neutral skill bodies retain engine reference entry points and optional review.
 # delegate remains an explicit Claude compatibility entry point.

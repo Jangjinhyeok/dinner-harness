@@ -6,7 +6,7 @@
 
 ```
 .
-├── CLAUDE.md                  # User-level 행동 원칙 + Two-CLI workflow 규약
+├── CLAUDE.md                  # User-level 행동 원칙 + inline 기본 실행 모델 (ADR-0023)
 ├── MCP-UNREAL-SETUP.md        # 엔진 MCP(UE 5.7) 구체 셋업 walkthrough + 트러블슈팅
 ├── HANDOFF.md                 # Architect → Builder 통신 (현재 빈 템플릿)
 ├── RESULT.md                  # Builder → Architect 통신 (현재 빈 템플릿)
@@ -26,9 +26,9 @@
 ├── roles/                     # Two-CLI workflow 역할 정의
 │   ├── ROLE_ARCHITECT.md      # 설계·영향분석·검토 세션
 │   └── ROLE_BUILDER.md        # 구현·빌드검증·self-review 세션
-├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact, builder_guard) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
+├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
 │   ├── launchers/             # 인자 없는 절대경로 BAT wrapper
-│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge·builder_guard)
+│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge)
 │   ├── lib/                   # fail-open / timeout 공통 wrapper
 │   ├── rules/                 # 패턴·스코프 룰셋 JSON
 │   ├── tests/                 # run_handler 안전 계약 unittest (stdlib only)
@@ -47,7 +47,7 @@
     └── common/                # coding-style, security, testing 등 10개
 ```
 
-루트의 `HANDOFF.md` / `RESULT.md`, `roles/`, `rules/_mode/`, 그리고 `orchestrate.py`/`orchestrator/`는 Two-CLI workflow의 통신·역할·오케스트레이션 인프라다. 여기서 Two-CLI는 인터랙티브 터미널 둘이 아니라 **두 역할·두 CLI 엔진**(Claude·Codex)이다. **기본은 orchestrated single-pane** — 인터랙티브 Claude(Architect)가 `HANDOFF.md`를 쓰고 승인 후 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`로 Codex Builder를 headless 자동 dispatch한 뒤 RESULT.md를 같은 세션이 리뷰한다(**별도 Codex 터미널 불필요**). 두 placeholder는 dispatch 직전에 절대경로로 치환하며 `cd`, `&&`, pipe, redirection을 붙이지 않는다. vendor/model은 `routing.toml`의 active preset이 정하며(ADR-0020), 특정 vendor override는 `--builder claude`/`--builder codex`를 덧붙인다. 수동 dual-session·fully headless(`orchestrate.py run`)도 지원. 통신 파일이 컨텍스트에 들어오면 `rules/_mode/`의 reminder가 paths 매칭으로 자동 inject된다 (`HANDOFF.md`/`INPUT.md` → builder, `RESULT.md` → architect). 상세 규약은 `CLAUDE.md` §2, routing preset 상세는 `rules/routing-reference.md` 참조.
+루트의 `HANDOFF.md` / `RESULT.md`, `roles/`, `rules/_mode/`, 그리고 `orchestrate.py`/`orchestrator/`는 **선택적(opt-in) Two-CLI / headless dispatch** 인프라다. **기본은 inline** — 평범한 `claude` 세션이 직접 설계·구현·검증하고(ADR-0023), 큰 경계 작업이나 controller 검사·독립 challenge가 필요할 때만 `HANDOFF.md`를 쓰고 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>" --backend real`로 headless dispatch한 뒤 RESULT.md를 같은 세션이 리뷰한다. 두 placeholder는 dispatch 직전에 절대경로로 치환하며 `cd`, `&&`, pipe, redirection을 붙이지 않는다. vendor/model은 `routing.toml`의 active preset(기본 `claude_only`)이 정하며(ADR-0020, ADR-0023), 특정 vendor override는 `--builder claude`/`--builder codex`를 덧붙인다. 통신 파일이 컨텍스트에 들어와도 역할이 자동 선택되지는 않으며 `rules/_mode/`의 reminder만 inject된다. 상세 규약은 `CLAUDE.md` §2, routing preset 상세는 `rules/routing-reference.md` 참조.
 
 `templates/`는 `~/.claude/` 동작과 무관한 **프로젝트 복사용 템플릿**이다. `_gamedev` agent들("Engine Version Safety" → `docs/engine-reference/<engine>/VERSION.md`)과 `architect`·`arch-review`(ADR → `docs/architecture/`)가 이미 참조하지만 비어 있던 프로젝트 컨벤션을 채운다. 새 프로젝트에서 해당 파일을 프로젝트 `docs/`로 복사해 쓴다. 상세는 `templates/README.md` 참조.
 
@@ -73,7 +73,7 @@
 
 ## hooks (PreToolUse + PostToolUse + UserPromptSubmit 안전망)
 
-`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`), Builder-first 전용 차단형 `builder_guard`, advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다.
+`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`)과 advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다. Builder-first 전용 `builder_guard`는 ADR-0023으로 폐기되었다.
 
 ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로, 여기엔
 없다 — 배경은 docs/architecture/ADR-0006-option-a.md의 Context 절 참조.
@@ -84,8 +84,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 | `scope_check` | Pre · Edit·Write | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
-| `route_nudge` | UserPromptSubmit | 구현 의도마다 default execution route를 context에 주입하고, UE 도메인 신호에는 focused Architect reference도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0): HANDOFF/scope/tier/HIGH approval은 Claude workflow가 만든 뒤 기존 controller가 dispatch | 2026-06-16, 2026-08-07 auto-route protocol |
-| `builder_guard` | Pre · Edit·Write | 기본 `claude` 세션에서 HANDOFF/RESULT/INPUT/ADR 외 Claude 직접 edit 차단 → Codex dispatch 유도. `claude-direct.cmd` escape 세션에서만 inert | ADR-0008 |
+| `route_nudge` | UserPromptSubmit | 구현 의도마다 inline 기본 실행 route(ADR-0023)를 context에 주입하고, UE 도메인 신호에는 focused reference consult 권고도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0) | 2026-06-16, 2026-08-07 auto-route protocol |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
 

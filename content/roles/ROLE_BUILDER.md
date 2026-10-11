@@ -1,7 +1,7 @@
 # Optional Two-CLI Builder Role
 
 이 계약은 명시적으로 선택한 Builder 역할 또는 headless dispatch에 적용한다.
-기본 inline Codex 작업을 이 역할로 자동 전환하지 않는다.
+기본 inline 작업을 이 역할로 자동 전환하지 않는다.
 
 HANDOFF를 읽기 전용 명세로 받아 전체 목표·scope·risk/compute·검증을 확인한다.
 명세 위치가 없고 작업 자체도 불명확하면 위치를 묻는다. 이미 구현이 승인됐다면

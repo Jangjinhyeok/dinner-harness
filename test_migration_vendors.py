@@ -149,13 +149,13 @@ class VendorMigrationTests(unittest.TestCase):
             self.assertEqual(metadata["sandbox_verified"], "not_run")
             self.assertNotIn("prompt", metadata)
 
-    def test_claude_nonbuilder_drops_direct_mode(self):
-        with patch.dict(os.environ, DINNER_EXECUTION_MODE="direct"), patch.object(vendors, "_run", return_value=vendors.Turn()) as run:
+    def test_claude_nonbuilder_uses_plan_permission_mode(self):
+        with patch.object(vendors, "_run", return_value=vendors.Turn()) as run:
             for role in (vendors.ROLE_CHALLENGER, vendors.ROLE_REVIEWER, vendors.ROLE_RECOVERY):
                 vendors.ClaudeBackend().invoke(role, "prompt", self.cfg)
                 argv = run.call_args.args[0]
                 self.assertEqual(argv[argv.index("--permission-mode") + 1], "plan")
-                self.assertNotIn("DINNER_EXECUTION_MODE", run.call_args.kwargs["env"])
+                self.assertNotIn("env", run.call_args.kwargs)
 
 
 if __name__ == "__main__":

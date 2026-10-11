@@ -5,7 +5,9 @@
 보고와 설명에는 Risk/Compute 축 이름을 명시한다. 모델명 뒤 소문자 값은 effort다.
 
 모델 정책 SSOT는 source `content/routing.toml`, 설치본 `routing.toml`이다.
-기본 preset은 codex_only이며 hybrid와 claude_only는 선택 가능한 호환 경로다.
+기본 preset은 claude_only(ADR-0023)이며 codex_only와 hybrid는 선택 가능한 호환 경로다.
+claude_only는 Opus 5.5(architect/challenger/builder_low/builder_normal/reviewer)와
+Sonnet 5.5 max(builder_high)이며 근거와 한계는 ADR-0023에 있다.
 구체적인 모델/effort 값은 TOML에서 읽고 문서나 프롬프트로 덮어쓰지 않는다.
 
 2026-09-10 초기 운영 제안은 main/architect Astra medium, 작은 위임 Luna medium,
@@ -14,12 +16,12 @@ Risk HIGH design challenge Astra high의 별도 호출이다. 벤치마크로 �
 
 2026-10-03 운영 설정은 Codex의 architect/challenger_high/reviewer와
 builder_low/builder_normal/builder_high를 모두 GPT-6.1 Sol xhigh로 통일한다.
-codex_only의 모든 역할과 hybrid의 Codex builder에 적용하며 Claude profile·preset 선택은 유지한다.
+codex_only의 모든 역할과 hybrid의 Codex builder에 적용한다. 이는 호환 preset의 값이며 기본이 아니다.
 effort와 구체 ID는 TOML을 따른다.
 위의 2026-09-10 제안은 당시 기록이다. 현재 설정 역시 벤치마크 최적값을 뜻하지 않는다.
 
 2026-09-11 builder 비용 계층 결정은 [ADR-0020 addendum](https://github.com/Jangjinhyeok/dinner-harness/blob/main/docs/architecture/ADR-0020-routing-preset-architecture.md#addendum-2026-09-11-codex-builder-cost-tiers)을 참고한다.
-해당 addendum은 당시 비용 계층의 기록이다. 현재 기본/hybrid Codex builder는
+해당 addendum은 당시 비용 계층의 기록이다. codex_only/hybrid의 Codex builder는
 모든 compute 단계에서 같은 Sol 6.1 xhigh profile을 사용한다. 실제 값은 TOML이 결정한다.
 LOW compute는 명확하고 국소적이며 기존 pattern을 복제하는 구현,
 NORMAL compute는 기존 abstraction을 활용하는 일반 feature/moderate refactor,
@@ -47,8 +49,8 @@ Logical keys는 `architect`, `builder_low`, `builder_normal`, `builder_high`,
   읽기 전용 reviewer/planner/architect가 구현 권한을 받지 않도록 확인한다.
 
 직접 수행/native/headless의 판단과 인계 계약은 [agent routing](agent-routing.md)을 따른다.
-Codex native adapter는 `[native_agents]`를 `codex_only` preset으로 생성하며, headless의
-active preset 선택과 다르다. 현재 native 구현 specialist는 `builder_normal`에 연결된다.
+Codex native adapter는 `[native_agents]`를 `codex_only` preset으로 생성하고, Claude native agent는
+frontmatter model alias(`opus`)를 쓰며, headless는 active preset을 따른다. 현재 native 구현 specialist는 `builder_normal`에 연결된다.
 native 호출에 LOW/HIGH 자동 분류·승격은 없고, headless는 선택 gate 집합의 risk/compute로
 `builder_low/normal/high`를 결정한다. Risk HIGH는 effective Compute HIGH를 유지한다.
 `default`/일반 worker와 review라는 작업명은 `[native_agents]` 역할 선택을 대신하지 않는다.

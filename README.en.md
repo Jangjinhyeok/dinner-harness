@@ -2,38 +2,42 @@
 
 [한국어](README.md) | **English**
 
-Source of truth for a Codex-first personal harness. Main owns requirements, decomposition,
+Source of truth for a Claude-first personal harness (ADR-0023). Main owns requirements, decomposition,
 design, integration and final responsibility. Delegate useful bounded implementation to named native
 roles; do small work directly when context-transfer/review overhead is greater. Choose by uncertainty,
 impact, verifiability and dependencies, not file count or a delegation quota. General independent review
 uses `code-reviewer`; naming a `default` task "review" does not select the reviewer profile.
 See [agent routing](content/rules/agent-routing.md) for route and handoff contracts.
-Existing hybrid and claude_only presets remain optional
-compatibility paths.
+The Codex target and the codex_only/hybrid presets remain optional compatibility paths.
 
-## Start with Codex
+## Start with Claude
 
-Python, Git and Codex CLI are required; a Codex-only install needs no Claude CLI or Claude home.
+Python, Git and the Claude Code CLI are required; no Codex CLI or Codex home is needed.
 Edit repository source rather than generated homes. Windows examples (use your Python executable
 instead of py -3 on other platforms):
 
 ```text
-py -3 check.py --target codex --no-install
-py -3 install.py --target codex --dest "C:/temp/dinner-harness-codex"
-py -3 refresh.py --target codex
+py -3 check.py --target claude --no-install
+py -3 install.py --target claude --dest "C:/temp/dinner-harness-claude"
+py -3 refresh.py --target claude
 ```
 
-Inspect the temporary output before a separately authorized live install:
+Inspect the temporary output (no `builder_guard` in `settings.json`, rendered `CLAUDE.md`) before a
+separately authorized live install:
 
 ```text
-py -3 install.py --target codex --allow-live
-py -3 check.py --target codex
-codex -m gpt-6.1-sol -c model_reasoning_effort="xhigh"
+py -3 install.py --target claude --allow-live
+py -3 check.py --target claude
+claude --model claude-opus-5-5 --effort medium
 ```
 
-Respect custom CODEX_HOME and user-owned config/hooks/skills; do not replace the entire config.toml.
-Use --target claude or --target all only when intended. App users select the interactive model in
-the supported model picker. Routing updates do not change an already open session.
+The Claude adapter has no retire logic. Files from older installs (`claude-direct.cmd`, `dh.cmd`,
+`dh-architect.cmd`, `watch-builder.ps1`, `hooks/handlers/builder_guard.py`,
+`hooks/launchers/builder_guard.cmd`) may remain in `~/.claude`; the guard is inert once
+`settings.json` no longer registers it. Nothing is deleted automatically: review and remove them by hand.
+Use --target codex or --target all only when intended. A plain `claude` session is the direct-edit
+session. App users select the interactive model in the supported model picker. Routing updates do
+not change an already open session.
 
 ## Workflow and policy
 
@@ -50,30 +54,33 @@ unperformed review is not_run. Add specialists only for distinct unresolved risk
 
 ## Models
 
-[content/routing.toml](content/routing.toml) is the profile SSOT; codex_only is the default.
-The configuration selected on 2026-10-03 is a usage policy, not a benchmark-proven optimum.
+[content/routing.toml](content/routing.toml) is the profile SSOT; claude_only is the default.
+The basis is the VulcanBench Frontier v4 result recorded in
+[ADR-0023](docs/architecture/ADR-0023-claude-only-default.md) (23 tasks, one attempt per cell,
+implementation-only, review roles extrapolated); it is a usage policy, not a proven optimum.
 
 | Role | Model / effort | Meaning |
 |---|---|---|
-| Main / architect | GPT-6.1 Sol / xhigh | Interactive recommendation, selected separately |
-| Small clear delegation | GPT-6.1 Sol / xhigh | Selected headless LOW |
-| General delegation | GPT-6.1 Sol / xhigh | NORMAL/native implementation |
-| Complex/HIGH implementation | GPT-6.1 Sol / xhigh | HIGH compute floor |
-| Important independent review | GPT-6.1 Sol / xhigh | Fresh-context reviewer |
-| HIGH design challenge | GPT-6.1 Sol / xhigh | Separate read-only invocation |
+| Main / architect | Claude Opus 5.5 / medium | Interactive recommendation, selected separately |
+| Small clear delegation | Claude Opus 5.5 / low | Selected headless LOW |
+| General delegation | Claude Opus 5.5 / medium | NORMAL/native implementation (agent frontmatter `model: opus`) |
+| Complex/HIGH implementation | Claude Sonnet 5.5 / max | HIGH compute, higher cost and time accepted |
+| Important independent review | Claude Opus 5.5 / medium | Fresh-context reviewer |
+| HIGH design challenge | Claude Opus 5.5 / high | Separate read-only invocation |
 
 Native implementation specialists currently map to `builder_normal`; they do not automatically select
 LOW/HIGH. Headless resolves the selected gates' risk/compute. These instructions are not an automatic scheduler.
 Risk and compute differ. Static profile validity, CLI capability and actual account model access
-are separate evidence; unknown access stays unknown. Never silently fallback across vendors or
-billing methods. Pro does not imply included API usage or maximum reasoning for every call.
+are separate evidence; unknown access stays unknown. Opus high-effort results partly measure an
+Opus 4.8 fallback. Never silently fallback across vendors or billing methods. A subscription does
+not imply included API usage. codex_only (GPT-6.1 Sol xhigh) and hybrid stay selectable.
 
 ## Optional dispatch and safety
 
 Use [headless challenge/build](content/rules/two-cli-reference.md) for substantial bounded delegation
 or controller scope/secret and baseline/delta checks. Explicit
 [Architect](content/roles/ROLE_ARCHITECT.md)/[Builder](content/roles/ROLE_BUILDER.md) contracts do not
-restrict default inline Codex. run is legacy/experimental, not the default entrypoint.
+restrict the default inline session. run is legacy/experimental, not the default entrypoint.
 
 JSONL events provide thread/error/usage observation; final schema JSON is the result contract.
 Review RESULT plus actual delta. BUILT and Builder panel=PASS do not establish independent review
@@ -87,12 +94,12 @@ See dated [coverage](CODEX-COVERAGE.md) and historical [recon](CODEX-RECON.md) e
 
 ## Sources
 
-[AGENTS](assets/codex/AGENTS.md) holds concise Codex defaults;
+[CLAUDE.md](content/instructions/CLAUDE.md) and [AGENTS](assets/codex/AGENTS.md) hold concise Claude and Codex defaults;
 [rules](content/rules) and [roles](content/roles) hold on-demand contracts;
 [skills](content/skills) provide portable procedures;
 [agents](content/agents) and [specialist references](content/docs/specialists) preserve engine knowledge;
 [templates](content/templates) provide self-contained project instructions;
-[manifest](harness.toml) and [adapter](adapters/codex.py) generate selected targets.
+[manifest](harness.toml) and the [Claude](adapters/claude.py)/[Codex](adapters/codex.py) adapters generate selected targets.
 
 Domain skills read relevant UE references without forcing delegation. Important review uses
 concrete evidence rather than fixed judge counts. Learning logs are opt-in and redacted;
@@ -158,9 +165,8 @@ Source catalog. The manifest and generated checks determine Codex installation c
 - `unity-specialist`
 - `unreal-specialist`
 
-### Hooks (6)
+### Hooks (5)
 
-- `builder_guard`
 - `learning_log`
 - `route_nudge`
 - `scope_check`

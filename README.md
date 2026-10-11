@@ -2,10 +2,10 @@
 
 **한국어** | [English](README.en.md)
 
-Codex 중심으로 설계·구현·검증을 이어가는 개인 harness의 source of truth다.
-기본은 GPT-6.1 Sol xhigh 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
-추가 agent를 쓴다. 기존 hybrid/claude_only는 선택 가능한 호환 경로로 유지한다.
-설치된 `~/.codex`·`~/.claude`는 생성 결과다. canonical source를 수정하고 검증 후 설치한다.
+Claude Code 중심으로 설계·구현·검증을 이어가는 개인 harness의 source of truth다(ADR-0023).
+기본은 Claude Opus 5.5 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
+추가 agent를 쓴다. Codex target과 hybrid/codex_only preset은 선택 가능한 호환 경로로 유지한다.
+설치된 `~/.claude`·`~/.codex`는 생성 결과다. canonical source를 수정하고 검증 후 설치한다.
 
 ## 기본 workflow
 
@@ -27,35 +27,37 @@ HIGH(replication/save/live config/migration/security 등)는 독립 검토와 �
 commit/push/deploy, branch 변경은 별도 권한이다. self-review·실제 test 실행·독립 review를
 구별하며 수행하지 않은 리뷰는 not_run이다.
 
-## Codex-only 설치와 확인
+## Claude 설치와 확인
 
-Python, Git, Codex CLI가 필요하다. Claude CLI나 Claude home은 필요하지 않다.
+Python, Git, Claude Code CLI가 필요하다. Codex CLI나 Codex home은 필요하지 않다.
 Windows 예시이며 다른 OS는 `py -3` 대신 설치된 Python executable을 쓴다.
 
 ```powershell
-py -3 check.py --target codex --no-install
-py -3 install.py --target codex --dest "C:/temp/dinner-harness-codex"
-py -3 refresh.py --target codex
+py -3 check.py --target claude --no-install
+py -3 install.py --target claude --dest "C:/temp/dinner-harness-claude"
+py -3 refresh.py --target claude
 ```
 
-임시 설치 결과를 확인한 후 **사용자가 live 설치를 요청한 경우에만**:
+임시 설치 결과(`settings.json`에 `builder_guard`가 없는지, 렌더링된 `CLAUDE.md`)를 확인한 후
+**사용자가 live 설치를 요청한 경우에만**:
 
 ```powershell
-py -3 install.py --target codex --allow-live
-py -3 check.py --target codex
+py -3 install.py --target claude --allow-live
+py -3 check.py --target claude
 ```
 
-기존 사용자 config/hooks/skills의 소유권을 보존하며 충돌은 명확히 보고한다.
-소유권 receipt가 없는 기존 harness 설치는 `--adopt-existing --dry-run`으로 backup·legacy hook
-교체 계획을 검토한 뒤 `--adopt-existing --allow-live`로 설치한다. 정확한 명령과 검증 한계는
-[전환 결과](docs/codex-migration-2026-09-10.md)에 있다.
-custom CODEX_HOME을 사용하는 환경은 실제 목적지를 확인한다. 전체 config.toml을 교체하지 않는다.
-Claude만 필요하면 `--target claude`, 양쪽을 의도한 경우만 `--target all`을 쓴다.
+Claude adapter에는 retire 로직이 없다. 이전 설치의 `claude-direct.cmd`, `dh.cmd`, `dh-architect.cmd`,
+`watch-builder.ps1`, `hooks/handlers/builder_guard.py`, `hooks/launchers/builder_guard.cmd`는
+`~/.claude`에 남을 수 있다(guard는 `settings.json`에 등록되지 않으면 inert). 자동 삭제하지 않으니
+live 설치 후 목록을 확인하고 직접 정리한다.
+Codex가 필요하면 `--target codex`, 양쪽을 의도한 경우만 `--target all`을 쓴다.
+Codex 설치 절차와 기존 사용자 config 보존 규칙은 [전환 결과](docs/codex-migration-2026-09-10.md)에 있다.
 
-새 프로젝트에서 Codex를 열고 평소처럼 요청한다. 초기 interactive 권장 실행 예시:
+새 프로젝트에서 평소처럼 `claude`를 열고 요청한다. 평범한 `claude` 세션이 직접 수정 세션이다.
+초기 interactive 권장 실행 예시:
 
 ```text
-codex -m gpt-6.1-sol -c model_reasoning_effort="xhigh"
+claude --model claude-opus-5-5 --effort medium
 ```
 
 사용 중인 앱에서는 지원되는 모델 선택기를 쓴다. routing.toml 수정이나 harness 설치는
@@ -63,24 +65,26 @@ codex -m gpt-6.1-sol -c model_reasoning_effort="xhigh"
 
 ## 모델 정책과 적용 범위
 
-구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다.
-아래는 2026-10-03에 선택한 운영 설정이며 벤치마크로 최적성을 입증한 값이 아니다.
+구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다(기본 preset `claude_only`).
+근거는 [ADR-0023](docs/architecture/ADR-0023-claude-only-default.md)의 VulcanBench Frontier v4
+(2026-10-08, 23 tasks × 5 efforts) 결과이며 구현 위주 벤치마크의 외삽이라 최적성을 입증한 값이 아니다.
 
 | 역할 | 모델 / effort | 적용 |
 |---|---|---|
-| Main / architect | GPT-6.1 Sol / xhigh | interactive 권장값, 실제 선택은 앱/CLI |
-| 작은 명확한 위임 | GPT-6.1 Sol / xhigh | 선택된 headless LOW |
-| 일반 구현 위임 | GPT-6.1 Sol / xhigh | headless NORMAL/native 구현 profile |
-| 복잡한/HIGH 구현 | GPT-6.1 Sol / xhigh | HIGH 최소 compute |
-| 중요한 독립 review | GPT-6.1 Sol / xhigh | fresh-context reviewer |
-| HIGH design challenge | GPT-6.1 Sol / xhigh | 구현과 별도 read-only 호출 |
+| Main / architect | Claude Opus 5.5 / medium | interactive 권장값, 실제 선택은 앱/CLI |
+| 작은 명확한 위임 | Claude Opus 5.5 / low | 선택된 headless LOW |
+| 일반 구현 위임 | Claude Opus 5.5 / medium | headless NORMAL/native 구현 profile (agent frontmatter `model: opus`) |
+| 복잡한/HIGH 구현 | Claude Sonnet 5.5 / max | HIGH compute (비용·시간 수용) |
+| 중요한 독립 review | Claude Opus 5.5 / medium | fresh-context reviewer |
+| HIGH design challenge | Claude Opus 5.5 / high | 구현과 별도 read-only 호출 |
 
 현재 native 구현 specialist는 `builder_normal`이며 LOW/HIGH를 자동 선택하지 않는다.
 headless는 선택 gate의 risk/compute를 해석한다. 이 지침은 자동 위임 scheduler가 아니다.
 risk와 compute는 별개다. profile 형식 검증, 설치 CLI의 schema/capability,
 계정의 실제 모델 접근성도 별개다. 확인하지 못한 접근은 unknown이다.
+Opus의 높은 effort 구간은 일부 Opus 4.8 fallback을 포함할 수 있다.
 effort 이름을 추측 변환하거나 인증/모델 실패를 다른 vendor·API 과금으로 조용히 fallback하지 않는다.
-ChatGPT Pro 구독이 API 비용을 포함한다고 가정하지 않는다.
+구독이 API 비용을 포함한다고 가정하지 않는다. `codex_only`(GPT-6.1 Sol xhigh)와 `hybrid`는 선택 가능한 호환 preset이다.
 
 ## 선택적 headless dispatch
 
@@ -105,19 +109,19 @@ Controller net은 사후 delta 검사로 역할이 다르다. 엄격한 scope �
 
 | 경로 | 책임 |
 |---|---|
-| [assets/codex/AGENTS.md](assets/codex/AGENTS.md) | 짧은 Codex 전역 지침 |
+| [content/instructions/CLAUDE.md](content/instructions/CLAUDE.md) · [assets/codex/AGENTS.md](assets/codex/AGENTS.md) | Claude(기본)·Codex 전역 지침 |
 | [content/rules](content/rules) · [content/roles](content/roles) | 필요할 때 읽는 risk/routing/headless 계약 |
 | [content/skills](content/skills) | 공통 portable skill 본문; native frontmatter는 adapter가 생성 |
 | [content/agents](content/agents) | 전문 agent 책임과 domain guidance |
 | [content/docs/specialists](content/docs/specialists) | UE/Unity 전문 참조 문서 |
 | [content/templates](content/templates) | self-contained 프로젝트 AGENTS와 engine/ADR 템플릿 |
-| [adapters/codex.py](adapters/codex.py) · [harness.toml](harness.toml) | 선택 target 생성·배선 |
+| [adapters/claude.py](adapters/claude.py) · [adapters/codex.py](adapters/codex.py) · [harness.toml](harness.toml) | 선택 target 생성·배선 |
 | [orchestrator](orchestrator) | 선택적 headless 실행과 증거·안전 검사 |
 
 bp/gas/repl/umg/ue는 전문 문서를 읽는 작은 진입점이며 별도 agent를 강제하지 않는다.
 autonomous-loop/adversarial-review는 고정 judge 수 대신 실제 evidence와 독립 검토를 사용한다.
 learnings-review는 opt-in redacted 로그를 읽으며 logging이 없으면 no-data다.
-Codex 기본 설치는 edit-count compact 알림과 learning-log 수집을 등록하지 않는다.
+Claude 설치는 `suggest_compact`(advisory)와 `learning_log` hook을 등록하며, Codex 기본 설치는 둘 다 등록하지 않는다.
 native compaction을 우선하고 experimental context management는 자동 활성화하지 않는다.
 
 검증은 프로젝트 build/test와 baseline delta 중심이다. coverage 80%, 고정 시간/함수 수 검증,
@@ -179,9 +183,8 @@ Source catalog입니다. Codex 설치 대상과 설정은 `harness.toml`과 생�
 - `unity-specialist`
 - `unreal-specialist`
 
-### Hooks (6)
+### Hooks (5)
 
-- `builder_guard`
 - `learning_log`
 - `route_nudge`
 - `scope_check`

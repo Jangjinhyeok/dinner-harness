@@ -26,7 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 # The only code-level constant this module permits: which preset NAME to look
 # up in routing.toml when the caller doesn't specify one. This is not a model
 # mapping — it names nothing concrete, only a key into the real SSOT.
-DEFAULT_PRESET = "codex_only"
+DEFAULT_PRESET = "claude_only"
 
 _VALID_VENDORS = ("codex", "claude")
 

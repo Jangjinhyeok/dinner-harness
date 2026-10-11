@@ -51,9 +51,8 @@ Two entry points, with different support tiers:
   gates, or treat a Codex-Builder `run()` HIGH result as needing additional human
   scrutiny before accepting it. See `controller.py`'s `_build_and_gate` docstring.
 
-For interactive use, launch ordinary `claude` from the work repository. Its default
-Builder-first guard routes implementation edits to the `build` path; only
-`claude-direct.cmd` opens a direct-edit escape session.
+For interactive use, launch ordinary `claude` from the work repository. It implements inline by
+default (ADR-0023); the `build` path is an opt-in dispatch for bounded work that needs controller checks.
 
 ## Quick start
 

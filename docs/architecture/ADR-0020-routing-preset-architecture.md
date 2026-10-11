@@ -311,3 +311,8 @@ Astra use in routine work, not a claimed across-the-board cost reduction.
   out of scope, and the primary path's whole value proposition (single-pane,
   the user's own terminal) would need product-level changes (invoking a
   different CLI *for the user's own session*) this harness does not control.
+
+## Addendum 2026-10-11: default preset
+
+The default preset is now `claude_only` with Opus 5.5 / Sonnet 5.5 profiles; `codex_only` and
+`hybrid` remain selectable. See [ADR-0023](ADR-0023-claude-only-default.md).
