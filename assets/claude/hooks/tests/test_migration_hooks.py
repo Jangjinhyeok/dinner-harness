@@ -166,6 +166,48 @@ class MigrationHooks(unittest.TestCase):
             self.assertNotIn(fake, saved)
             self.assertEqual(json.loads(saved)["signal"], "build_failed")
 
+    def _run_learning_log(self, payload):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(common, "_LOGS_DIR", Path(tmp)):
+            with mock.patch.object(learning_log, "read_hook_input", return_value=payload):
+                with self.assertRaises(SystemExit) as caught:
+                    learning_log.main()
+            self.assertEqual(caught.exception.code, 0)
+            log = Path(tmp) / "learning_log.log"
+            return json.loads(log.read_text(encoding="utf-8")) if log.exists() else None
+
+    def test_learning_log_records_only_classification_diagnostics(self):
+        fake = "FAKE_SECRET_FOR_TEST_ONLY"
+        trace = ("Traceback (most recent call last):\n  File \"x.py\", line 1, in <module>\n"
+                 f"    raise KeyError('{fake}')\njson.decoder.JSONDecodeError: Expecting value {fake}\n")
+        rec = self._run_learning_log({"tool_name": "Bash", "tool_input": {"command": "py -3 x.py"},
+                                      "tool_response": trace})
+        self.assertEqual((rec["signal"], rec["diag"]), ("python_trace", "json.decoder.JSONDecodeError"))
+        self.assertNotIn(fake, json.dumps(rec))
+        link = "a.obj : error " + "LNK" + "2019: unresolved external symbol " + fake
+        rec = self._run_learning_log({"tool_name": "PowerShell", "tool_input": {"command": "msbuild"},
+                                      "tool_response": link})
+        self.assertEqual((rec["signal"], rec["diag"]), ("msvc_link", "LNK" + "2019"))
+        rec = self._run_learning_log({"tool_name": "Bash", "tool_input": {"command": "make"},
+                                      "tool_response": "BUILD FAILED"})
+        self.assertEqual(rec["signal"], "build_failed")
+        self.assertNotIn("diag", rec)
+
+    def test_learning_log_ignores_quoted_failures_from_logs_and_transcripts(self):
+        record = json.dumps({"timestamp": "2026-08-06T04:42:55Z", "signal": "python_trace",
+                             "traceback": "Traceback (most recent call last):"})
+        self.assertIsNone(self._run_learning_log({"tool_name": "Bash", "tool_input": {"command": "py -3 summarize.py"},
+                                                  "tool_response": record + "\nok\n"}))
+        for command in ("tail -n 5 ~/.claude/hooks/logs/learning_log.log",
+                        "Get-Content C:\\Users\\me\\.claude\\hooks\\logs\\x.log",
+                        "py -3 read.py session.jsonl"):
+            with self.subTest(command=command):
+                self.assertIsNone(self._run_learning_log({"tool_name": "Bash", "tool_input": {"command": command},
+                                                          "tool_response": "build failed"}))
+        # A real failure after a quoted record is still captured.
+        rec = self._run_learning_log({"tool_name": "Bash", "tool_input": {"command": "py -3 x.py"},
+                                      "tool_response": record + "\nTraceback (most recent call last):\nValueError: x\n"})
+        self.assertEqual((rec["signal"], rec["diag"]), ("python_trace", "ValueError"))
+
     def test_exception_text_is_not_logged_or_returned(self):
         fake = "FAKE_EXCEPTION_SECRET_FOR_TEST_ONLY"
         def fail():

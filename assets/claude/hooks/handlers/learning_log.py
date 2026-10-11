@@ -2,7 +2,9 @@
 
 After a Bash or PowerShell tool call, scans the command output for strong failure signals
 (compile/link errors, build failures, tracebacks, missing files, etc.) and, on a
-match, appends one JSON line to ``hooks/logs/learning_log.log`` via ``log_event``.
+match, appends one JSON line to ``hooks/logs/learning_log.log`` via ``log_event``
+(signal plus an optional ``diag`` class/code; failure text quoted from logs or
+transcripts is not a capture).
 It NEVER blocks — always exits 0. The captured failures are later reviewed and
 promoted into CLAUDE.md rules by the ``learnings-review`` skill.
 
@@ -74,16 +76,45 @@ def _extract_text(payload: dict) -> str:
 
 def _match(text: str):
     for name, pat in _FAILURE_PATTERNS:
-        m = pat.search(text)
-        if m:
-            return name, m
+        for m in pat.finditer(text):
+            if not _in_log_record(text, m.start()):
+                return name, m
     return None, None
+
+
+# Reading hook logs or transcripts echoes old failure text that is not a failure
+# of this command; those re-captures were most of the noise in learnings-review.
+_LOG_READ_COMMAND = re.compile(r"hooks[/\\]+logs|learning_log|\.jsonl\b", re.IGNORECASE)
+# A JSON log/transcript record line ({"timestamp": ...}) quotes failures, it is not one.
+_LOG_RECORD_LINE = re.compile(r'^\s*\{.*"timestamp"\s*:')
+# Classification only: an exception class name or a fixed-format error code,
+# never message text (log_event drops free-form fields for the same reason).
+_EXC_LINE = re.compile(r"^([A-Za-z_][\w.]{0,80}(?:Error|Exception|Exit|Interrupt))(?::|\s*$)", re.M)
+_ERROR_CODE = re.compile(r"\b(?:C|CS|TS)\d{4}\b|\bLNK\d{4}\b")
+
+
+def _in_log_record(text: str, pos: int) -> bool:
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    return bool(_LOG_RECORD_LINE.match(text[start:end if end != -1 else len(text)]))
+
+
+def _diagnostic(name: str, m: re.Match, text: str) -> str | None:
+    if name == "python_trace":
+        found = _EXC_LINE.findall(text, m.end())
+        return found[-1] if found else None
+    code = _ERROR_CODE.search(m.group(0))
+    return code.group(0) if code else None
 
 
 def main() -> None:
     payload = read_hook_input()
 
     if payload.get("tool_name") not in _TARGET_TOOLS:
+        exit_allow()
+
+    command = str((payload.get("tool_input") or {}).get("command") or "")
+    if _LOG_READ_COMMAND.search(command):
         exit_allow()
 
     text = _extract_text(payload)
@@ -94,6 +125,10 @@ def main() -> None:
     if not name:
         exit_allow()  # success / no strong failure signal — capture nothing
 
+    fields = {}
+    diag = _diagnostic(name, m, text)
+    if diag:
+        fields["diag"] = diag
     log_event(
         _HOOK_NAME,
         event=_EVENT,
@@ -101,6 +136,7 @@ def main() -> None:
         signal=name,
         cwd=str(get_cwd(payload)),
         session=str(payload.get("session_id") or "default"),
+        **fields,
     )
 
     # Advisory only — never blocks.
