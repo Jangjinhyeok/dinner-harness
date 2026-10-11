@@ -36,6 +36,7 @@ When starting a small editable prop workflow without an established pipeline, co
 for modeling and same-model icon renders, with Krita for layered 2D edits. Use existing CLI/Python
 automation or an available DCC MCP according to the task; MCP is not required for asset creation.
 Add Meshy/Tripo, Krita AI Diffusion/Comfy or another generator only for an identified need.
+For candidate MCP servers, plugins and their connection checks, see [asset-gen-tools](../asset-gen-tools/SKILL.md).
 Verify current official compatibility, maintenance, costs and licenses when selecting a new dependency.
 Check tool code, model weights, generated-output terms and reference-image rights separately;
 record provenance relevant to portfolio redistribution and attribution. Do not assume every
