@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import subprocess
@@ -79,9 +80,54 @@ class MigrationHooks(unittest.TestCase):
                               .read_text(encoding="utf-8"))
         deny = set(template["permissions"]["deny"])
         for rule in ("PowerShell(Remove-Item *-Recurse*)", "PowerShell(Get-Content *.env*)",
-                     "PowerShell(gc *.env*)", "PowerShell(cat *.env*)", "PowerShell(type *.env*)",
-                     "PowerShell(*>.env*)"):
+                     "PowerShell(gc *.env*)", "PowerShell(cat *.env*)", "PowerShell(type *.env*)"):
             self.assertIn(rule, deny)
+        # Redirect protection lives in secret_scan's env_redirect for both shells: Bash rules
+        # never see redirect targets (verified live), and a `PowerShell(*>*.env*)` rule
+        # over-blocked any `.env` substring after `>` (e.g. `2>&1; [System.Environment]`).
+        self.assertFalse([rule for rule in deny if ">" in rule])
+
+    def test_env_redirect_is_blocked_for_both_shells(self):
+        patterns = secret_scan._load_patterns()
+        blocked = ["echo x > .env", "echo x >> C:/a/.env.local; date +%Y/%m",
+                   r"Write-Output x >C:\a\.env.test; Get-Date -Format yyyy/MM", "echo x 2> '.env'",
+                   'echo x *> "C:/a b/.env"', "cmd &> ./.env", "echo x>>.env.production",
+                   # partially quoted paths and case variants (NTFS is case-insensitive)
+                   'echo x > "$ROOT"/.env; ls', 'echo x > $ROOT/".env"', "echo x > 'C:/a b'/.env; ls",
+                   "echo x > .ENV", "echo x >> C:/A/.Env.Local; date +%Y/%m"]
+        allowed = ["py x.py 2>&1 | grep .env.example", "cat > s.py <<'EOF'\nimport os; os.environ\nEOF",
+                   'node -e "() => process.env.HOME"',
+                   "x 2>&1; [System.Environment]::GetEnvironmentVariable('A')",
+                   "echo x > .envrc", "echo x > notes.env.txt", "echo x > out.txt", "a -> .env",
+                   "echo x > .venv/cfg", 'echo x > "a"; echo "b/.env"', "echo x > .ENVRC",
+                   'echo x > "$ROOT"/out.txt']
+        for tool in ("Bash", "PowerShell"):
+            for command in blocked:
+                with self.subTest(tool=tool, blocked=command):
+                    hit = secret_scan._scan(tool, {"command": command}, patterns)
+                    self.assertIsNotNone(hit)
+                    self.assertIn(hit.pattern_name, ("env_redirect", "env_file"))
+            for command in allowed:
+                with self.subTest(tool=tool, allowed=command):
+                    self.assertIsNone(secret_scan._scan(tool, {"command": command}, patterns))
+        # Shapes that do not end in .env must hit env_redirect itself, not the end-anchored env_file.
+        for command in blocked:
+            if command.lower().endswith((".env", '.env"', ".env'", ".env.production")):
+                continue
+            with self.subTest(env_redirect=command):
+                self.assertEqual(secret_scan._scan("Bash", {"command": command}, patterns).pattern_name,
+                                 "env_redirect")
+        # A '>' inside a quoted string must not pair quotes across lines (env_redirect only;
+        # the end-anchored env_file is naive about trailing text and judged separately).
+        redirect = patterns["command_patterns"][0]["regex"]
+        self.assertIsNone(re.search(redirect, 'Write-Host "Done >ok"\n$p = Join-Path $root "cfg/.env.sample"\nls'))
+        for path in ("C:/w/.ENV", "C:/w/.Env.Local"):
+            with self.subTest(env_file=path):
+                self.assertEqual(secret_scan._scan("Write", {"file_path": path, "content": "x"},
+                                                   patterns).pattern_name, "env_file")
+        # Shell-only: a file path that merely contains '>' text is not judged by command rules.
+        self.assertIsNone(secret_scan._scan("Write", {"file_path": "C:/w/a.md", "content": "x > .env"},
+                                            patterns))
 
     def test_absent_unnamed_handoff_allows_without_error_log(self):
         with tempfile.TemporaryDirectory() as tmp, \

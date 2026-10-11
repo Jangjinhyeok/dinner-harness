@@ -130,6 +130,12 @@ def _scan(tool_name: str, tool_input: dict, patterns: dict) -> Optional[Match]:
         m = _scan_against(command, path_rules, "path", "<command>")
         if m:
             return m
+        # Shell-only shapes (e.g. a redirect into .env). Claude Code's Bash
+        # permission matcher drops redirect targets, so a deny rule cannot
+        # see them; this hook gets the full command string.
+        m = _scan_against(command, patterns.get("command_patterns", []), "path", "<command>")
+        if m:
+            return m
         return _scan_against(command, content_rules, "content", "<command>")
 
     if tool_name == "apply_patch":

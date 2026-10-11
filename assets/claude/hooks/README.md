@@ -108,10 +108,11 @@ Edit/Write/NotebookEdit/Bash/PowerShell 입력을 regex로 훑어 AWS access key
 
 ## 잡는 패턴
 
-검출 패턴의 단일 출처는 `rules/secret_patterns.json`이다. 최상위는 `version` 정수와 `content_patterns` / `path_patterns` 두 배열로 구성된다.
+검출 패턴의 단일 출처는 `rules/secret_patterns.json`이다. 최상위는 `version` 정수와 `content_patterns` / `path_patterns` / `command_patterns` 세 배열로 구성된다.
 
 - `content_patterns` → Edit의 `new_string` / Write의 `content` / NotebookEdit의 `new_source` / Bash·PowerShell의 `command` 전체 문자열에 매치.
 - `path_patterns` → Edit·Write의 `file_path`, NotebookEdit의 `notebook_path` 또는 Bash·PowerShell의 `command` 전체에 매치.
+- `command_patterns` → Bash·PowerShell의 `command` 전체에만 매치(2026-10-11 추가). `env_redirect`는 `>`/`>>`/`2>`/`*>`/`&>`/`>|`로 `.env*` 파일에 쓰는 리다이렉트를 막는다(부분 인용 경로 `"$ROOT"/.env` 포함, 대소문자 무시 — NTFS는 `.ENV`도 같은 파일). 같은 이유로 `env_file`도 대소문자를 무시한다. 리다이렉트 차단은 두 shell 모두 이 hook이 맡고, settings 템플릿에는 리다이렉트 deny rule을 두지 않는다. 이전 템플릿의 `Bash(*>.env*)`/`PowerShell(*>.env*)`는 `>.env`가 붙어 있을 때만 매치했고(경로·공백이 끼면 통과), 2026-10-11 작업 중 live에만 잠시 설치됐던 `PowerShell(*>*.env*)`는 `>` 뒤 아무 `.env` 부분 문자열 — 예: `2>&1; [System.Environment]` — 까지 막는 과차단이 있었다. **기존 설치는 수동 정리 필요:** settings 병합은 permission 목록을 합집합으로 보존하므로 `~/.claude/settings.json`의 `deny`에서 `Bash(*>.env*)`, `PowerShell(*>.env*)`, `Bash(*>*.env*)`, `PowerShell(*>*.env*)`를 직접 지운다(scope_check 보호 경로라 agent는 수정하지 않는다). 알려진 한계(fail-safe 방향의 오탐): 한 줄 안에서 `>`가 따옴표 문자열 안에 있으면 따옴표 짝이 어긋나 `echo "a > b" "c/.env"` 같은 명령이 막힐 수 있다(줄바꿈은 넘지 않는다). 미탐: `> $(pwd)/.env`, `> a\ b/.env`, `tee`/`Out-File`/`Set-Content` 같은 비-리다이렉트 쓰기. Claude Code의 Bash permission matcher는 리다이렉트 대상을 떼고 비교하는 것으로 보이며, 검증한 shape(`>>` + 절대경로, `;`/`#` 뒤 suffix)에서 `Bash(*>*.env*)` deny rule이 매치되지 않음을 live로 확인했기 때문이다(PowerShell deny는 전체 문자열에 매치되어 유효).
 
 각 엔트리는 `name`·`regex`·`severity` 세 필드를 갖고, 첫 매치가 곧바로 반환된다. Bash/PowerShell command는 shell tokenize 없이 명령 전체 문자열에 naive하게 regex를 거는 것이 v1 정책이다 (heredoc/pipe/redirection 분해 없음).
 
