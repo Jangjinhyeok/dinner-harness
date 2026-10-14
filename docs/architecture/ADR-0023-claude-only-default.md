@@ -63,3 +63,37 @@ Rationale: in a 1-CLI session these were never invoked but cost about 9.8KB of a
 Alternatives: A (only move the references out of auto-load) kept unused infrastructure in the Claude install; C (delete the orchestrator from the repo) would reverse the decision to keep Codex compatibility.
 
 Live leftovers from earlier installs are not deleted automatically. `harness.toml [targets.claude] retired_dests` lists the paths earlier manifests placed outside owned dirs; `check.py` reports any that still exist as blocking leftovers. This matters most for `rules/*.md`: Claude Code auto-loads them, so stale references would keep consuming context and contradict CLAUDE.md until removed. `route_nudge` no longer mentions HANDOFF/Builder dispatch.
+
+## Addendum 2026-10-14: Haiku 5.5 data reviewed, no routing change
+
+New data: VulcanBench Frontier v4, "Claude Haiku 5.5 vs Claude Sonnet 5.5, GPT-6.1 Sol and GPT-6 Luna" (2026-10-12, same 23 tasks × 5 efforts, Claude Code harness). https://vulcanbench.com/benchmarks/swe-v4-haiku55-vs-frontier.html
+
+| Effort | Haiku 5.5 combined | Judged n | Passed | $/task | Min/task |
+|---|---|---|---|---|---|
+| low | 84.42 ±1.97 | 23 | 13/23 | $1.04 | 22.9 |
+| medium | 84.03 ±2.50 | 22 | 13/23 | $1.36 | 24.0 |
+| high | 88.01 ±1.42 | 23 | 17/23 | $1.25 | 26.8 |
+| xhigh | 91.83 ±0.39 | 22 | 22/23 | $0.84 | 19.0 |
+| max | 92.16 ±0.37 | 21 | 22/23 | $1.54 | 27.7 |
+
+Comparison with the current `claude_only` profiles:
+
+| Role | Current | Haiku candidate | Verdict |
+|---|---|---|---|
+| builder_low | Opus low: 86.36, 17/23, $1.70, 13.7 min | xhigh: 91.83, 22/23, $0.84, 19.0 min | Haiku ahead on passes and cost even with its excluded failure scored 0 (≈87.8); kept as candidate, not applied |
+| builder_normal / architect / reviewer | Opus medium: 90.86 ±0.64, 23/23, $2.84 | xhigh as above | keep; the score edge disappears with the excluded failure scored 0 (≈87.8) and it passes one task fewer |
+| builder_high | Sonnet max: 92.02 ±0.35, 23/23, $5.52, 38 min | max: 92.16 ±0.37, 22/23, $1.54, 27.7 min | keep; score tie (0.14 points), one fewer pass, safety-stop risk on the role used for invariant/ownership work |
+| low/medium efforts | Opus low 86.36 / medium 90.86 | 84.42 / 84.03, 13/23 each | Haiku clearly behind |
+
+Decision: no change to `content/routing.toml` or native agent frontmatter.
+
+Reasons:
+
+1. Haiku's combined scores at medium/xhigh/max leave out paddockcore, where a safety classifier stopped the session with an empty patch (counted as failed in Passed, excluded from judged n). Scored as 0, xhigh drops to about 87.8 and falls below Opus medium. This is the same correction the report applies to GPT-6 Luna's timeouts.
+2. Haiku's combined edge comes mainly from model-judged Code quality, not tasks solved; it passes fewer tasks than Sonnet from low to high. Correctness matters more for the game-client work this harness targets.
+3. Haiku only wins at xhigh/max, but the Claude 1-CLI install has no effort control: `routing.toml` is not installed (Addendum 2026-10-11) and native agent frontmatter sets only `model: opus`. Changing the alias to `haiku` would likely run it at default effort, where it is weaker than Opus. Frontmatter effort support was not verified.
+4. The candidate `builder_low` change would only affect the headless `claude_only` path, which the Claude install no longer ships, and would put builder_low above builder_normal in effort.
+
+Limits: 23 tasks, one attempt per cell; judge protocols and Claude Code versions differ between columns (Haiku v3.24 on 2.1.293–2.1.296, Opus v3.15 on 2.1.280); Haiku has two price tiers by prompt length (sweep floor $31.10, ceiling $155.50, reported $138.31); API list-price basis, not subscription billing; not UE5/C++ specific.
+
+Revisit when: Claude native agents can set effort, the headless `claude_only` path is used again, or a run with failures scored (or a larger task set) is published. A `builder_low` → `claude-haiku-5-5` / xhigh change would then need fixture updates in `test_migration_routing.py` and an entry here.
