@@ -222,6 +222,11 @@ def _write_hooks_json(dest_root, plan, dry_run, command_root=None):
                     "matcher": "Edit|Write|apply_patch",
                     "hooks": [{"type": "command", "command": command("scope_check"), "timeout": 30}],
                 },
+                {
+                    # ADR-0024: dryrun unless CLAUDE_SHELL_GUARD_MODE says otherwise.
+                    "matcher": "Bash|PowerShell",
+                    "hooks": [{"type": "command", "command": command("shell_guard"), "timeout": 30}],
+                },
             ],
             # Native compaction is preferred. Learning-log capture is opt-in;
             # automatic command/error capture can retain sensitive content.

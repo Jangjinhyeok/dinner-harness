@@ -136,7 +136,7 @@ class TestCodexInstallMigration(unittest.TestCase):
         handlers.mkdir(parents=True)
         codex._write_hooks_json(root, [], False)
         groups = json.loads((root / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-        for name, group in zip(("secret_scan", "scope_check"), groups):
+        for name, group in zip(("secret_scan", "scope_check", "shell_guard"), groups):
             script = handlers / (name + ".py")
             script.write_text("import sys\ncode = int(sys.stdin.read())\nprint('fixture reached')\nsys.exit(code)\n")
             for code in (0, 1, 2):
@@ -168,7 +168,7 @@ class TestCodexInstallMigration(unittest.TestCase):
         with mock.patch.object(codex, "os", SimpleNamespace(name="posix")):
             codex._write_hooks_json(self.dest, [], False)
         groups = json.loads((self.dest / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-        for name, group in zip(("secret_scan", "scope_check"), groups):
+        for name, group in zip(("secret_scan", "scope_check", "shell_guard"), groups):
             self.assertEqual(shlex.split(group["hooks"][0]["command"]), [
                 Path(sys.executable).as_posix(),
                 (self.dest / "hooks/handlers" / (name + ".py")).as_posix(),
@@ -185,15 +185,18 @@ class TestCodexInstallMigration(unittest.TestCase):
         groups = json.loads((self.dest / "hooks.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
         env = dict(os.environ, DINNER_HARNESS_HOME=str(self.dest),
                    CLAUDE_SECRET_SCAN_MODE="enforce", CLAUDE_SCOPE_WHITELIST_MODE="dryrun",
+                   CLAUDE_SHELL_GUARD_MODE="enforce",
                    CLAUDE_SCOPE_FENCE=(self.dest / "allowed.txt").as_posix())
         cases = [
             (0, "Bash", {"command": "Write-Output harmless"}, 0),
             (0, "Write", {"file_path": str(self.dest / ".env"), "content": "harmless fixture"}, 2),
             (1, "apply_patch", {"command": "*** Begin Patch\n*** Add File: allowed.txt\n+harmless\n*** End Patch\n"}, 0),
             (1, "apply_patch", {"command": "*** Begin Patch\n*** Add File: .codex/hooks.json\n+harmless\n*** End Patch\n"}, 2),
+            (2, "PowerShell", {"command": "Get-ChildItem src"}, 0),
+            (2, "PowerShell", {"command": "Remove-Item src -Recurse"}, 2),
         ]
         for index, tool, tool_input, expected in cases:
-            name = ("secret_scan", "scope_check")[index]
+            name = ("secret_scan", "scope_check", "shell_guard")[index]
             payload = json.dumps({"tool_name": tool, "tool_input": tool_input, "cwd": str(self.dest)})
             direct = [sys.executable, str(self.dest / "hooks/handlers" / (name + ".py"))]
             wrapped = ["powershell.exe", "-NoProfile", "-Command", groups[index]["hooks"][0]["command"]]
@@ -412,7 +415,7 @@ class TestCodexInstallMigration(unittest.TestCase):
         self.render(adopt=True)
         result = json.loads(hook_file.read_text(encoding="utf-8"))
         entries = result["hooks"]["PreToolUse"]
-        self.assertEqual(len(entries), 4)  # 2 canonical plus 2 unrelated user entries.
+        self.assertEqual(len(entries), 5)  # 3 canonical plus 2 unrelated user entries.
         self.assertIn(user, entries)
         self.assertIn(modified, entries)
         self.assertEqual(result["hooks"]["PostToolUse"], [])

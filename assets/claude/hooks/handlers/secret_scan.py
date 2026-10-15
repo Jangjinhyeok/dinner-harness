@@ -127,7 +127,10 @@ def _scan(tool_name: str, tool_input: dict, patterns: dict) -> Optional[Match]:
         # Per HANDOFF Section 7.4: v1 policy applies path_patterns regex
         # to the entire command string (naive substring). No shell
         # tokenisation, no heredoc / pipe / redirection decomposition.
-        m = _scan_against(command, path_rules, "path", "<command>")
+        # Entries marked "command": false are file-path-only (ADR-0024): key-file names
+        # such as `*.pem` or `cfg.key` are too common in command text to match naively;
+        # reads of key material are covered by command_patterns instead.
+        m = _scan_against(command, [p for p in path_rules if p.get("command", True)], "path", "<command>")
         if m:
             return m
         # Shell-only shapes (e.g. a redirect into .env). Claude Code's Bash

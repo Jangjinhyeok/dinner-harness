@@ -19,15 +19,15 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 
 ## 한눈에
 
-|  | `secret_scan` | `scope_check` | `suggest_compact` | `learning_log` | `route_nudge` |
-|---|---|---|---|---|---|
-| 이벤트 | PreToolUse | PreToolUse | PreToolUse | PostToolUse | UserPromptSubmit |
-| matcher | Edit · Write · Bash · PowerShell | Edit · Write | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
-| 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge를 stdout으로 출력 (2026-07-02 재조준: 단일 도메인→`/umg` 등 라우터+포커스 문서, 멀티→architect 모드+dispatch 제안) |
-| 룰셋 | `rules/secret_patterns.json` | `rules/scope_protect.json` + `HANDOFF.md`의 scope 블록 | 없음 (`COMPACT_THRESHOLD` env, 기본 50) | 없음 (핸들러 내장 패턴) | 없음 (핸들러 내장 regex) |
-| 모드 env var | `CLAUDE_SECRET_SCAN_MODE` | `CLAUDE_SCOPE_WHITELIST_MODE` | 없음 (항상 advisory) | 없음 (항상 advisory) | 없음 (항상 advisory) |
-| 현재 모드 | enforce (2026-05-31 승격, ADR-0001 Gate 4) | dryrun (영구 — always-block layer만 실차단) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) |
-| 출처 | ADR-0001 | ADR-0005 | strategic-compact skill (ECC), 2026-06-01 | ADR-0004 / gap #4, 2026-06-01 | 2026-06-16, commit 09aa4f9 |
+|  | `secret_scan` | `scope_check` | `shell_guard` | `suggest_compact` | `learning_log` | `route_nudge` |
+|---|---|---|---|---|---|---|
+| 이벤트 | PreToolUse | PreToolUse | PreToolUse | PreToolUse | PostToolUse | UserPromptSubmit |
+| matcher | Edit · Write · Bash · PowerShell | Edit · Write | Bash · PowerShell | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
+| 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 파괴 셸 명령·git hook 우회 검출 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge를 stdout으로 출력 (2026-07-02 재조준: 단일 도메인→`/umg` 등 라우터+포커스 문서, 멀티→architect 모드+dispatch 제안) |
+| 룰셋 | `rules/secret_patterns.json` | `rules/scope_protect.json` + `HANDOFF.md`의 scope 블록 | 없음 (핸들러 내장 lexer·규칙) | 없음 (`COMPACT_THRESHOLD` env, 기본 50) | 없음 (핸들러 내장 패턴) | 없음 (핸들러 내장 regex) |
+| 모드 env var | `CLAUDE_SECRET_SCAN_MODE` | `CLAUDE_SCOPE_WHITELIST_MODE` | `CLAUDE_SHELL_GUARD_MODE` | 없음 (항상 advisory) | 없음 (항상 advisory) | 없음 (항상 advisory) |
+| 현재 모드 | enforce (2026-05-31 승격, ADR-0001 Gate 4) | dryrun (영구 — always-block layer만 실차단) | dryrun (2026-10-15 도입, 승격 기준은 ADR-0024) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) |
+| 출처 | ADR-0001 | ADR-0005 | ADR-0024; 규칙 분류·테스트 케이스는 affaan-m/ECC (MIT, commit b92f181) `scripts/lib/powershell-destructive-command.js`·`scripts/hooks/block-no-verify.js`에서 각색, 2026-10-15 | strategic-compact skill (ECC), 2026-06-01 | ADR-0004 / gap #4, 2026-06-01 | 2026-06-16, commit 09aa4f9 |
 
 > **2026-06-01: "추가 hook 없음" 결정 번복** — 사용자 승인 하에 advisory-only hook `suggest_compact`를 도입(2026-05-24 운영 확정 → 갱신). **핸들러·런처는 `hooks/`에 배치됐고 `settings.json.template`·로컬 `settings.json`(개인 PC) 양쪽에 등록 완료다(always-block이라 hand-edit 또는 off ceremony로 추가).** 이 hook은 secret_scan/scope_check와 달리 룰셋·모드·차단이 없고 stderr로 `/compact`를 제안만 한다. 핸들러는 `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅한 것. 상세는 맨 아래 "결정 이력" 참조.
 
@@ -114,6 +114,8 @@ Edit/Write/NotebookEdit/Bash/PowerShell 입력을 regex로 훑어 AWS access key
 - `path_patterns` → Edit·Write의 `file_path`, NotebookEdit의 `notebook_path` 또는 Bash·PowerShell의 `command` 전체에 매치.
 - `command_patterns` → Bash·PowerShell의 `command` 전체에만 매치(2026-10-11 추가). `env_redirect`는 `>`/`>>`/`2>`/`*>`/`&>`/`>|`로 `.env*` 파일에 쓰는 리다이렉트를 막는다(부분 인용 경로 `"$ROOT"/.env` 포함, 대소문자 무시 — NTFS는 `.ENV`도 같은 파일). 같은 이유로 `env_file`도 대소문자를 무시한다. 리다이렉트 차단은 두 shell 모두 이 hook이 맡고, settings 템플릿에는 리다이렉트 deny rule을 두지 않는다. 이전 템플릿의 `Bash(*>.env*)`/`PowerShell(*>.env*)`는 `>.env`가 붙어 있을 때만 매치했고(경로·공백이 끼면 통과), 2026-10-11 작업 중 live에만 잠시 설치됐던 `PowerShell(*>*.env*)`는 `>` 뒤 아무 `.env` 부분 문자열 — 예: `2>&1; [System.Environment]` — 까지 막는 과차단이 있었다. **기존 설치는 수동 정리 필요:** settings 병합은 permission 목록을 합집합으로 보존하므로 `~/.claude/settings.json`의 `deny`에서 `Bash(*>.env*)`, `PowerShell(*>.env*)`, `Bash(*>*.env*)`, `PowerShell(*>*.env*)`를 직접 지운다(scope_check 보호 경로라 agent는 수정하지 않는다). 알려진 한계(fail-safe 방향의 오탐): 한 줄 안에서 `>`가 따옴표 문자열 안에 있으면 따옴표 짝이 어긋나 `echo "a > b" "c/.env"` 같은 명령이 막힐 수 있다(줄바꿈은 넘지 않는다). 미탐: `> $(pwd)/.env`, `> a\ b/.env`, `tee`/`Out-File`/`Set-Content` 같은 비-리다이렉트 쓰기. Claude Code의 Bash permission matcher는 리다이렉트 대상을 떼고 비교하는 것으로 보이며, 검증한 shape(`>>` + 절대경로, `;`/`#` 뒤 suffix)에서 `Bash(*>*.env*)` deny rule이 매치되지 않음을 live로 확인했기 때문이다(PowerShell deny는 전체 문자열에 매치되어 유효).
 
+2026-10-15(ADR-0024) 키 자료 경로를 추가했다: `ssh_material`(`.ssh/` 경로, `id_rsa`·`id_dsa`·`id_ecdsa`·`id_ed25519`; `.pub` 제외), `private_key_file`(`.pem`·`.key`·`.p12`·`.pfx`·`.p8`·`.keystore`·`.jks`·`.mobileprovision`), `credential_dotfile`(`.netrc`·`_netrc`·`.pgpass`·`.aws/credentials`). 이 셋은 `"command": false`라 **파일 경로(Edit/Write/NotebookEdit/apply_patch)에만** 적용된다 — 명령 문자열 전체에 걸면 `*.pem` glob, `cfg.key` 같은 코드, `signtool /f cert.pfx`·`-mobileprovision=...` 같은 서명·패키징 명령까지 막혔다(독립 리뷰에서 확인). 명령 쪽은 `command_patterns`에서 읽기·복사 명령(`Get-Content`·`gc`·`cat`·`type`·`more`·`less`·`head`·`tail`·`bat`·`Copy-Item`·`copy`·`cp`, 키 자료는 `xxd`·`base64`·`od`·`strings`도)의 인자일 때만 잡는다: `key_material_read`(위 키 자료), `env_file_arg`(`.env*`; `grep .env.example` 같은 문자열 인자는 제외). 서명 도구가 키 경로를 넘겨받는 것은 의도적으로 허용한다. 알려진 미탐: `grep`·`rg`·`sed`·`awk`·`findstr`·`Select-String`은 첫 인자가 검색 패턴이라 넣으면 `grep -rn id_rsa docs` 같은 문자열 검색이 막히므로 제외했다 — 이 경로의 키 읽기는 이 hook이 보지 않는다(Bash의 `sed` 등은 Claude Code가 `Read` deny를 적용한다고 문서화돼 있으나 runtime 검증은 하지 않았다). 알려진 오탐 후보: UE 엔진의 `Engine/Content/Certificates/ThirdParty/cacert.pem`(공개 CA 번들). 이름만으로 판단하기 어려운 `Secrets.ini`·`service-account.json`은 넣지 않았다 — 실제 키 본문은 `content_patterns`(`pem_block` 등)가 Write 시점에 잡는다.
+
 각 엔트리는 `name`·`regex`·`severity` 세 필드를 갖고, 첫 매치가 곧바로 반환된다. Bash/PowerShell command는 shell tokenize 없이 명령 전체 문자열에 naive하게 regex를 거는 것이 v1 정책이다 (heredoc/pipe/redirection 분해 없음).
 
 **패턴 추가**는 해당 JSON에 한 줄을 더하는 일이다. regex는 Python `re` 문법을 따르고 JSON 내부 이중 이스케이프에 주의한다. `severity`는 메타데이터로 로그에만 남으며 분기 로직은 쓰지 않는다.
@@ -124,13 +126,35 @@ Edit/Write/NotebookEdit/Bash/PowerShell 입력을 regex로 훑어 AWS access key
 
 ---
 
+# shell_guard (ADR-0024)
+
+Bash/PowerShell `command`를 작은 lexer로 statement·pipeline·token으로 나눠 파괴 명령과 git hook 우회를 검출한다. 따옴표 안 문자열(커밋 메시지 등)·주석·heredoc 본문은 명령으로 보지 않고, `pwsh -c`·`iex`·`cmd /c`·`bash -c`·`Start-Process`·`-EncodedCommand`·`{ }`·`$( )`·백틱 치환 안의 명령은 재귀로 검사한다(깊이 12 초과 시 `scan-depth-exceeded`).
+
+| rule id | 대상 |
+|---|---|
+| `remove.recurse` · `remove.wildcard` · `remove.splat` · `remove.pipeline-recurse` | `Remove-Item`/`ri`/`rm`/`rmdir`/`rd`/`del`/`erase`/`rp`의 `-Recurse`(접두 축약 포함)·`-rf`류·`--recursive`, `*`/`?` 대상(`-LiteralPath` 제외), `@splat`, 상류에 `-Recurse`가 있는 pipeline 삭제 |
+| `cmd.recursive-delete` | `rd`/`rmdir`/`del`/`erase`의 `/s` |
+| `clear-content` · `clear-disk` · `format-volume` | 해당 cmdlet (`clc` 포함) |
+| `dotnet.directory-delete` · `dotnet.file-delete` | `[IO.Directory]::Delete(`·`[IO.File]::Delete(` |
+| `robocopy.mirror` · `find.delete` | `robocopy /MIR`·`/PURGE`, `find -delete`·`-exec rm` (ECC에 없어 추가) |
+| `git.no-verify` · `git.hooks-path` · `git.husky-disabled` | commit/push/merge/cherry-pick/rebase/am의 `--no-verify`(접두 `--no-v`부터)와 commit `-n` cluster; `-c`/`--config-env`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_PARAMETERS`의 `core.hooksPath`·`include.path`·`includeIf.*.path`; `git config <그 키> <값>`; `HUSKY=0` |
+| `dynamic-execution` | `iex $x`, `pwsh -Command $x`처럼 내용을 볼 수 없는 실행 |
+
+ECC와 다른 점: 단독 `-Force`는 잡지 않는다(단일 파일 강제 삭제는 일상적). 백틱은 Bash tool에서만 명령 치환으로 보고(작은따옴표 안 제외), PowerShell tool에서는 escape로만 본다. `@' … '@` here-string은 literal이며 `@" … "@` 안의 `$( )`만 검사한다. `$x = <명령>` 대입, `timeout N`·`wsl`·`sudo`·`env`·`xargs` 같은 wrapper 뒤의 명령도 검사한다. **엔진 정리 허용 목록**: cwd에 `*.uproject`가 있으면 `Intermediate`·`Binaries`·`DerivedDataCache`·`Saved/Logs`, `ProjectSettings/ProjectVersion.txt`가 있으면 `Library`·`Temp`·`obj`·`bin`을 그 루트 기준 정확한 경로로 지울 때만 recurse 판정을 면제한다(wildcard·변수·여러 대상 중 하나라도 밖이면, 또는 같은 명령 안에 `cd`·`Set-Location`·`sl`·`pushd`가 있으면 면제 없음). `-ErrorAction`/`-ea` 같은 공통 매개변수 값과 `2>$null` 같은 redirection은 대상으로 보지 않는다.
+
+**한계 (containment 아님).** 실행 시점에 계산되는 값(변수 조합, `python -c "shutil.rmtree(...)"`, 디스크의 스크립트)은 보지 못한다. 인터랙티브 세션에서는 timeout·crash 시 fail-open이다. native Windows에는 Claude Code sandbox가 없으므로(macOS/Linux/WSL2 전용) 셸 쓰기의 실제 containment는 없다.
+
+**운영.** dryrun으로 시작해 `logs/shell_guard.log`에 `rules` 분류만 남긴다(명령 본문은 기록하지 않음). enforce 승격 기준은 1주 dryrun·실사용 오탐 0건·warn 기록 전수 검토(ADR-0024). 승격 시점까지 `settings.json`의 `Bash(rm -rf *)`·`PowerShell(Remove-Item *-Recurse*)` deny는 유지하고, 승격 때 템플릿에서 빼며 기존 설치는 수동으로 지운다(permission 목록은 합집합 병합이라 자동 제거되지 않음).
+
+---
+
 # scope_check (ADR-0005)
 
 secret_scan과 동일한 인프라를 재사용하는 두 번째 hook. matcher는 structured edit payload인 `Edit|Write|NotebookEdit`이며 Codex adapter에서는 `apply_patch`도 포함한다. Bash/PowerShell write는 이 layer의 범위 밖이다. 이는 누락이 아니라 workflow guard와 sandbox의 책임을 분리한 의도된 설계다. 목적은 Builder가 한 cycle에서 의도된 스코프 밖 파일을 수정하거나, cycle과 무관하게 보호돼야 할 인프라 파일을 건드리는 것을 막는 것이다.
 
 ## 2-layer 판정
 
-- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 **hook-integrity 핵심 파일** 블랙리스트. `settings.json` / `settings.local.json`(hook 배선)과 `hooks/handlers/`·`hooks/lib/`·`hooks/launchers/`·`hooks/rules/`(hook 본체) **6 entries**. Edit/Write/NotebookEdit/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이고 `~/.claude/` 경로 안에서만 적용된다. Shell write의 containment는 sandbox 책임이다.
+- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 **hook-integrity 핵심 파일** 블랙리스트. `settings.json` / `settings.local.json`(hook 배선)과 `hooks/handlers/`·`hooks/lib/`·`hooks/launchers/`·`hooks/rules/`(hook 본체) **6 entries**. Edit/Write/NotebookEdit/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이고 `~/.claude/` 경로 안에서만 적용된다. Shell write의 containment는 sandbox 책임이다(단 native Windows에는 sandbox가 없다 — ADR-0024).
   - *(36ab046 이전엔 `CLAUDE.md`·`HANDOFF.md`·`rules/_mode/`·`roles/ROLE_*.md`도 always-block이었으나 제외했다 — 자가-config·워크플로우 정의는 ceremony 없이 편집 가능하게 두고, 이들의 보호는 scope codeblock layer의 advisory 차원과 `builder.md` 구두 규약에만 의존한다.)*
 - **scope codeblock** (`HANDOFF.md`의 첫 ` ```scope ` 블록): 그 cycle에서 Builder가 수정해도 되는 파일 화이트리스트. 블록이 없거나 비어 있으면 fail-open(allow)이라 ADR-0005 이전 cycle의 HANDOFF와도 호환된다.
 
@@ -211,7 +235,7 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 
 **모드 전환.** env var를 `enforce`로 잡고 새 `claude` 세션을 띄운다. 현재 세션엔 적용되지 않는다. 되돌리려면 변수를 지우거나 다른 값으로 바꾼다.
 
-**새 hook 추가.** 패턴은 두 기존 hook과 동일하다 — `launchers/<name>.cmd`에 세 줄 BAT (`@echo off` / `py -3 "%USERPROFILE%\.claude\hooks\handlers\<name>.py"` / `exit /b %ERRORLEVEL%`), `handlers/<name>.py`의 `main()` 정의 후 `__main__`에서 반드시 `run_handler(main, hook_name="<name>")` 경유, 필요 시 `rules/<name>_patterns.json`, 마지막으로 `settings.json`에 BAT 절대경로 등록. (현재 추가 계획은 없다 — "결정 이력" 참조. 향후 추가하게 되면 이 패턴을 따른다.)
+**새 hook 추가.** 패턴은 두 기존 hook과 동일하다 — `launchers/<name>.cmd`에 세 줄 BAT (`@echo off` / `py -3 "%USERPROFILE%\.claude\hooks\handlers\<name>.py"` / `exit /b %ERRORLEVEL%`), `handlers/<name>.py`의 `main()` 정의 후 `__main__`에서 반드시 `run_handler(main, hook_name="<name>")` 경유, 필요 시 `rules/<name>_patterns.json`, 마지막으로 `settings.json`에 BAT 절대경로 등록. (`shell_guard`가 이 패턴으로 추가됐다 — "결정 이력" 참조.)
 
 **다른 머신 동기화.** 동기화 대상은 `hooks/{launchers,handlers,rules,lib}`와 상위 `~/.claude/`의 `skills/`·`agents/`·`CLAUDE.md`·`HANDOFF.md`다. `settings.json`은 절대경로가 박혀 machine-specific이라 신규 머신에서 새로 작성한다. `hooks/logs/`는 동기화 안 한다. `~/.claude` 자체가 GitHub repo이므로 home 머신에서는 pull/push로 옮긴다. **회사 PC에서는 `git`을 쓰지 않는다** — commit author email로 개인 정보가 노출될 위험이 있어 zip 추출/수동 복사로만 옮긴다.
 
@@ -226,3 +250,5 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 **route_nudge 도입 (2026-06-16, commit 09aa4f9; 2026-10-11 ADR-0023 inline protocol).** 첫 **UserPromptSubmit** hook이자 세 번째 advisory hook이다. 구현 의도 prompt마다 stdout으로 default execution route를 주입한다. ADR-0023 이후 내용은 inline 기본(탐색 → 구현 → 검증 → 보고)이며 HANDOFF/Builder dispatch는 opt-in, HIGH 신호는 독립 검토와 사용자 수용을 요구한다는 안내다(이전의 Codex Builder-first 라우팅은 폐기). UE 도메인 신호(UMG/GAS/Replication/Blueprint 또는 generic UE)는 focused reference consult 권고를 추가한다. 차단·직접 dispatch는 하지 않으며 항상 exit 0이다. 핸들러 `hooks/handlers/route_nudge.py`, 런처 `hooks/launchers/route_nudge.cmd`, `settings.json.template`의 `UserPromptSubmit` 등록을 사용한다.
 
 **scope_check 영구 dryrun 재확인 (2026-06-16, conformance 감사).** 회사·개인 PC 양쪽 실사용 감사가 scope_check를 "거의 전부 dryrun/자가테스트 → enforce 승격 or 일몰" 후보로 봤으나, 이는 always-block layer의 실차단 가치를 누락한 판단이다. always-block(`settings.json`·`hooks/` 본체)은 dryrun에서도 즉시 block(exit 2)이라 hook-integrity 보호는 이미 작동 중이고, scope codeblock enforce는 ad-hoc 편집 마찰만 키운다. 따라서 **영구 dryrun 유지**를 재확인한다(§"모드별 동작" 근거 불변).
+
+**shell_guard 도입 (2026-10-15, ADR-0024).** "차단형 hook 추가 계획 없음"을 번복한다. permission deny glob이 파괴 셸 명령을 쉽게 놓치고(`rm -r -fo`, `rd /s /q`, 백틱, `pwsh -c` 등) 반대로 엔진 정리 명령을 막으며, git hook 우회를 아무도 보지 않았고, native Windows에는 sandbox가 없다는 점이 확인됐다. 새 PreToolUse hook `shell_guard`를 자체 모드(`CLAUDE_SHELL_GUARD_MODE`)로 dryrun부터 도입하고, 민감 경로 확장은 enforce 중인 `secret_scan` 룰셋에 넣었다. 규칙 분류와 테스트 케이스는 affaan-m/ECC(MIT, commit b92f181)에서 각색했다. 승격 기준과 deny glob 단계적 대체는 ADR-0024.

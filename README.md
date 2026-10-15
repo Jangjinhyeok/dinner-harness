@@ -193,10 +193,11 @@ Source catalog입니다. Codex 설치 대상과 설정은 `harness.toml`과 생�
 - `unity-specialist`
 - `unreal-specialist`
 
-### Hooks (5)
+### Hooks (6)
 
 - `learning_log`
 - `route_nudge`
 - `scope_check`
 - `secret_scan`
+- `shell_guard`
 - `suggest_compact`

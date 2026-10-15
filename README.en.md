@@ -176,10 +176,11 @@ Source catalog. The manifest and generated checks determine Codex installation c
 - `unity-specialist`
 - `unreal-specialist`
 
-### Hooks (5)
+### Hooks (6)
 
 - `learning_log`
 - `route_nudge`
 - `scope_check`
 - `secret_scan`
+- `shell_guard`
 - `suggest_compact`
