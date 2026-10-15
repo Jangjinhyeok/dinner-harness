@@ -20,6 +20,9 @@ Checks (CI runs source checks with --no-install; live checks are local):
      leftovers affect exit status. Machine-local by nature: `--no-install` skips it.
   5. Codex skill discovery — report duplicate local skill names as advisory; ownership and
      runtime loading are not inferred.
+  6. hidden unicode — zero-width and bidi control characters in `content/` and `assets/` text
+     files (a leading BOM is allowed). Guards against invisible text arriving with external
+     content; runs with `--no-install`.
 
 Usage:
   py -3 check.py            run all checks; exit 0 if clean, 1 if drift (human-readable report)
@@ -125,6 +128,41 @@ def check_curation():
                 "  Review `git diff content/instructions/CLAUDE.md`; Codex uses --target codex generated validation.",
                 f"  blessed={blessed[:16]}… current={current[:16]}…"]
     return []
+
+
+HIDDEN_UNICODE_ROOTS = ("content", "assets")
+# Zero-width (U+200B-U+200D, U+2060, U+FEFF) and bidi controls (U+202A-U+202E, U+2066-U+2069).
+_HIDDEN_UNICODE_RE = re.compile("[\u200b-\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069]")
+# Runtime artifacts, gitignored — not source content.
+_HIDDEN_UNICODE_SKIP_DIRS = {"__pycache__", "logs"}
+
+
+def check_hidden_unicode(repo=None):
+    repo = Path(repo) if repo else REPO
+    problems = []
+    for root_rel in HIDDEN_UNICODE_ROOTS:
+        root = repo / root_rel
+        if not root.is_dir():
+            continue
+        for f in sorted(root.rglob("*")):
+            if not f.is_file() or _HIDDEN_UNICODE_SKIP_DIRS & set(f.relative_to(repo).parts):
+                continue
+            raw = f.read_bytes()
+            if b"\0" in raw:
+                continue  # binary
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue  # not UTF-8 text
+            rel = f.relative_to(repo).as_posix()
+            # split("\n"), not splitlines(): keep line numbers aligned with editors
+            # when the file contains \x0c, \x85, U+2028 and other splitlines breaks.
+            for lineno, line in enumerate(text.split("\n"), 1):
+                for m in _HIDDEN_UNICODE_RE.finditer(line):
+                    if lineno == 1 and m.start() == 0 and m.group() == "\ufeff":
+                        continue  # leading BOM
+                    problems.append(f"{rel}:{lineno}:{m.start() + 1}: U+{ord(m.group()):04X}")
+    return problems
 
 
 def _installer():
@@ -572,6 +610,13 @@ def main(argv=None):
     targets = INSTALL_TARGETS if args.target == "all" else (args.target,)
     declared, cat_problems, cur_problems, generated_problems = _collect_source_checks(targets)
     _report_source_checks(targets, declared, cat_problems, cur_problems, generated_problems)
+    unicode_problems = check_hidden_unicode()
+    print("[hidden-unicode] " + (f"FAIL ({len(unicode_problems)}건) — zero-width/bidi control 제거 필요:"
+                                 if unicode_problems else "content/ + assets/ 숨은 유니코드 없음"))
+    for p in unicode_problems[:20]:
+        print("  -", p)
+    if len(unicode_problems) > 20:
+        print(f"  … 외 {len(unicode_problems) - 20}건")
     inst_problems = []
     if args.no_install:
         print("[install] skipped (--no-install)")
@@ -582,7 +627,8 @@ def main(argv=None):
             if present:
                 inst_problems += problems + blocking
     _run_discovery(targets, args)
-    return 0 if not (cat_problems or cur_problems or generated_problems or inst_problems) else 1
+    return 0 if not (cat_problems or cur_problems or generated_problems or unicode_problems
+                     or inst_problems) else 1
 
 
 if __name__ == "__main__":

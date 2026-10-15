@@ -22,3 +22,6 @@ Engine MCP requires its server and editor plugin/package plus a running editor. 
 capabilities and current official setup before registration. The template alone does not register
 Codex MCP servers. MCP editor mutations may bypass file-edit hooks; use the authorized scope and
 a suitable test copy. Do not create/switch branches merely to use a template or editor.
+JSON has no comments, so mcp.json carries its rules inside the `<FILL IN>` placeholders: pin an
+exact server package version (`pkg@1.2.3`); never use `@latest` or an unversioned `npx`/`uvx`
+package, which can run a different release than the one you reviewed.

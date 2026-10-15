@@ -260,6 +260,18 @@ def _timeout_kill(hook_name: str) -> None:
                 sys.stderr.flush()
             except Exception:
                 pass
+        else:
+            # Interactive fail-open: still allow, but say so — otherwise a slow
+            # secret_scan is indistinguishable from one that found nothing.
+            try:
+                sys.stderr.write(
+                    f"[WARN] {hook_name}: handler exceeded its "
+                    f"{int(_HANDLER_TIMEOUT_SECONDS * 1000)}ms budget — "
+                    "not checked, allowing\n"
+                )
+                sys.stderr.flush()
+            except Exception:
+                pass
     finally:
         os._exit(_TIMEOUT_EXIT_CODE)
 

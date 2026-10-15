@@ -83,7 +83,7 @@ Claude가 Edit/Write/NotebookEdit/Bash/PowerShell 호출
 
 ## Fail-open 안전망
 
-"핸들러 버그가 사용자 작업을 막아선 안 된다"는 계약을 `lib/common.py`의 `run_handler()` wrapper가 강제한다. wrapper는 `main()`을 200ms `threading.Timer` 안에서 돌리며 `Exception`, `KeyboardInterrupt`, `SystemExit(코드 ≠ 2)`, timeout을 전부 잡는다. 잡힌 예외는 `<name>.error.log`에 traceback과 함께 기록된 뒤 exit 0으로 빠진다. 즉 핸들러 안에서 무슨 일이 나도 도구 호출은 통과한다. **exit 2가 Claude Code까지 전달되는 경로는 단 하나 — `main()`이 명시적으로 `exit_block()`(= `SystemExit(2)`)을 호출한 경우뿐이다.**
+"핸들러 버그가 사용자 작업을 막아선 안 된다"는 계약을 `lib/common.py`의 `run_handler()` wrapper가 강제한다. wrapper는 `main()`을 200ms `threading.Timer` 안에서 돌리며 `Exception`, `KeyboardInterrupt`, `SystemExit(코드 ≠ 2)`, timeout을 전부 잡는다. 잡힌 예외는 `<name>.error.log`에 traceback과 함께 기록된 뒤 exit 0으로 빠진다(timeout이면 stderr에 `[WARN] <hook>: handler exceeded its 200ms budget — not checked, allowing` 한 줄을 남긴다). 즉 핸들러 안에서 무슨 일이 나도 도구 호출은 통과한다. **exit 2가 Claude Code까지 전달되는 경로는 단 하나 — `main()`이 명시적으로 `exit_block()`(= `SystemExit(2)`)을 호출한 경우뿐이다.**
 
 이 safety net은 Python 핸들러 영역에 한정된다. Python 도달 전 단계 — BAT 실행 실패, `py` launcher 부재, `settings.json` 파싱 오류, hook command argument escaping 결함 — 은 wrapper 사정거리 밖이다. 이쪽 문제는 hook이 아예 발화하지 않거나 Claude Code가 에러를 토하는 형태로 드러나며, 진단은 `claude --debug` 출력과 `settings.json`을 직접 확인하는 수밖에 없다.
 

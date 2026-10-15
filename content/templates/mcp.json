@@ -2,12 +2,12 @@
   "mcpServers": {
     "unreal": {
       "command": "<FILL IN — server launcher, e.g. uv>",
-      "args": ["<FILL IN — exact args from the chosen repo README, e.g. run, /abs/path/to/server.py>"],
+      "args": ["<FILL IN — exact args from the chosen repo README, e.g. run, /abs/path/to/server.py; pin an exact package version (pkg@1.2.3), never @latest or an unversioned npx/uvx package>"],
       "env": {}
     },
     "unity": {
       "command": "<FILL IN — server launcher, e.g. uv or node>",
-      "args": ["<FILL IN — exact args from the chosen repo README>"],
+      "args": ["<FILL IN — exact args from the chosen repo README; pin an exact package version (pkg@1.2.3), never @latest or an unversioned npx/uvx package>"],
       "env": {}
     }
   }
