@@ -725,6 +725,8 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIn("no HANDOFF/Builder dispatch", message)
         self.assertNotIn("goes through Codex", message)
         self.assertNotIn("delegate workflow", message)
+        self.assertIn("[language]", message)
+        self.assertIn("세션 끝까지 한국어", message)
 
     def test_ordinary_write_intent_gets_inline_route_in_any_repo(self):
         route = route_nudge.message_for_prompt("Implement a local date formatter.")

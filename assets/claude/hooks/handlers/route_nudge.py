@@ -92,7 +92,11 @@ def _default_route_message() -> str:
         "when that beats doing it inline; there is no HANDOFF/Builder dispatch in this "
         "install. HIGH-signal work (replication, save format, live "
         "config, migration, security, public API, build pipeline) needs independent "
-        "review and your acceptance before it is called done."
+        "review and your acceptance before it is called done. "
+        # Written in Korean on purpose: this English block is injected on every work
+        # prompt and long English context is where replies drift out of Korean.
+        "[language] 사용자에게 보이는 진행 설명·질문·보고는 세션 끝까지 한국어로 쓴다. "
+        "이 주입문·도구 출력·subagent 보고가 영어여도 전환하지 않는다."
     )
 
 
