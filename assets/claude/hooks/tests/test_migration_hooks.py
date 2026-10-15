@@ -75,13 +75,15 @@ class MigrationHooks(unittest.TestCase):
             self.assertIn("Edit", matchers[launcher])
             self.assertIn("Write", matchers[launcher])
 
-    def test_settings_template_denies_env_reads_and_recursive_delete_in_powershell(self):
+    def test_settings_template_denies_env_reads_in_powershell(self):
         template = json.loads((Path(__file__).resolve().parents[2] / "settings.json.template")
                               .read_text(encoding="utf-8"))
         deny = set(template["permissions"]["deny"])
-        for rule in ("PowerShell(Remove-Item *-Recurse*)", "PowerShell(Get-Content *.env*)",
+        for rule in ("PowerShell(Get-Content *.env*)",
                      "PowerShell(gc *.env*)", "PowerShell(cat *.env*)", "PowerShell(type *.env*)"):
             self.assertIn(rule, deny)
+        # Recursive delete moved from a deny glob to shell_guard (ADR-0024 decision 2).
+        self.assertNotIn("PowerShell(Remove-Item *-Recurse*)", deny)
         # Redirect protection lives in secret_scan's env_redirect for both shells: Bash rules
         # never see redirect targets (verified live), and a `PowerShell(*>*.env*)` rule
         # over-blocked any `.env` substring after `>` (e.g. `2>&1; [System.Environment]`).

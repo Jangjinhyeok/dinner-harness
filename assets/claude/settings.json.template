@@ -7,7 +7,6 @@
     },
   "permissions": {
     "deny": [
-      "Bash(rm -rf *)",
       "Bash(git reset --hard*)",
       "Bash(git clean -f*)",
       "Bash(git push --force*)",
@@ -18,7 +17,6 @@
       "PowerShell(git push -f *)",
       "Bash(cat *.env*)",
       "Bash(type *.env*)",
-      "PowerShell(Remove-Item *-Recurse*)",
       "PowerShell(Get-Content *.env*)",
       "PowerShell(gc *.env*)",
       "PowerShell(cat *.env*)",

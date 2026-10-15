@@ -144,7 +144,7 @@ ECC와 다른 점: 단독 `-Force`는 잡지 않는다(단일 파일 강제 삭�
 
 **한계 (containment 아님).** 실행 시점에 계산되는 값(변수 조합, `python -c "shutil.rmtree(...)"`, 디스크의 스크립트)은 보지 못한다. 인터랙티브 세션에서는 timeout·crash 시 fail-open이다. native Windows에는 Claude Code sandbox가 없으므로(macOS/Linux/WSL2 전용) 셸 쓰기의 실제 containment는 없다.
 
-**운영.** dryrun으로 시작해 `logs/shell_guard.log`에 `rules` 분류만 남긴다(명령 본문은 기록하지 않음). enforce 승격 기준은 1주 dryrun·실사용 오탐 0건·warn 기록 전수 검토(ADR-0024). 승격 시점까지 `settings.json`의 `Bash(rm -rf *)`·`PowerShell(Remove-Item *-Recurse*)` deny는 유지하고, 승격 때 템플릿에서 빼며 기존 설치는 수동으로 지운다(permission 목록은 합집합 병합이라 자동 제거되지 않음).
+**운영.** dryrun으로 시작해 `logs/shell_guard.log`에 `rules` 분류만 남긴다(명령 본문은 기록하지 않음). enforce 승격 기준은 1주 dryrun·실사용 오탐 0건·warn 기록 전수 검토(ADR-0024). `Bash(rm -rf *)`·`PowerShell(Remove-Item *-Recurse*)` deny는 2026-10-15 템플릿에서 뺐다(ADR-0024 결정 2 갱신). 그래서 enforce 승격 전까지 파괴 명령은 경고·기록만 되고 차단되지 않는다. 기존 설치는 `~/.claude/settings.json`에서 이 두 줄을 사용자가 직접 지운다(permission 목록은 합집합 병합이라 설치로 자동 제거되지 않음).
 
 ---
 
@@ -251,4 +251,4 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 
 **scope_check 영구 dryrun 재확인 (2026-06-16, conformance 감사).** 회사·개인 PC 양쪽 실사용 감사가 scope_check를 "거의 전부 dryrun/자가테스트 → enforce 승격 or 일몰" 후보로 봤으나, 이는 always-block layer의 실차단 가치를 누락한 판단이다. always-block(`settings.json`·`hooks/` 본체)은 dryrun에서도 즉시 block(exit 2)이라 hook-integrity 보호는 이미 작동 중이고, scope codeblock enforce는 ad-hoc 편집 마찰만 키운다. 따라서 **영구 dryrun 유지**를 재확인한다(§"모드별 동작" 근거 불변).
 
-**shell_guard 도입 (2026-10-15, ADR-0024).** "차단형 hook 추가 계획 없음"을 번복한다. permission deny glob이 파괴 셸 명령을 쉽게 놓치고(`rm -r -fo`, `rd /s /q`, 백틱, `pwsh -c` 등) 반대로 엔진 정리 명령을 막으며, git hook 우회를 아무도 보지 않았고, native Windows에는 sandbox가 없다는 점이 확인됐다. 새 PreToolUse hook `shell_guard`를 자체 모드(`CLAUDE_SHELL_GUARD_MODE`)로 dryrun부터 도입하고, 민감 경로 확장은 enforce 중인 `secret_scan` 룰셋에 넣었다. 규칙 분류와 테스트 케이스는 affaan-m/ECC(MIT, commit b92f181)에서 각색했다. 승격 기준과 deny glob 단계적 대체는 ADR-0024.
+**shell_guard 도입 (2026-10-15, ADR-0024).** "차단형 hook 추가 계획 없음"을 번복한다. permission deny glob이 파괴 셸 명령을 쉽게 놓치고(`rm -r -fo`, `rd /s /q`, 백틱, `pwsh -c` 등) 반대로 엔진 정리 명령을 막으며, git hook 우회를 아무도 보지 않았고, native Windows에는 sandbox가 없다는 점이 확인됐다. 새 PreToolUse hook `shell_guard`를 자체 모드(`CLAUDE_SHELL_GUARD_MODE`)로 dryrun부터 도입하고, 민감 경로 확장은 enforce 중인 `secret_scan` 룰셋에 넣었다. 규칙 분류와 테스트 케이스는 affaan-m/ECC(MIT, commit b92f181)에서 각색했다. 승격 기준은 ADR-0024. 파괴 명령 deny glob 2줄은 처음에는 승격 때 빼기로 했으나 같은 날 사용자 결정으로 바로 뺐다.

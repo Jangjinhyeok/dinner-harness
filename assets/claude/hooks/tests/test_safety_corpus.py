@@ -437,9 +437,10 @@ class HandlerContract(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["matcher"], "Bash|PowerShell")
         self.assertEqual(template["env"]["CLAUDE_SHELL_GUARD_MODE"], "dryrun")
-        # Decision 2 (ADR-0024): the deny globs stay until shell_guard is promoted to enforce.
-        self.assertIn("Bash(rm -rf *)", template["permissions"]["deny"])
-        self.assertIn("PowerShell(Remove-Item *-Recurse*)", template["permissions"]["deny"])
+        # Decision 2 (ADR-0024, revised 2026-10-15): the destructive deny globs are gone, so
+        # engine cleanup is gated by shell_guard's allowlist instead of an unoverridable deny.
+        self.assertNotIn("Bash(rm -rf *)", template["permissions"]["deny"])
+        self.assertNotIn("PowerShell(Remove-Item *-Recurse*)", template["permissions"]["deny"])
 
 
 if __name__ == "__main__":
