@@ -225,7 +225,7 @@ class BenignTuning(_Base):
     CASES = [
         "git status", 'git commit -m "fix: crash in UMG"', "git push origin feature/inv",
         "Remove-Item Source/Foo.cpp", "Get-ChildItem -Recurse -Filter *.h",
-        '& "C:/UE/Engine/Build/BatchFiles/Build.bat" SynthoriaEditor Win64 Development',
+        '& "C:/UE/Engine/Build/BatchFiles/Build.bat" MyGameEditor Win64 Development',
         "rm build.log", "Select-String -Path Source -Pattern UPROPERTY -Recurse",
         "git log --oneline -n 20", "dotnet test --no-build", "grep -rn 'no-verify' docs",
         "Copy-Item Content -Destination Backup -Recurse", "git commit -m 'docs: explain --no-verify policy'",
