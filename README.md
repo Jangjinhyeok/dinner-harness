@@ -2,6 +2,14 @@
 
 **한국어** | [English](README.en.md)
 
+## 한눈에 보기
+
+- **무엇**: AI 코딩 에이전트(Claude Code, Codex)를 실제 개발에 쓰면서, 요청 범위를 벗어난 수정이나 검증 없는 완료 보고를 막기 위해 만든 개인 개발 하네스입니다.
+- **핵심 기능**: 변경 위험도(LOW/HIGH)에 따른 검증·승인 차등, fresh-context 독립 리뷰 에이전트, hook 기반의 범위 이탈·시크릿 노출·위험 셸 명령 사전 차단
+- **발전 과정**: Claude Code 단일 세션으로 시작 → 구독료 절감을 위해 2-CLI 구조 추가(Claude 설계·검토, Codex 구현, HANDOFF/RESULT 파일 인계, 작업 전후 git 변경분 검사) → 현재는 1-CLI(Claude)를 기본으로 쓰고 2-CLI는 선택 경로로 유지
+- **근거 관리**: 구조적 결정은 ADR(`docs/architecture/`)로 기록하고, 역할별 모델은 공개 벤치마크의 품질·비용·소요 시간을 비교해 정합니다.
+- **사용**: 개인 프로젝트와 실무 개발에 직접 사용하고 있습니다.
+
 Claude Code 중심으로 설계·구현·검증을 이어가는 개인 harness의 source of truth다(ADR-0023).
 기본은 Claude Opus 5.5 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
 추가 agent를 쓴다. Codex target과 hybrid/codex_only preset은 선택 가능한 호환 경로로 유지한다.
