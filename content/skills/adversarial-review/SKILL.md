@@ -26,6 +26,14 @@ Support findings with file/line evidence and consequences. Do not invent defects
 rework for style preferences. Additional specialists need distinct unresolved review axes;
 there is no fixed judge count or majority/unanimity vote.
 
+Only findings the reviewer scores 80 or more (0-100 confidence) decide the verdict. The `code-reviewer`
+role's "Confidence and exclusions" section defines the rubric and exclusions; include that whole
+section in the dispatch for a role without it, such as `cpp-reviewer`. FAIL needs at least one
+material finding at 80 or more; a required check that failed on the reviewed state is one. Record
+material candidates below 80 as verification gaps; one that blocks an essential conclusion makes the
+result BLOCKED, not FAIL. Record scores as returned without raising, lowering or dropping them;
+send a disputed finding to a fresh reviewer with the counter-evidence.
+
 Record who actually reviewed and the evidence. If delegation cannot run, record
 `independent_review=not_run`; self-review does not satisfy HIGH independent review.
 HIGH remains pending human acceptance. Builder `panel=PASS` is not proof of a reviewer.

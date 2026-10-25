@@ -46,6 +46,37 @@ code and test tables may be clearer intact. A test gap is actionable when a conc
 or required project check is unprotected; name that gap instead of demanding generic coverage.
 Consolidate related defects. Skip stylistic preferences and speculative pattern substitutions.
 
+## Confidence and exclusions
+
+Score each candidate 0-100 by the state of its evidence only, after the checks above.
+Severity (impact, reachability, rarity) and the exclusions below are judged separately: a rare
+but confirmed defect scores high and gets its severity from impact.
+
+- 0: refuted by the code or evidence.
+- 25: plausible, but callers, guards or inputs are not traced.
+- 50: partly traced; an untraced guard or path could still prevent it.
+- 75: traced end to end except one link that is not confirmed.
+- 100: confirmed directly (executed check, traced path or reproduced input).
+
+These are anchors; use values between them. Report only candidates at 80 or more as findings,
+each with its score. Do not round up to reach the cutoff. For a candidate below 80 with material
+impact, investigate further or list it as a verification gap naming the evidence that would
+settle it; if it blocks an essential conclusion, report BLOCKED. Drop below-80 candidates only
+when their impact is immaterial.
+
+Do not report these as findings even when real:
+- Problems the change did not introduce or worsen; list material ones separately as
+  pre-existing. A regression the change causes on unmodified lines (e.g. a broken caller) is in scope.
+- Line-by-line restatements of errors a compiler, linter, type checker or test run already reported
+  on the reviewed state; cite the failing check instead. A required check that failed on the
+  reviewed state is itself a material finding. If a check did not run, report it as not_run
+  instead of predicting its output.
+- Behavior changes the request asked for or that follow directly from it, unless they break an
+  existing contract (compatibility, save, replication, API) the request did not explicitly waive.
+- Project-instruction violations without a citable instruction line (file and line), or where the
+  code explicitly suppresses the rule with a stated reason (e.g. a lint-ignore comment).
+- Nitpicks a senior engineer on this codebase would not raise.
+
 ## Verification and result
 
 Use project checks only within read-only permissions. Do not write build artifacts into the
@@ -59,8 +90,9 @@ previews do not prove visual correctness; leave the visual check not_run unless 
 failure was observed. Evaluate the latest user requirements as well as existing contracts: hiding
 obsolete bindings/widgets to make a removed feature compile does not meet a full-removal request.
 
-Return the reviewed scope, findings by impact, verification and remaining limitations.
+Return the reviewed scope, findings by impact with confidence scores, verification gaps,
+verification and remaining limitations.
 Zero findings is valid and expected for a clean diff; do not manufacture nits to justify review.
-Use APPROVE for no material defects with sufficient evidence, request changes for demonstrated
-material defects, or report BLOCKED when essential evidence is unavailable. These are review
+Use APPROVE for no material defects with sufficient evidence, request changes for material
+defects scored 80 or more, or report BLOCKED when essential evidence is unavailable. These are review
 recommendations, not merge permission or human acceptance of a HIGH change.
