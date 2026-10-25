@@ -17,7 +17,7 @@
 
 1. **Keep the harness as the source of truth.** Plugins are an add-on layer managed by `claude plugin`, not by `install.py`.
 2. **Install three plugins at user scope from `claude-plugins-official`:**
-   - `unreal-engine-skills-for-claude-code` 3.1.1 (Epic, MIT, SHA `a6aa73a`): editor-control skills plus a SessionStart hook that only injects a note when a `*.uproject` is found walking up from the cwd. Installed files were compared with the reviewed copy.
+   - `unreal-engine-skills-for-claude-code` 3.1.1 (Epic, MIT, SHA `a6aa73a`): editor-control skills plus a SessionStart hook that only injects a note when a `*.uproject` is found walking up from the cwd. Installed files were compared with the reviewed copy. **Disabled 2026-10-25** (`claude plugin disable`, still installed): it needs UE 5.8 (see Boundary).
    - `clangd-lsp` 1.0.0: LSP config only. Requires `clangd` on PATH (LLVM 23.1.4 installed with winget; `C:\Program Files\LLVM\bin` appended to the user PATH).
    - `claude-md-management` 1.0.0: no hooks; edits CLAUDE.md only after approval. Overlaps `learnings-review` in part; kept as optional.
 3. **The template declares the marketplace.** `assets/claude/settings.json.template` sets `extraKnownMarketplaces.claude-plugins-official` (GitHub `anthropics/claude-plugins-official`) so a live install keeps it.
@@ -34,15 +34,16 @@
 - The harness does not install, pin or verify plugins. `check.py` does not report plugin state, and the template declares the marketplace only; another machine needs `claude plugin install` by hand.
 - The template owns `extraKnownMarketplaces` as a whole. A marketplace added later with `claude plugin marketplace add` is removed by the next live install unless it is also added to the template.
 - Plugin updates follow the marketplace. A third-party plugin can change hooks or MCP servers between versions; re-read its hooks and `.mcp.json` before accepting an update.
-- The Epic plugin does not ship an MCP server config. The editor must enable the `ModelContextProtocol` and `AllToolsets` plugins and generate `.mcp.json`; no minimum UE version is stated, so UE 5.7 support is unverified. The existing `remiphilippe/mcp-unreal` setup (`assets/claude/MCP-UNREAL-SETUP.md`) stays until that is checked.
+- The Epic plugin does not ship an MCP server config. The editor must enable the `ModelContextProtocol` and `AllToolsets` plugins and generate `.mcp.json`. The plugin's own docs state no minimum UE version.
+- **UE 5.7 cannot use it (checked 2026-10-25).** The UE 5.7 install has no `ModelContextProtocol` plugin under `Engine/Plugins`, and Epic's page for the feature (dev.epicgames.com, "Unreal MCP in Unreal Editor") is in the UE 5.8 documentation and marks it Experimental. The page does not say which version first shipped it. The plugin's SessionStart hook does not check the engine version, so on a 5.7 project it points the agent at the `unreal-mcp` skill and at a console command that does not exist there; with a `remiphilippe/mcp-unreal` `.mcp.json` present it reports that config as ready. For this reason the plugin is disabled. On UE 5.7 the existing `remiphilippe/mcp-unreal` setup (`assets/claude/MCP-UNREAL-SETUP.md`) remains the editor MCP.
 
 ## Consequences
 
-- **Positive:** official UE editor skills and C/C++ code intelligence without new harness code; reviewer findings are filtered by an explicit confidence bar and exclusion list.
-- **Negative / trade-offs:** one more SessionStart hook (Git Bash, 5 s timeout) in every session; plugin content is outside the harness's tests and review; the confidence bar can hide a real defect that the reviewer could not verify, which is why material candidates below 80 must be reported as gaps or BLOCKED.
+- **Positive:** C/C++ code intelligence without new harness code, and official UE editor skills ready to re-enable on UE 5.8; reviewer findings are filtered by an explicit confidence bar and exclusion list.
+- **Negative / trade-offs:** when the Epic plugin is enabled, one more SessionStart hook (Git Bash, 5 s timeout) runs in every session; plugin content is outside the harness's tests and review; the confidence bar can hide a real defect that the reviewer could not verify, which is why material candidates below 80 must be reported as gaps or BLOCKED.
 - **Follow-ups:**
   - Generate `compile_commands.json` for UE projects so clangd resolves includes.
-  - Evaluate the Epic MCP on UE 5.7 against `remiphilippe/mcp-unreal`; update `MCP-UNREAL-SETUP.md` with the result.
+  - When a project moves to UE 5.8, re-enable the Epic plugin (`claude plugin enable`), evaluate it against `remiphilippe/mcp-unreal`, and update `MCP-UNREAL-SETUP.md` with the result.
   - Optionally add the rubric to `cpp-reviewer` directly; today it receives it through the adversarial-review dispatch. Its verdict terms (Approve/Warning/Block, where Block means a defect) also differ from the skill's BLOCKED (missing evidence).
 
 ## Alternatives considered
