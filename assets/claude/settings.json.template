@@ -10,7 +10,7 @@
   },
     "env": {
       "CLAUDE_SECRET_SCAN_MODE": "enforce",
-      "CLAUDE_SHELL_GUARD_MODE": "dryrun"
+      "CLAUDE_SHELL_GUARD_MODE": "enforce"
     },
   "permissions": {
     "deny": [

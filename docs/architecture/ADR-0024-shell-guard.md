@@ -1,7 +1,7 @@
 # ADR-0024: shell_guard — destructive-command and git-hook-bypass checks for shell tools
 
 - Date: 2026-10-15
-- Status: accepted by user (decisions 1–4 below); implemented and committed; independent re-review PASS (see Results); installed live in dryrun (first `shell_guard.log` record 2026-10-15); enforce promotion not decided — see Addendum 2026-11-10
+- Status: accepted by user (decisions 1–4 below); implemented and committed; independent re-review PASS (see Results); installed live in dryrun (first `shell_guard.log` record 2026-10-15); promoted to enforce on the Claude target 2026-11-10 by user decision — see both addenda
 - Risk: HIGH (security hook, permission deny list, live `~/.claude/settings.json` on install)
 - Source: rule taxonomy and test cases adapted from affaan-m/ECC (MIT, Copyright (c) 2026 Affaan Mustafa), commit `b92f181` — `scripts/lib/powershell-destructive-command.js`, `scripts/hooks/block-no-verify.js` and their tests
 
@@ -60,3 +60,13 @@ Replay of 2,913 unique historical Bash/PowerShell calls from local transcripts:
 A second audit reproduced misses that returned no finding at all: a command after `then`/`do`/`else` in the same statement (`if x; then rm -rf y; fi`, `for …; do rm -rf …; done`), `eval "<command>"`, Windows PowerShell's positional command (`powershell "<command>"`), the MSYS-escaped `cmd //c`, and three false heredocs (`$((a << b))`, a quoted `'<<EOF'`, a `<<<` here-string) that blanked every following line. All are fixed in `shell_guard.py` with regression cases in `SecondReviewRegressions`; the held-out set is unchanged. Still not covered: commands inside `case … esac`, and git's own destructive subcommands, which stay with four prefix deny globs.
 
 Consequence for decision 3: the dryrun log up to this date undercounts, because a miss writes no record. The promotion review should use dryrun records collected after the fixed handler is installed. The status line above also replaces the earlier text, which still said review was pending and the hook was not installed.
+
+## Addendum (2026-11-10): promoted to enforce by user decision
+
+On the same day, after the fixed handler was installed live, the user chose to promote `shell_guard` to enforce and to delete the two leftover deny globs from the live `settings.json` together. `assets/claude/settings.json.template` now sets `CLAUDE_SHELL_GUARD_MODE` to `enforce`.
+
+- **What decision 3 asked for and what was done.** The dryrun window ran 2026-10-15 to 2026-11-10 (26 days, 10 warn records before the lexer fixes: `remove.recurse` 9, `remove.wildcard` 1). The warn records were not reviewed one by one, and the rules added on 2026-11-10 (keyword stripping, `eval`, PowerShell positional command, `cmd //c`, the heredoc state machine) entered enforce with no dryrun observation at all. Their false-positive evidence is the test corpus and the independent review's old-versus-new comparison, not real use. The recommendation recorded earlier that day was to wait for a post-fix dryrun window; the user accepted the risk instead.
+- **What enforce changes.** A flagged command exits 2 and is not run. That includes recursive deletes of scratch and temp directories, which the 2026-10-15 replay found to be most of the 1.6% of historical commands flagged. Only the engine cleanup allowlist is exempt.
+- **Rollback.** Set the template value back to `dryrun` and reinstall; a new session picks it up. A false positive should be added to the tuning corpus before the rule is changed.
+- **Scope.** Claude target only. The Codex `hooks.json` sets no mode variable, so that target stays on the handler default, dryrun.
+- **Deny globs.** The two retired globs can only be removed from an existing install by hand (the settings merge keeps the union of permission lists, and the file is a `scope_check` protected path). Until then they keep refusing engine cleanup regardless of the allowlist, and `check.py` reports them as leftovers.

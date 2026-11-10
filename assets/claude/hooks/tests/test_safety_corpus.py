@@ -545,13 +545,14 @@ class HandlerContract(unittest.TestCase):
                 self.assertIn(f'"%~dp0..\\handlers\\{launcher.stem}.py"', text)
                 self.assertNotIn("USERPROFILE", text)
 
-    def test_settings_template_wires_shell_guard_in_dryrun(self):
+    def test_settings_template_wires_shell_guard_in_enforce(self):
         template = json.loads(_TEMPLATE.read_text(encoding="utf-8"))
         entries = [e for e in template["hooks"]["PreToolUse"]
                    if e["hooks"][0]["command"].endswith("/shell_guard.cmd")]
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["matcher"], "Bash|PowerShell")
-        self.assertEqual(template["env"]["CLAUDE_SHELL_GUARD_MODE"], "dryrun")
+        # Promoted on 2026-11-10 by user decision (ADR-0024 addendum).
+        self.assertEqual(template["env"]["CLAUDE_SHELL_GUARD_MODE"], "enforce")
         # Decision 2 (ADR-0024, revised 2026-10-15): the destructive deny globs are gone, so
         # engine cleanup is gated by shell_guard's allowlist instead of an unoverridable deny.
         self.assertNotIn("Bash(rm -rf *)", template["permissions"]["deny"])

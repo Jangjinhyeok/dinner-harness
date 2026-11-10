@@ -882,7 +882,10 @@ def main() -> None:
     fields = {"event": _EVENT, "tool_name": tool_name, "rules": findings}
     if mode == "enforce":
         log_event(_HOOK_NAME, decision="block", **fields)
-        exit_block(f"[shell_guard:block] {', '.join(findings)}")
+        # The hint is for the model: a blocked agent tends to retry the same deletion in a
+        # form the lexer cannot see (python -c shutil.rmtree, a script on disk).
+        exit_block(f"[shell_guard:block] {', '.join(findings)} - not run. Do not rephrase the command "
+                   "to get past this check; ask the user to run it or to approve another approach.")
     log_event(_HOOK_NAME, decision="warn", **fields)
     exit_warn(f"[shell_guard:warn:dryrun] {', '.join(findings)}")
 
