@@ -266,7 +266,7 @@ def _render(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
         )
 
     # 3. hooks: copy portable Python implementation, but do not copy Claude
-    # launchers (they intentionally point at Claude home). Codex hooks.json calls
+    # launchers (.cmd wrappers that exist for Claude Code on Windows). Codex hooks.json calls
     # handlers directly with the actual dest_root.
     for src_rel, dest_rel in target_cfg.get("hooks_copy", []):
         _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run)

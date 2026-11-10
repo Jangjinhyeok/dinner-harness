@@ -95,6 +95,20 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
     drop_dests = tuple(dest_root / rel for rel in target_cfg.get("drop_dests", []))
     plan = []
 
+    # 0. Read every existing merge destination before anything is written. A hand-edited
+    #    settings.json that no longer parses used to abort the template pass after the
+    #    copies had landed, leaving new hooks next to the old settings and CLAUDE.md.
+    #    utf-8-sig: Windows PowerShell 5.1 writes JSON with a BOM.
+    existing_json = {}
+    for entry in target_cfg.get("template", []):
+        dest = dest_root / entry["dest"]
+        if entry.get("merge", False) and dest.name.endswith(".json") and dest.is_file():
+            try:
+                existing_json[dest] = json.loads(dest.read_text(encoding="utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"existing {dest} is not valid UTF-8 JSON ({exc}); "
+                                   "fix or remove it, nothing was installed") from exc
+
     # 1. verbatim copies (minus drop_dests)
     for src_rel, dest_rel in target_cfg.get("copy", []):
         _copy_one(repo_root / src_rel, dest_root / dest_rel, exclude_dirs, exclude_suffixes, plan, dry_run,
@@ -122,9 +136,8 @@ def install(repo_root, target_cfg, vars_cfg, dest_root, username, dry_run):
             data = json.loads(text)
             for k in strip_keys:
                 data.pop(k, None)
-            if merge and dest.is_file():
-                existing = json.loads(dest.read_text(encoding="utf-8"))
-                data = _merge_template_json(existing, data)
+            if merge and dest in existing_json:
+                data = _merge_template_json(existing_json[dest], data)
             text = json.dumps(data, indent=2) + "\n"
         plan.append(("merge" if merge else "template", dest))
         if not dry_run:

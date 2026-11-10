@@ -12,7 +12,7 @@ protocol and never dispatches. The Codex adapter copies portable safety handlers
 excludes this hook from its generated `hooks.json`; a Codex session receives its guidance through
 `AGENTS.md` instead.
 
-이 디렉터리는 Claude Code의 **PreToolUse·PostToolUse hook 안전망** 인프라를 담는다. hook은 Claude가 도구를 실행하기 *직전(PreToolUse)·직후(PostToolUse)*에 자동으로 끼어들어 검사하고, 종료 코드로 통과(exit 0)/차단(exit 2)을 결정한다(advisory hook은 차단 없이 stderr 제안·로깅만 한다). 사용자가 직접 호출하지 않는다.
+이 디렉터리는 Claude Code의 **PreToolUse·PostToolUse hook 안전망** 인프라를 담는다. hook은 Claude가 도구를 실행하기 *직전(PreToolUse)·직후(PostToolUse)*에 자동으로 끼어들어 검사하고, 종료 코드로 통과(exit 0)/차단(exit 2)을 결정한다(advisory hook은 차단 없이 제안·로깅만 한다). 사용자가 직접 호출하지 않는다.
 
 ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로, 여기엔
 없다 — 배경은 docs/architecture/ADR-0006-option-a.md의 Context 절 참조.
@@ -22,14 +22,16 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 |  | `secret_scan` | `scope_check` | `shell_guard` | `suggest_compact` | `learning_log` | `route_nudge` |
 |---|---|---|---|---|---|---|
 | 이벤트 | PreToolUse | PreToolUse | PreToolUse | PreToolUse | PostToolUse | UserPromptSubmit |
-| matcher | Edit · Write · Bash · PowerShell | Edit · Write | Bash · PowerShell | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
-| 역할 | 입력에서 시크릿·민감 파일경로 검출 | hook 인프라 보호 + Builder 스코프 규율 | 파괴 셸 명령·git hook 우회 검출 | 도구 호출 누적 시 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 프롬프트의 UE 도메인 신호 검출 → 라우팅 nudge를 stdout으로 출력 (2026-07-02 재조준: 단일 도메인→`/umg` 등 라우터+포커스 문서, 멀티→architect 모드+dispatch 제안) |
+| matcher | Edit · Write · NotebookEdit · Bash · PowerShell | Edit · Write · NotebookEdit | Bash · PowerShell | Edit · Write | Bash · PowerShell | 없음 (전체 프롬프트) |
+| 역할 | 입력에서 시크릿·민감 파일경로 검출 | 설치본 보호 경로 수정 차단 + (HANDOFF가 있을 때) 스코프 규율 | 파괴 셸 명령·git hook 우회 검출 | Edit·Write 누적 시 사용자에게 `/compact` 제안 | Bash 실패 신호(컴파일/링크/빌드 에러 등) 포착 → `learning_log.log` | 구현 의도 프롬프트에 inline 실행 protocol을 stdout으로 주입, UE 도메인 신호가 있으면 `/umg` 등 reference 안내 추가 (dispatch 없음) |
 | 룰셋 | `rules/secret_patterns.json` | `rules/scope_protect.json` + `HANDOFF.md`의 scope 블록 | 없음 (핸들러 내장 lexer·규칙) | 없음 (`COMPACT_THRESHOLD` env, 기본 50) | 없음 (핸들러 내장 패턴) | 없음 (핸들러 내장 regex) |
 | 모드 env var | `CLAUDE_SECRET_SCAN_MODE` | `CLAUDE_SCOPE_WHITELIST_MODE` | `CLAUDE_SHELL_GUARD_MODE` | 없음 (항상 advisory) | 없음 (항상 advisory) | 없음 (항상 advisory) |
 | 현재 모드 | enforce (2026-05-31 승격, ADR-0001 Gate 4) | dryrun (영구 — always-block layer만 실차단) | dryrun (2026-10-15 도입, 승격 기준은 ADR-0024) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) | advisory only — **차단 불가**(항상 exit 0) |
 | 출처 | ADR-0001 | ADR-0005 | ADR-0024; 규칙 분류·테스트 케이스는 affaan-m/ECC (MIT, commit b92f181) `scripts/lib/powershell-destructive-command.js`·`scripts/hooks/block-no-verify.js`에서 각색, 2026-10-15 | strategic-compact skill (ECC), 2026-06-01 | ADR-0004 / gap #4, 2026-06-01 | 2026-06-16, commit 09aa4f9 |
 
 > **2026-06-01: "추가 hook 없음" 결정 번복** — 사용자 승인 하에 advisory-only hook `suggest_compact`를 도입(2026-05-24 운영 확정 → 갱신). **핸들러·런처는 `hooks/`에 배치됐고 `settings.json.template`·로컬 `settings.json`(개인 PC) 양쪽에 등록 완료다(always-block이라 hand-edit 또는 off ceremony로 추가).** 이 hook은 secret_scan/scope_check와 달리 룰셋·모드·차단이 없고 stderr로 `/compact`를 제안만 한다. 핸들러는 `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅한 것. 상세는 맨 아래 "결정 이력" 참조.
+
+> **2026-11-10: `suggest_compact` 출력 경로 변경.** PreToolUse hook이 exit 0으로 끝나면 stderr는 debug log로만 가서 사용자도 Claude도 보지 못한다(Claude Code hooks 문서). 그래서 제안을 stdout의 JSON `systemMessage`로 내보낸다(실제 UI 표시는 live 세션에서 확인하지 않았다). 같은 이유로 dryrun의 `[WARN]` stderr 줄도 화면에 보이지 않으며, dryrun 결과는 `logs/<name>.log`로 확인한다. 세는 대상은 Edit·Write 호출이고, 14일 넘은 `.compact_count_*.txt`는 새 세션의 첫 호출 때 지운다.
 
 > **2026-06-01: `learning_log` (PostToolUse, advisory) 도입 — 예약돼 있던 ADR-0004 활성화.** Bash/PowerShell 도구 호출 후 출력에서 강한 실패 신호(컴파일 `error C\d{4}`·`LNK`·`CS`·`undefined reference`·build failed·traceback 등)만 골라 `log_event`로 `logs/learning_log.log`에 한 줄씩 포착한다. 차단 불가(항상 exit 0), 룰셋 없음(핸들러 내장 패턴, 노이즈 최소화). 포착물은 `learnings-review` skill이 클러스터링해 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습, 승격해야 학습). **off-ceremony 설치 완료(2026-06-01)** — 핸들러는 `hooks/handlers/learning_log.py`, 런처는 `hooks/launchers/learning_log.cmd`, 로컬 `settings.json`·`settings.json.template`의 `PostToolUse`에 등록됨(스모크 + 라이브 배선 검증 완료).
 > **2026-10-11 노이즈 정리:** hook log·transcript를 읽는 명령(`hooks/logs`, `learning_log`, `*.jsonl`)과 JSON 로그 레코드 줄(`{"timestamp": …}`) 안의 실패 문자열은 포착하지 않는다(learnings-review 표본에서 재포착 7건/6세션 확인). 원인 군집화를 위해 메시지 대신 분류값 `diag`(Python 예외 클래스명 또는 `C####`/`CS####`/`TS####`/`LNK####` 코드)만 기록한다. exit≠0 명령은 `PostToolUse`가 아니라 `PostToolUseFailure`(출력은 `error` 필드)만 발화하므로 같은 런처를 두 event에 모두 등록하고, 레코드의 `event`로 구분한다.
@@ -75,15 +77,17 @@ Claude가 Edit/Write/NotebookEdit/Bash/PowerShell 호출
 
 | 모드 | 매치 시 동작 |
 |---|---|
-| `dryrun` | `decision=warn` 로그 + stderr에 `[WARN] ...` 한 줄 + **exit 0** (통과). `[WARN]` prefix는 `exit_warn`이 자동 부착. |
+| `dryrun` | `decision=warn` 로그 + stderr에 `[WARN] ...` 한 줄 + **exit 0** (통과). `[WARN]` prefix는 `exit_warn`이 자동 부착. exit 0의 stderr는 화면에 보이지 않으므로 dryrun 결과는 로그로 본다. |
 | `enforce` | `decision=block` 로그 + stderr 한 줄 + **exit 2** (차단). |
 | `off` | 전건 즉시 통과 (일시 비활성화용). |
 
 **모드 env var는 새 세션부터 적용된다** — hook은 Claude Code 프로세스의 환경을 상속받으므로, 현재 세션 도중 변수를 바꿔도 무효다. (env var 외 변경의 반영 시점은 아래 "hot-reload 반영 시점" 참조.)
 
+`CLAUDE_SECRET_SCAN_MODE`와 `CLAUDE_SHELL_GUARD_MODE`는 `settings.json`의 `env`(template이 소유)가 정한다. 이 두 모드를 바꿀 때는 repo의 `assets/claude/settings.json.template`을 고치고 재설치한다. 설치는 `env` 키를 통째로 template 값으로 바꾸므로 live `settings.json`만 고치면 다음 설치 때 되돌아간다. 셸에서 잡은 같은 이름의 변수가 settings `env`보다 우선하는지는 이 repo에서 검증하지 않았다. `CLAUDE_SCOPE_WHITELIST_MODE`는 template `env`에 없어서 셸 변수로 정해진다(아래 off ceremony).
+
 ## Fail-open 안전망
 
-"핸들러 버그가 사용자 작업을 막아선 안 된다"는 계약을 `lib/common.py`의 `run_handler()` wrapper가 강제한다. wrapper는 `main()`을 200ms `threading.Timer` 안에서 돌리며 `Exception`, `KeyboardInterrupt`, `SystemExit(코드 ≠ 2)`, timeout을 전부 잡는다. 잡힌 예외는 `<name>.error.log`에 traceback과 함께 기록된 뒤 exit 0으로 빠진다(timeout이면 stderr에 `[WARN] <hook>: handler exceeded its 200ms budget — not checked, allowing` 한 줄을 남긴다). 즉 핸들러 안에서 무슨 일이 나도 도구 호출은 통과한다. **exit 2가 Claude Code까지 전달되는 경로는 단 하나 — `main()`이 명시적으로 `exit_block()`(= `SystemExit(2)`)을 호출한 경우뿐이다.**
+"핸들러 버그가 사용자 작업을 막아선 안 된다"는 계약을 `lib/common.py`의 `run_handler()` wrapper가 강제한다. wrapper는 `main()`을 200ms `threading.Timer` 안에서 돌리며 `Exception`, `KeyboardInterrupt`, `SystemExit(코드 ≠ 2)`, timeout을 전부 잡는다. 잡힌 예외는 `<name>.error.log`에 예외 class 이름만 기록된 뒤(메시지·traceback은 도구 내용이 남지 않도록 생략) exit 0으로 빠진다(timeout이면 stderr에 `[WARN] <hook>: handler exceeded its 200ms budget — not checked, allowing` 한 줄을 남긴다). 즉 핸들러 안에서 무슨 일이 나도 도구 호출은 통과한다. **exit 2가 Claude Code까지 전달되는 경로는 단 하나 — `main()`이 명시적으로 `exit_block()`(= `SystemExit(2)`)을 호출한 경우뿐이다.**
 
 이 safety net은 Python 핸들러 영역에 한정된다. Python 도달 전 단계 — BAT 실행 실패, `py` launcher 부재, `settings.json` 파싱 오류, hook command argument escaping 결함 — 은 wrapper 사정거리 밖이다. 이쪽 문제는 hook이 아예 발화하지 않거나 Claude Code가 에러를 토하는 형태로 드러나며, 진단은 `claude --debug` 출력과 `settings.json`을 직접 확인하는 수밖에 없다.
 
@@ -94,11 +98,11 @@ Claude가 Edit/Write/NotebookEdit/Bash/PowerShell 호출
 | 파일 | 내용 |
 |---|---|
 | `<name>.log` | 정상 경로 — allow / warn / block 결정이 모두 여기. |
-| `<name>.error.log` | fail-open이 잡은 예외만. traceback 포함. |
+| `<name>.error.log` | fail-open이 잡은 예외만. 예외 class 이름과 시각만 남긴다(메시지·traceback 없음). |
 | `common.log` | wrapper 레벨 진단 (현재는 stdin JSON 파싱 실패 등 극히 일부). |
 | `claude-debug.log` | `claude --debug` 실행 시 Claude Code가 떨궈주는 출력. hook 발화 자체가 의심될 때 1차로 본다. |
 
-**진단 순서**: 먼저 `<name>.log` 최신 라인 → `error.log`에 신선한 traceback이 있으면 핸들러 버그 → `claude-debug.log`에 hook 자체가 안 보이면 Pre-Python 영역 문제.
+**진단 순서**: 먼저 `<name>.log` 최신 라인 → `error.log`에 신선한 레코드가 있으면 핸들러 버그(원인은 같은 payload로 핸들러를 직접 실행해 재현한다) → `claude-debug.log`에 hook 자체가 안 보이면 Pre-Python 영역 문제.
 
 ---
 
@@ -140,11 +144,11 @@ Bash/PowerShell `command`를 작은 lexer로 statement·pipeline·token으로 �
 | `git.no-verify` · `git.hooks-path` · `git.husky-disabled` | commit/push/merge/cherry-pick/rebase/am의 `--no-verify`(접두 `--no-v`부터)와 commit `-n` cluster; `-c`/`--config-env`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_PARAMETERS`의 `core.hooksPath`·`include.path`·`includeIf.*.path`; `git config <그 키> <값>`; `HUSKY=0` |
 | `dynamic-execution` | `iex $x`, `pwsh -Command $x`처럼 내용을 볼 수 없는 실행 |
 
-ECC와 다른 점: 단독 `-Force`는 잡지 않는다(단일 파일 강제 삭제는 일상적). 백틱은 Bash tool에서만 명령 치환으로 보고(작은따옴표 안 제외), PowerShell tool에서는 escape로만 본다. `@' … '@` here-string은 literal이며 `@" … "@` 안의 `$( )`만 검사한다. `$x = <명령>` 대입, `timeout N`·`wsl`·`sudo`·`env`·`xargs` 같은 wrapper 뒤의 명령도 검사한다. **엔진 정리 허용 목록**: cwd에 `*.uproject`가 있으면 `Intermediate`·`Binaries`·`DerivedDataCache`·`Saved/Logs`, `ProjectSettings/ProjectVersion.txt`가 있으면 `Library`·`Temp`·`obj`·`bin`을 그 루트 기준 정확한 경로로 지울 때만 recurse 판정을 면제한다(wildcard·변수·여러 대상 중 하나라도 밖이면, 또는 같은 명령 안에 `cd`·`Set-Location`·`sl`·`pushd`가 있으면 면제 없음). `-ErrorAction`/`-ea` 같은 공통 매개변수 값과 `2>$null` 같은 redirection은 대상으로 보지 않는다.
+ECC와 다른 점: 단독 `-Force`는 잡지 않는다(단일 파일 강제 삭제는 일상적). 백틱은 Bash tool에서만 명령 치환으로 보고(작은따옴표 안 제외), PowerShell tool에서는 escape로만 본다. `@' … '@` here-string은 literal이며 `@" … "@` 안의 `$( )`만 검사한다. `$x = <명령>` 대입, `timeout N`·`wsl`·`sudo`·`env`·`xargs` 같은 wrapper 뒤의 명령도 검사한다. 2026-11-10 보강: `then`·`do`·`else`·`elif`·`if`·`while`·`until`·`!` 뒤의 명령(`if x; then rm -rf y; fi`), `eval`의 인자, Windows PowerShell의 positional 명령(`powershell "<명령>"`; `pwsh`는 positional을 `-File`로 읽으므로 제외), Git Bash에서 쓰는 `cmd //c`를 검사한다. heredoc 판정은 따옴표 안·`(( ))` 산술·`<<<` here-string의 `<<`를 heredoc으로 보지 않는다(이전에는 그 뒤 줄이 전부 본문으로 처리돼 검사에서 빠졌다). **엔진 정리 허용 목록**: cwd에 `*.uproject`가 있으면 `Intermediate`·`Binaries`·`DerivedDataCache`·`Saved/Logs`, `ProjectSettings/ProjectVersion.txt`가 있으면 `Library`·`Temp`·`obj`·`bin`을 그 루트 기준 정확한 경로로 지울 때만 recurse 판정을 면제한다(wildcard·변수·여러 대상 중 하나라도 밖이면, 또는 같은 명령 안에 `cd`·`Set-Location`·`sl`·`pushd`가 있으면 면제 없음). `-ErrorAction`/`-ea` 같은 공통 매개변수 값과 `2>$null` 같은 redirection은 대상으로 보지 않는다.
 
-**한계 (containment 아님).** 실행 시점에 계산되는 값(변수 조합, `python -c "shutil.rmtree(...)"`, 디스크의 스크립트)은 보지 못한다. 인터랙티브 세션에서는 timeout·crash 시 fail-open이다. native Windows에는 Claude Code sandbox가 없으므로(macOS/Linux/WSL2 전용) 셸 쓰기의 실제 containment는 없다.
+**한계 (containment 아님).** 실행 시점에 계산되는 값(변수 조합, `python -c "shutil.rmtree(...)"`, 디스크의 스크립트)은 보지 못한다. `case … in pat) rm -rf x;; esac` 안의 명령은 보지 못한다. git 자체의 파괴 명령(`reset --hard`, `clean -f`, `push --force`)은 이 hook이 아니라 settings의 deny glob 4개가 맡으며, 그 glob은 접두 일치라 `git -C . reset --hard`, `git push origin main --force`, `git clean -xdf` 같은 형태는 걸리지 않는다. 인터랙티브 세션에서는 timeout·crash 시 fail-open이다. native Windows에는 Claude Code sandbox가 없으므로(macOS/Linux/WSL2 전용) 셸 쓰기의 실제 containment는 없다.
 
-**운영.** dryrun으로 시작해 `logs/shell_guard.log`에 `rules` 분류만 남긴다(명령 본문은 기록하지 않음). enforce 승격 기준은 1주 dryrun·실사용 오탐 0건·warn 기록 전수 검토(ADR-0024). `Bash(rm -rf *)`·`PowerShell(Remove-Item *-Recurse*)` deny는 2026-10-15 템플릿에서 뺐다(ADR-0024 결정 2 갱신). 그래서 enforce 승격 전까지 파괴 명령은 경고·기록만 되고 차단되지 않는다. 기존 설치는 `~/.claude/settings.json`에서 이 두 줄을 사용자가 직접 지운다(permission 목록은 합집합 병합이라 설치로 자동 제거되지 않음).
+**운영.** dryrun으로 시작해 `logs/shell_guard.log`에 `rules` 분류만 남긴다(명령 본문은 기록하지 않음). enforce 승격 기준은 1주 dryrun·실사용 오탐 0건·warn 기록 전수 검토(ADR-0024). 2026-11-10 lexer 보강 이전의 warn 기록은 `; then`·`; do` 등 놓친 형태가 빠진 과소 집계이므로, 보강본을 설치한 뒤의 dryrun 기록으로 승격을 판단한다. `Bash(rm -rf *)`·`PowerShell(Remove-Item *-Recurse*)` deny는 2026-10-15 템플릿에서 뺐다(ADR-0024 결정 2 갱신). 그래서 enforce 승격 전까지 파괴 명령은 경고·기록만 되고 차단되지 않는다. 기존 설치는 `~/.claude/settings.json`에서 이 두 줄을 사용자가 직접 지운다(permission 목록은 합집합 병합이라 설치로 자동 제거되지 않음).
 
 ---
 
@@ -154,8 +158,10 @@ secret_scan과 동일한 인프라를 재사용하는 두 번째 hook. matcher�
 
 ## 2-layer 판정
 
-- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 **hook-integrity 핵심 파일** 블랙리스트. `settings.json` / `settings.local.json`(hook 배선)과 `hooks/handlers/`·`hooks/lib/`·`hooks/launchers/`·`hooks/rules/`(hook 본체) **6 entries**. Edit/Write/NotebookEdit/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이고 `~/.claude/` 경로 안에서만 적용된다. Shell write의 containment는 sandbox 책임이다(단 native Windows에는 sandbox가 없다 — ADR-0024).
-  - *(36ab046 이전엔 `CLAUDE.md`·`HANDOFF.md`·`rules/_mode/`·`roles/ROLE_*.md`도 always-block이었으나 제외했다 — 자가-config·워크플로우 정의는 ceremony 없이 편집 가능하게 두고, 이들의 보호는 scope codeblock layer의 advisory 차원과 `builder.md` 구두 규약에만 의존한다.)*
+- **always-block** (`rules/scope_protect.json`): cycle과 무관하게 늘 보호하는 설치본 파일 블랙리스트. 목록의 단일 출처는 그 JSON이며 현재 8 entries다: `settings.json` / `settings.local.json`(hook 배선), `hooks/` 전체(hook 본체와 그 루트), `rules/`, `agents/`, 그리고 Codex용 `config.toml`·`hooks.json`·`requirements.toml`. 각 항목은 세 root 아래에 적용된다: `~/.claude`, `CODEX_HOME`(기본 `~/.codex`), 현재 프로젝트의 `<cwd>/.codex`. 프로젝트의 `.claude/`는 root가 아니다. Edit/Write/NotebookEdit/apply_patch payload에 대해서만 성립하며, dryrun이어도 면제 없이 즉시 block(exit 2)이다. Shell write의 containment는 sandbox 책임이다(단 native Windows에는 sandbox가 없다 — ADR-0024).
+  - `hooks/`를 하위 디렉터리 넷이 아니라 통째로 막는 이유(2026-11-10): 핸들러는 `hooks/`를 `sys.path` 맨 앞에 넣으므로 루트에 `traceback.py` 같은 파일 하나가 생기면 모든 guard가 exit 1(차단 아님)로 죽는다.
+  - `rules/`가 always-block이므로 `rules/machine-env.md` 같은 로컬 rule 파일도 Edit/Write로는 고칠 수 없다. 사용자가 직접 고치거나 off ceremony를 쓴다.
+  - *(36ab046 이전엔 `CLAUDE.md`·`HANDOFF.md`·`roles/ROLE_*.md`도 always-block이었으나 제외했다. `CLAUDE.md`는 지금도 ceremony 없이 편집된다.)*
 - **scope codeblock** (`HANDOFF.md`의 첫 ` ```scope ` 블록): 그 cycle에서 Builder가 수정해도 되는 파일 화이트리스트. 블록이 없거나 비어 있으면 fail-open(allow)이라 ADR-0005 이전 cycle의 HANDOFF와도 호환된다.
 
 Edit/Write/NotebookEdit/apply_patch payload에서 두 layer가 충돌하면 **always-block이 우선**한다 — 화이트리스트에 있어도 always-block에 걸리면 막힌다. 유일한 escape는 `off` 모드(아래 ceremony).
@@ -170,13 +176,13 @@ Edit/Write/NotebookEdit/apply_patch payload에서 두 layer가 충돌하면 **al
 
 scope_check은 ad-hoc 편집 마찰이 커서 **dryrun을 영구 유지**한다 (enforce 승격 안 함). always-block layer만으로 hook-integrity 핵심 보호가 dryrun에서도 작동하기 때문이다.
 
-**off ceremony** — `scope_protect.json`(prefix `hooks/rules/`), `settings.json`, `hooks/` 본체 같은 always-block 파일을 직접 손봐야 하는 cycle:
+**off ceremony** — `scope_protect.json`(prefix `hooks/`), `settings.json`, `hooks/` 본체 같은 always-block 파일을 직접 손봐야 하는 cycle:
 
 1. 새 세션 띄우기 전 `$env:CLAUDE_SCOPE_WHITELIST_MODE = "off"` 설정
 2. `claude`를 새로 실행 → 인프라 수정 작업
 3. 마치면 `Remove-Item Env:CLAUDE_SCOPE_WHITELIST_MODE`로 dryrun 복귀
 
-`off`는 `scope_check`만 끈다. `secret_scan`은 별도 변수를 쓰므로 ceremony 중에도 시크릿 안전망은 살아 있다. (`HANDOFF.md`·`CLAUDE.md`·ROLE·`rules/_mode/`는 36ab046 이후 always-block이 아니므로 ceremony 없이 편집된다.)
+`off`는 `scope_check`만 끈다. `secret_scan`은 별도 변수를 쓰므로 ceremony 중에도 시크릿 안전망은 살아 있다. (`CLAUDE.md`는 always-block이 아니므로 ceremony 없이 편집된다. `rules/`와 `agents/` 아래는 always-block이다.)
 
 ## HANDOFF.md scope codeblock convention
 
@@ -225,7 +231,9 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 
 복잡한 로직은 전부 BAT 내부에 격리한다. `launchers/secret_scan.cmd`가 표준 형태다.
 
-이 제약의 이유는 **Claude Code 2.1.148 Windows 빌드의 hook command argument escaping 결함**이다 (Anthropic GitHub Issue #11544와 동일 패턴). 위 금지 형태들은 인자 escaping 단계에서 깨져 hook이 정상 발화하지 않거나 엉뚱한 명령으로 실행된다. ADR-0001의 8-cycle 디버깅 끝에 가설 15에서 확정됐다. 구체 증거는 `~/.claude/HANDOFF.md` Section A와 `~/.claude/bug-report-evidence/`에 있다.
+이 제약의 이유는 **Claude Code 2.1.148 Windows 빌드의 hook command argument escaping 결함**이다 (Anthropic GitHub Issue #11544와 동일 패턴). 위 금지 형태들은 인자 escaping 단계에서 깨져 hook이 정상 발화하지 않거나 엉뚱한 명령으로 실행된다. ADR-0001의 8-cycle 디버깅 끝에 가설 15에서 확정됐다(당시 증거 파일은 현재 설치본에 포함되지 않는다).
+
+launcher는 자기 위치 기준으로 핸들러를 찾는다(`%~dp0..\handlers\<name>.py`, 2026-11-10). 이전에는 `%USERPROFILE%\.claude\...`를 고정 참조해서 `--dest`로 다른 곳에 설치해도 live 핸들러가 실행됐고, live 핸들러가 없는 환경에서는 `py -3 <없는 파일>`이 exit 2를 돌려줘 매칭되는 모든 도구 호출이 차단됐다.
 
 ---
 
@@ -235,15 +243,15 @@ ADR-0001 시기의 "새 세션 필요" 가정은 (c)에만 유효하고, (a)·(b
 
 **모드 전환.** env var를 `enforce`로 잡고 새 `claude` 세션을 띄운다. 현재 세션엔 적용되지 않는다. 되돌리려면 변수를 지우거나 다른 값으로 바꾼다.
 
-**새 hook 추가.** 패턴은 두 기존 hook과 동일하다 — `launchers/<name>.cmd`에 세 줄 BAT (`@echo off` / `py -3 "%USERPROFILE%\.claude\hooks\handlers\<name>.py"` / `exit /b %ERRORLEVEL%`), `handlers/<name>.py`의 `main()` 정의 후 `__main__`에서 반드시 `run_handler(main, hook_name="<name>")` 경유, 필요 시 `rules/<name>_patterns.json`, 마지막으로 `settings.json`에 BAT 절대경로 등록. (`shell_guard`가 이 패턴으로 추가됐다 — "결정 이력" 참조.)
+**새 hook 추가.** 패턴은 두 기존 hook과 동일하다 — `launchers/<name>.cmd`에 세 줄 BAT (`@echo off` / `py -3 "%~dp0..\handlers\<name>.py"` / `exit /b %ERRORLEVEL%`), `handlers/<name>.py`의 `main()` 정의 후 `__main__`에서 반드시 `run_handler(main, hook_name="<name>")` 경유, 필요 시 `rules/<name>_patterns.json`, 마지막으로 `settings.json`에 BAT 절대경로 등록. (`shell_guard`가 이 패턴으로 추가됐다 — "결정 이력" 참조.)
 
-**다른 머신 동기화.** 동기화 대상은 `hooks/{launchers,handlers,rules,lib}`와 상위 `~/.claude/`의 `skills/`·`agents/`·`CLAUDE.md`·`HANDOFF.md`다. `settings.json`은 절대경로가 박혀 machine-specific이라 신규 머신에서 새로 작성한다. `hooks/logs/`는 동기화 안 한다. `~/.claude` 자체가 GitHub repo이므로 home 머신에서는 pull/push로 옮긴다. **회사 PC에서는 `git`을 쓰지 않는다** — commit author email로 개인 정보가 노출될 위험이 있어 zip 추출/수동 복사로만 옮긴다.
+**다른 머신 설치.** 이 디렉터리는 dinner-harness repo의 생성 결과다. 다른 머신에서는 repo를 받아 `py -3 install.py --target claude --allow-live`로 설치한다. `settings.json`은 template에서 그 머신의 설치 경로로 렌더링되고, 기존 파일이 있으면 template이 소유하지 않는 키와 permission rule을 보존하며 병합한다. `hooks/logs/`는 머신별 runtime 상태라 옮기지 않는다. **회사 PC에서는 `git`을 쓰지 않는다** — commit author email로 개인 정보가 노출될 위험이 있어 zip 추출/수동 복사로만 옮긴다.
 
 ---
 
 # 결정 이력
 
-위 구조의 근거는 **ADR-0001**이다. 핵심 가설(가설 15)은 Windows 빌드의 hook command argument escaping 결함이 모든 비정상 발화의 공통 원인이라는 것. "인자 없는 절대경로 BAT wrapper" 패턴이 그 회피책이고, fail-open `run_handler` wrapper와 분리된 `.error.log` 구조도 같은 cycle의 산물이다. 8-cycle 가설 진행과 증거는 `~/.claude/HANDOFF.md`와 `~/.claude/bug-report-evidence/`에 있다.
+위 구조의 근거는 **ADR-0001**이다. 핵심 가설(가설 15)은 Windows 빌드의 hook command argument escaping 결함이 모든 비정상 발화의 공통 원인이라는 것. "인자 없는 절대경로 BAT wrapper" 패턴이 그 회피책이고, fail-open `run_handler` wrapper와 분리된 `.error.log` 구조도 같은 cycle의 산물이다. 8-cycle 가설 진행과 증거 파일은 당시 `~/.claude`에 있었고 현재 설치본에는 포함되지 않는다.
 
 **운영 확정 (2026-05-24) → 부분 번복 (2026-06-01).** 2026-05-24에는 현 2개 PreToolUse hook(`secret_scan`, `scope_check`)으로 운영하며 추가 hook 계획이 없다고 확정했다(YAGNI — 두 안전망이 시크릿 누출·스코프 규율을 이미 덮음). 2026-06-01 사용자 승인 하에 이를 부분 번복하고 advisory-only hook `suggest_compact`를 도입하기로 했다. 이는 차단 hook이 아니라 stderr 제안 hook이라 안전망의 본래 취지(시크릿/스코프 enforce)와 충돌하지 않는다. **핸들러·런처는 `hooks/handlers/`·`hooks/launchers/`로 이동 완료, `settings.json.template`·로컬 `settings.json`(개인 PC)에 등록 완료(2026-06-01). `settings.json`은 always-block이라 활성화는 직접 hand-edit하거나 off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 했다 — 추가 즉시 hot-reload.** 차단형 hook(secret_scan/scope_check 계열)을 더 추가할 계획은 여전히 없다. `ADR-0004`(예약돼 있던 transcript/learning 기반 hook)는 2026-06-01 **활성화**됐다 — gap 분석 #4(반복 교정이 세션 사이 증발)에서 실제 마찰이 확인돼, 그 정책("마찰이 생기면 정의")에 따라 advisory PostToolUse 포착 hook `learning_log` + `learnings-review` 승격 skill로 정의했다(Tier B — homunculus 없이 실패 신호만 로깅, 사람이 승격). `ADR-0002`("차기 hook")는 여전히 미정의 placeholder로 보류. (`ADR-0003`은 번호 미사용.) 남은 단일 액션은 secret_scan enforce 승격 *결정*(~2026-05-31)뿐이며 이는 새 hook이 아니라 env var 전환이다.
 

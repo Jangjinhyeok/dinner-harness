@@ -73,6 +73,12 @@ _WRAPPERS = {
 }
 _POSITIONAL_WRAPPERS = {"timeout": 1}  # wrapper -> positional args before the command
 _EXPORTERS = {"export", "set", "declare", "typeset"}
+# Shell keywords that precede a command in the same statement: `if x; then rm -rf y; fi`.
+_SHELL_KEYWORDS = {"then", "do", "else", "elif", "if", "while", "until", "!"}
+# powershell.exe / pwsh parameters that take a value (prefix-matched), plus their short aliases.
+_PWSH_VALUE_PARAMS = ("executionpolicy", "windowstyle", "outputformat", "inputformat", "configurationname",
+                      "workingdirectory", "version", "psconsolefile", "settingsfile", "custompipename")
+_PWSH_VALUE_ALIASES = {"ep", "ex", "w", "o", "of", "i", "if", "config", "wd", "wo", "v"}
 
 # Engine cleanup allowlist: exact top-level paths, active only at a marked project root.
 _UE_CLEANUP = {"intermediate", "binaries", "deriveddatacache", "saved/logs"}
@@ -156,18 +162,82 @@ def _match_close(text: str, i: int) -> int:
     return -1
 
 
+def _heredoc_delim(line: str, state: tuple) -> tuple:
+    """Return ``(delimiter or None, state)`` for one line of a command.
+
+    ``<<`` inside quotes, inside ``(( ))`` arithmetic, or as part of a ``<<<`` here-string
+    opens nothing; reading those as heredocs blanked every following line. A ``$( )``
+    inside double quotes is command context again, so the common
+    ``git commit -m "$(cat <<'EOF'`` still opens one.
+
+    ``state`` is ``(quote, arith, suspended)`` carried from the previous line: a quoted
+    string may close on the very line that opens a heredoc, and a per-line scan read that
+    closing quote as an opening one.
+    """
+    quote, arith, suspended = state[0], state[1], list(state[2])
+    i, n, delim = 0, len(line), None
+    while i < n:
+        c = line[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2
+                continue
+            if quote == '"' and line.startswith("$(", i) and not line.startswith("$((", i):
+                suspended.append(0)  # open-paren depth inside this "$("
+                quote = ""
+                i += 2
+                continue
+            if c == quote:
+                quote = ""
+        elif c in "'\"":
+            quote = c
+        elif c == "\\":
+            i += 2
+            continue
+        elif c == "#" and not arith and (i == 0 or line[i - 1] in " \t;"):
+            break  # comment: an apostrophe in it is not a quote
+        elif suspended and not arith and c == "(" and not line.startswith("((", i):
+            suspended[-1] += 1
+        elif suspended and not arith and c == ")":
+            if suspended[-1]:
+                suspended[-1] -= 1
+            else:
+                suspended.pop()
+                quote = '"'
+        elif line.startswith("((", i):
+            arith += 1
+            i += 2
+            continue
+        elif arith and line.startswith("))", i):
+            arith -= 1
+            i += 2
+            continue
+        elif not arith and line.startswith("<<", i):
+            if line.startswith("<<<", i):
+                i += 3
+                continue
+            m = _HEREDOC_RE.match(line, i)
+            if m:
+                delim = m.group(2)
+                break
+            i += 2
+            continue
+        i += 1
+    return delim, (quote, arith, suspended)
+
+
 def _strip_heredocs(text: str) -> str:
     """Blank heredoc bodies fed to a non-shell command: they are data, not commands."""
     lines = text.split("\n")
     out, i = [], 0
+    state: tuple = ("", 0, [])
     while i < len(lines):
         line = lines[i]
         out.append(line)
-        m = _HEREDOC_RE.search(line)
+        delim, state = _heredoc_delim(line, state)
         i += 1
-        if not m or _EXECUTES_STDIN_RE.search(line):
+        if delim is None or _EXECUTES_STDIN_RE.search(line):
             continue
-        delim = m.group(2)
         while i < len(lines) and lines[i].strip() != delim:
             out.append("")
             i += 1
@@ -487,10 +557,20 @@ def _scan_as(text: str, depth: int, st: _State, shell: str) -> None:
         st.shell = outer
 
 
-def _pwsh(args, depth: int, st: _State) -> None:
+def _pwsh(args, depth: int, st: _State, exe: str = "pwsh") -> None:
+    skip = positional_seen = False
     for i, a in enumerate(args):
         p = _param(a)
+        if skip:
+            skip = False
+            if not p:  # the value of the previous parameter; a following -Param is never one
+                continue
         if not p:
+            # Windows PowerShell runs its first positional argument as -Command (pwsh reads it
+            # as -File). Keep looking afterwards: an unlisted value parameter must not hide -Command.
+            if exe == "powershell" and not positional_seen:
+                _payload(list(args[i:]), depth, st, "powershell")
+            positional_seen = True
             continue
         name, inline, has_inline = p
         rest = ([Tok(inline, False)] if has_inline else []) + list(args[i + 1:])
@@ -506,6 +586,18 @@ def _pwsh(args, depth: int, st: _State) -> None:
             return
         if _is_prefix(name, "file", 1):
             return
+        if not has_inline and (name in _PWSH_VALUE_ALIASES
+                               or any(full.startswith(name) for full in _PWSH_VALUE_PARAMS)):
+            skip = True
+
+
+def _eval(args, depth: int, st: _State) -> None:
+    """``eval`` runs its arguments as shell text. ``$( )`` bodies are already scanned as groups."""
+    if any(not a.quoted and a.value.startswith("$") and not a.value.startswith("$(") for a in args):
+        st.findings.add("dynamic-execution")
+        return
+    if args:
+        _scan_as(_join(args), depth + 1, st, "bash")
 
 
 def _posix_shell(args, depth: int, st: _State) -> None:
@@ -655,6 +747,9 @@ def _segment(seg, depth: int, st: _State) -> tuple[bool, bool]:
             toks.pop(0)
             continue
         name = _cmd_name(t.value)
+        if name in _SHELL_KEYWORDS and not t.quoted:
+            toks.pop(0)
+            continue
         if name in _EXPORTERS and not t.quoted:
             toks.pop(0)
             persist = True
@@ -706,13 +801,15 @@ def _segment(seg, depth: int, st: _State) -> tuple[bool, bool]:
                 break
     elif name == "cmd":
         for k, a in enumerate(args):
-            if a.value.lower() in ("/c", "/k"):
+            if a.value.lower() in ("/c", "/k", "//c", "//k"):  # //c: MSYS-escaped form used from Git Bash
                 _scan_cmd(_join(args[k + 1:]), depth, st)
                 break
     elif name in _PWSH:
-        _pwsh(args, depth, st)
+        _pwsh(args, depth, st, name)
     elif name in _POSIX_SHELLS:
         _posix_shell(args, depth, st)
+    elif name == "eval":
+        _eval(args, depth, st)
     elif name in ("iex", "invoke-expression"):
         rest = [a for a in args if not ((p := _param(a)) and _is_prefix(p[0], "command"))]
         _payload(rest, depth, st, "powershell")

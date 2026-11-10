@@ -1,16 +1,22 @@
 """Strategic-compact PreToolUse hook (advisory only).
 
-Counts tool calls per session and writes a `/compact` suggestion to
-stderr at a threshold, then periodically. This hook NEVER blocks — it
+Counts Edit/Write calls per session and shows the user a `/compact`
+suggestion at a threshold, then periodically. This hook NEVER blocks — it
 always exits 0. The suggestion is advisory; the user decides whether to
 compact (see skills/strategic-compact/SKILL.md decision guide).
 
-Config (env): COMPACT_THRESHOLD (default 50) — tool calls before the
-first suggestion; reminders fire every 25 calls thereafter.
+The suggestion goes out as a JSON ``systemMessage`` on stdout: for a
+PreToolUse hook that exits 0, stderr only reaches the debug log, so the
+earlier stderr line was seen by nobody.
+
+Config (env): COMPACT_THRESHOLD (default 50) — edits before the first
+suggestion; reminders fire every 25 edits thereafter.
 """
 from __future__ import annotations
 
+import json
 import sys
+import time
 from pathlib import Path
 
 # Make ``lib.common`` importable when launched via
@@ -37,6 +43,18 @@ _DEFAULT_THRESHOLD = 50
 _REMINDER_INTERVAL = 25
 # Counter state lives under hooks/logs/ (gitignored, writable).
 _LOGS_DIR = _HOOKS_ROOT / "logs"
+_STALE_COUNTER_SECONDS = 14 * 24 * 3600
+
+
+def _prune_stale_counters() -> None:
+    """One counter file is created per session and nothing else removes them."""
+    try:
+        cutoff = time.time() - _STALE_COUNTER_SECONDS
+        for path in _LOGS_DIR.glob(".compact_count_*.txt"):
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+    except OSError:
+        pass
 
 
 def _threshold() -> int:
@@ -86,25 +104,27 @@ def main() -> None:
     )
     threshold = _threshold()
     count = _bump_counter(session_id)
+    if count == 1:
+        _prune_stale_counters()
 
     suggest = False
     reason = ""
     if count == threshold:
         suggest = True
         reason = (
-            f"{threshold} tool calls reached - consider /compact if "
+            f"{threshold} edits in this session - consider /compact if "
             f"transitioning phases"
         )
     elif count > threshold and (count % _REMINDER_INTERVAL) == 0:
         suggest = True
         reason = (
-            f"{count} tool calls - good checkpoint for /compact if context "
-            f"is stale"
+            f"{count} edits in this session - good checkpoint for /compact "
+            f"if context is stale"
         )
 
     if suggest:
         log_event(_HOOK_NAME, event=_EVENT, decision="suggest", count=count)
-        sys.stderr.write(f"[StrategicCompact] {reason}\n")
+        sys.stdout.write(json.dumps({"systemMessage": f"[StrategicCompact] {reason}"}) + "\n")
 
     # Advisory only — always allow.
     exit_allow()

@@ -635,6 +635,61 @@ class TestBuilderFirstGuard(unittest.TestCase):
             ("orchestrator", False),
         ])
 
+    def test_check_reports_retired_permission_rules_and_disabled_hooks(self):
+        # The merge keeps the union of permission lists and every key the template does
+        # not own, so neither of these is removed by an install; both used to read
+        # "repo == 설치본".
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d) / ".claude"
+            claude_adapter.install(root, manifest["targets"]["claude"], manifest["vars"], dest,
+                                   "tester", dry_run=False)
+            settings_path = dest / "settings.json"
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            settings["permissions"]["deny"] += ["Bash(rm -rf *)", "Bash(custom destructive *)"]
+            settings["permissions"]["allow"] = [
+                f'Bash(py -3 "{dest.as_posix()}/orchestrate.py" build --repo *)']
+            settings_path.write_text(json.dumps(settings), encoding="utf-8")
+            claude_adapter.install(root, manifest["targets"]["claude"], manifest["vars"], dest,
+                                   "tester", dry_run=False)  # reinstall does not clean them
+            present, problems, leftovers = check.check_install("claude", live_root=dest, username="tester")
+            self.assertEqual(problems, [])
+            self.assertEqual([advisory for _, advisory in leftovers], [False, False])
+            reported = " ".join(rel for rel, _ in leftovers)
+            self.assertIn("permissions.deny `Bash(rm -rf *)`", reported)
+            self.assertIn("permissions.allow", reported)
+            self.assertNotIn("custom destructive", reported)
+
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            settings["disableAllHooks"] = True
+            settings_path.write_text(json.dumps(settings), encoding="utf-8")
+            _, problems, _ = check.check_install("claude", live_root=dest, username="tester")
+            self.assertTrue(any("disableAllHooks" in problem for problem in problems), problems)
+
+    def test_claude_install_reads_existing_settings_before_writing_anything(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = tomllib.loads((root / "harness.toml").read_text(encoding="utf-8"))
+        target, vars_cfg = manifest["targets"]["claude"], manifest["vars"]
+        with tempfile.TemporaryDirectory() as d:
+            # A BOM (Windows PowerShell 5.1 hand edit) is read, and the user's key survives.
+            dest = Path(d) / "bom"
+            dest.mkdir()
+            (dest / "settings.json").write_bytes(b"\xef\xbb\xbf" + b'{"skipWorkflowUsageWarning": true}\n')
+            claude_adapter.install(root, target, vars_cfg, dest, "tester", dry_run=False)
+            raw = (dest / "settings.json").read_bytes()
+            self.assertFalse(raw.startswith(b"\xef\xbb\xbf"))
+            self.assertTrue(json.loads(raw)["skipWorkflowUsageWarning"])
+            self.assertEqual(check.check_install("claude", live_root=dest, username="tester")[1:], ([], []))
+
+            # Unparseable settings stop the install before the first copy, not after it.
+            broken = Path(d) / "broken"
+            broken.mkdir()
+            (broken / "settings.json").write_text('{"model": ', encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                claude_adapter.install(root, target, vars_cfg, broken, "tester", dry_run=False)
+            self.assertEqual(sorted(p.name for p in broken.iterdir()), ["settings.json"])
+
     def test_routing_reference_doc_exists_and_is_pointed_to(self):
         root = Path(__file__).resolve().parents[2]
         ref = root / "content" / "rules" / "routing-reference.md"
@@ -3721,6 +3776,14 @@ class TestBuildFromHandoff(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "config", "core.excludesFile",
                             str(repo / "not-a-file")],
                            check=True, capture_output=True, text=True)
+            # Not every git refuses this: the windows-latest runner's git reads
+            # the directory as an empty exclude file and `git status` succeeds,
+            # so there is no failure to report. The line selection itself is
+            # covered without git by test_git_why_prefers_the_fatal_line.
+            probe = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
+                                   capture_output=True)
+            if probe.returncode == 0:
+                self.skipTest("this git accepts a directory as core.excludesFile")
             (repo / bus.HANDOFF).write_text(
                 "# H\n```tiers\ngate 1: LOW\n```\n```scope\nallowed.py\nRESULT.md\n```\n",
                 encoding="utf-8")
@@ -3731,6 +3794,20 @@ class TestBuildFromHandoff(unittest.TestCase):
             self.assertIn("fatal:", out.reason)
             self.assertNotIn("warning:", out.reason)
             self.assertEqual(mock._cycle[ROLE_BUILDER], 0)
+
+    def test_git_why_prefers_the_fatal_line(self):
+        # Same contract as the test above, without depending on which git is
+        # installed: whatever git prints first, the `fatal:` line is the reason.
+        from orchestrator import controller as ctrl
+        stderr = (b"warning: unable to access 'C:/r/not-a-file': Permission denied\n"
+                  b"fatal: cannot use C:/r/not-a-file as an exclude file\n")
+        failed = subprocess.CompletedProcess(["git"], 128, b"", stderr)
+        with mock.patch.object(ctrl.subprocess, "run", return_value=failed):
+            self.assertEqual(ctrl._git_why(Path(".")),
+                             "fatal: cannot use C:/r/not-a-file as an exclude file")
+        only_warning = subprocess.CompletedProcess(["git"], 1, b"", b"warning: something odd\n")
+        with mock.patch.object(ctrl.subprocess, "run", return_value=only_warning):
+            self.assertEqual(ctrl._git_why(Path(".")), "warning: something odd")
 
     def test_work_repo_below_the_git_root_still_vets_content(self):
         # `git status` reports paths relative to the REPOSITORY ROOT, not to the

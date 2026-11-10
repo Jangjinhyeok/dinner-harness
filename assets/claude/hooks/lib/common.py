@@ -42,6 +42,14 @@ def read_hook_input() -> dict:
     handler read, and the net has nobody else to fall back on.
     """
     try:
+        # The payload is UTF-8 JSON. A piped stdin on Windows is decoded with the
+        # locale codepage instead (cp949 on a Korean install), which mangles
+        # non-ASCII text and can swallow the ASCII character right after it — a
+        # secret glued to a Hangul syllable was not seen by secret_scan.
+        try:
+            sys.stdin.reconfigure(encoding="utf-8")
+        except Exception:
+            pass  # stdin replaced by an object without reconfigure(): read it as is
         raw = sys.stdin.read()
         return json.loads(raw)
     except Exception as exc:

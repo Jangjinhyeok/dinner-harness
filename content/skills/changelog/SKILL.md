@@ -4,9 +4,6 @@ description: "Auto-generates a changelog from git commits (and optional planning
 argument-hint: "[version|tag|since-date]"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write
-context: |
-  !git log --oneline -30 2>/dev/null
-  !git tag --list --sort=-v:refname 2>/dev/null | head -5
 model: haiku
 ---
 
@@ -14,6 +11,12 @@ model: haiku
 
 Generates an **internal** changelog (technical, for you) and a **player-facing**
 changelog (community-ready) from git history.
+
+Repository state when the skill was loaded (where the runtime expands these; otherwise
+run them in Phase 2):
+
+- Recent commits: !`git log --oneline -30 2>/dev/null`
+- Latest tags: !`git tag --list --sort=-v:refname 2>/dev/null | head -5`
 
 ## Phase 1: Parse Arguments
 

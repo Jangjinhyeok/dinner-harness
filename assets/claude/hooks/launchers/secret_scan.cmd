@@ -1,3 +1,3 @@
 @echo off
-py -3 "%USERPROFILE%\.claude\hooks\handlers\secret_scan.py"
+py -3 "%~dp0..\handlers\secret_scan.py"
 exit /b %ERRORLEVEL%

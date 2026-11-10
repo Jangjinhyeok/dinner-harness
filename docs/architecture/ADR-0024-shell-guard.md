@@ -1,7 +1,7 @@
 # ADR-0024: shell_guard — destructive-command and git-hook-bypass checks for shell tools
 
 - Date: 2026-10-15
-- Status: accepted by user (decisions 1–4 below); implemented in the working tree; independent review pending; awaiting user acceptance; live installation not performed
+- Status: accepted by user (decisions 1–4 below); implemented and committed; independent re-review PASS (see Results); installed live in dryrun (first `shell_guard.log` record 2026-10-15); enforce promotion not decided — see Addendum 2026-11-10
 - Risk: HIGH (security hook, permission deny list, live `~/.claude/settings.json` on install)
 - Source: rule taxonomy and test cases adapted from affaan-m/ECC (MIT, Copyright (c) 2026 Affaan Mustafa), commit `b92f181` — `scripts/lib/powershell-destructive-command.js`, `scripts/hooks/block-no-verify.js` and their tests
 
@@ -54,3 +54,9 @@ Latency on this PC: `classify` median 22 µs, p99 71 µs in process; a 48 KB com
 Replay of 2,913 unique historical Bash/PowerShell calls from local transcripts:
 - `shell_guard` flags 45 (1.6%): `remove.recurse` 39, `find.delete` 8, `remove.wildcard` 5. The sampled ones are real recursive deletes, mostly scratchpad/temp cleanup. In enforce these would block, which is an input for the promotion review.
 - The extended `secret_scan` newly blocks 7, all reads of real `.env` files.
+
+## Addendum (2026-11-10): lexer gaps found by a second review
+
+A second audit reproduced misses that returned no finding at all: a command after `then`/`do`/`else` in the same statement (`if x; then rm -rf y; fi`, `for …; do rm -rf …; done`), `eval "<command>"`, Windows PowerShell's positional command (`powershell "<command>"`), the MSYS-escaped `cmd //c`, and three false heredocs (`$((a << b))`, a quoted `'<<EOF'`, a `<<<` here-string) that blanked every following line. All are fixed in `shell_guard.py` with regression cases in `SecondReviewRegressions`; the held-out set is unchanged. Still not covered: commands inside `case … esac`, and git's own destructive subcommands, which stay with four prefix deny globs.
+
+Consequence for decision 3: the dryrun log up to this date undercounts, because a miss writes no record. The promotion review should use dryrun records collected after the fixed handler is installed. The status line above also replaces the earlier text, which still said review was pending and the hook was not installed.

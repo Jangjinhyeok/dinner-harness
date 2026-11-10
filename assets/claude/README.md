@@ -73,7 +73,7 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 |---|---|---|---|
 | `secret_scan` | Pre · Edit·Write·NotebookEdit·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
 | `scope_check` | Pre · Edit·Write·NotebookEdit | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
-| `suggest_compact` | Pre · Edit·Write | 도구 호출 누적(기본 50회, `COMPACT_THRESHOLD`) 시 stderr로 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
+| `suggest_compact` | Pre · Edit·Write | Edit·Write 누적(기본 50회, `COMPACT_THRESHOLD`) 시 `systemMessage`로 사용자에게 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post·PostFailure · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
 | `route_nudge` | UserPromptSubmit | 구현 의도마다 inline 기본 실행 route(ADR-0023)를 context에 주입하고, UE 도메인 신호에는 focused reference consult 권고도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0) | 2026-06-16, 2026-08-07 auto-route protocol |
 
@@ -100,9 +100,9 @@ MCP는 위 "작동 방식"의 4가지(①auto-load ②조건부 inject ③명시
 
 **사용**: 등록되면 해당 서버의 tool이 세션에 자동 노출되고, 자연어 요청 시 Claude가 호출한다. stdio 서버는 Claude Code가 세션 시작 시 직접 spawn하므로 별도 실행이 필요 없다(원격 HTTP 서버는 독립 실행 + URL 연결). `.mcp.json`은 **세션 시작 시점에 한 번** 읽히므로, 추가·수정 후엔 세션 재시작이 필요하다.
 
-> ⚠️ **MCP는 hooks 안전망 밖이다.** `secret_scan`은 Edit/Write/NotebookEdit/Bash/PowerShell, `scope_check`은 structured edit payload(Edit/Write/NotebookEdit; Codex에서는 apply_patch)만 가로채므로 MCP가 에디터를 조작하거나 외부에 쓰는 동작은 검사되지 않는다. `scope_check`이 shell write를 다루지 않는 것은 의도된 workflow-guard 경계이며 containment는 sandbox가 맡는다. write 계열 MCP tool은 테스트 브랜치/사본에서 먼저 검증한다 (CLAUDE.md §5).
+> ⚠️ **MCP는 hooks 안전망 밖이다.** `secret_scan`은 Edit/Write/NotebookEdit/Bash/PowerShell, `scope_check`은 structured edit payload(Edit/Write/NotebookEdit; Codex에서는 apply_patch)만 가로채므로 MCP가 에디터를 조작하거나 외부에 쓰는 동작은 검사되지 않는다. `scope_check`이 shell write를 다루지 않는 것은 의도된 workflow-guard 경계이며 containment는 sandbox가 맡는다. write 계열 MCP tool은 테스트 브랜치/사본에서 먼저 검증한다 (CLAUDE.md §5). 엔진 MCP만의 이야기가 아니다: 파일 쓰기·프로세스 실행 tool을 제공하는 범용 MCP 서버를 연결하면 그 tool은 `secret_scan`·`scope_check` always-block·`shell_guard`를 모두 거치지 않고 `Read(...)` deny도 받지 않는다. 막으려면 `settings.json`의 `permissions.deny`/`ask`에 `mcp__<server>__<tool>` 규칙을 직접 넣는다(template은 넣지 않는다).
 
-**runtime 인지**: 위 셋업/템플릿은 auto-load 밖이라, 엔진 MCP의 존재를 세션 중 에이전트가 인지하려면 always-on 진입점이 필요하다. `rules/agent-routing.md`의 "MCP-aware 라우팅" 절이 그 역할 — 엔진 MCP tool이 세션에 있을 때만 발동하는 conditional lane으로, text(specialist)/live(MCP) 분리와 read-only sweet spot을 규정한다.
+**runtime 인지**: 위 셋업/템플릿은 auto-load 밖이라, 엔진 MCP의 존재를 세션 중 에이전트가 인지하려면 always-on 진입점이 필요하다. `rules/agent-routing.md` 끝의 "Engine MCP" 문단이 그 역할이다 — 허용된 scope 안에서만 쓰고, live asset 변경은 사본 등 검증 가능한 환경에서 다루며, MCP availability를 추측하지 않는다.
 
 ## 설치 (새 PC)
 

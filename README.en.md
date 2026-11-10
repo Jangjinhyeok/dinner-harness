@@ -38,7 +38,9 @@ templates are source-only). The Claude adapter has no retire logic, so those fil
 plus `claude-direct.cmd`, `dh*.cmd`, `watch-builder.ps1`, the `builder_guard` files and the settings
 `orchestrate.py` allow rule, may remain in `~/.claude`. `check.py --target claude` reports the leftover
 files but never deletes them. Remove leftover `rules/` files by hand: Claude Code auto-loads them.
-check.py does not report the settings allow rule; remove it from `settings.json` by hand.
+Permission rules dropped from the template (the `orchestrate.py` allow rule and retired deny globs,
+listed under `retired_permission_rules` in `harness.toml`) survive the settings merge; check.py reports
+them as leftovers, and you remove them from `settings.json` by hand.
 Per-machine environment facts (CLI tools, console encoding, computer-use quirks) are not installed.
 If needed, copy the installed `~/.claude/templates/machine-env.example.md` to
 `~/.claude/rules/machine-env.md` and fill in facts verified on that machine; install never touches

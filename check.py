@@ -198,10 +198,15 @@ def _json_key_drift(rel, want_text, got_text):
     """A `merge` dest keeps existing-dest keys the template does not own, so only the
     rendered keys are ours to check — extra live keys are the point of merging."""
     try:
-        want, got = json.loads(want_text), json.loads(got_text)
+        # A leading BOM (Windows PowerShell 5.1 hand edit) is tolerated by the installer too.
+        want, got = json.loads(want_text), json.loads(got_text.lstrip("﻿"))
     except json.JSONDecodeError as e:
         return [f"{rel}: JSON 파싱 실패 — {e}"]
     problems = []
+    # The merge never touches keys the template does not own, so this one survives every
+    # install while switching off every hook the template registers.
+    if "hooks" in want and isinstance(got, dict) and got.get("disableAllHooks") is True:
+        problems.append(f"{rel}: `disableAllHooks`가 true — template hook이 전부 꺼져 있음 (수동 제거 필요)")
     for k in want:
         if k not in got:
             problems.append(f"{rel}: 설치본에 키 없음 — `{k}`")
@@ -230,6 +235,40 @@ def _json_key_drift(rel, want_text, got_text):
         elif got[k] != want[k]:
             problems.append(f"{rel}: 키 내용 다름 — `{k}`")
     return problems
+
+
+def _retired_permission_rules(target_cfg, vars_cfg, live):
+    """Retired permission rules still present in a merged settings file.
+
+    The merge keeps the union of each permission list, so a rule the template dropped
+    stays in the install forever and `_json_key_drift` (canonical ⊆ live) cannot see it.
+    """
+    retired = target_cfg.get("retired_permission_rules", [])
+    found = []
+    if not retired:
+        return found
+    home_token = vars_cfg.get("claude_home_token", "<CLAUDE_HOME>")
+    for entry in target_cfg.get("template", []):
+        if not (entry.get("merge") and entry["dest"].endswith(".json")):
+            continue
+        try:
+            data = json.loads((live / entry["dest"]).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue  # missing or unparseable: the drift pass already reports it
+        permissions = data.get("permissions") if isinstance(data, dict) else None
+        if not isinstance(permissions, dict):
+            continue
+        for item in retired:
+            rules = permissions.get(item["list"])
+            if not isinstance(rules, list):
+                continue
+            # The installer wrote the resolved dest; accept either spelling of the root.
+            for root in dict.fromkeys((live.as_posix(), live.resolve().as_posix())):
+                rule = item["rule"].replace(home_token, root)
+                if rule in rules:
+                    found.append(f"{entry['dest']} permissions.{item['list']} `{rule}`")
+                    break
+    return found
 
 
 def _hooks_drift(want_text, got_text):
@@ -401,6 +440,8 @@ def check_install(target, live_root=None, username=None):
     for rel in target_cfg.get("retired_dests", []):
         if (live / rel).exists():
             leftovers.append((rel, False))
+    for rel in _retired_permission_rules(target_cfg, manifest.get("vars", {}), live):
+        leftovers.append((rel, False))
     return True, problems, leftovers
 
 

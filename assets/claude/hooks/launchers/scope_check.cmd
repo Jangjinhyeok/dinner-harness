@@ -1,3 +1,3 @@
 @echo off
-py -3 "%USERPROFILE%\.claude\hooks\handlers\scope_check.py"
+py -3 "%~dp0..\handlers\scope_check.py"
 exit /b %ERRORLEVEL%

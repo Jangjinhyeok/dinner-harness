@@ -11,7 +11,8 @@ Respect custom homes. Missing/disabled logging is a no-data result, not an error
 Do not reconstruct logs from credentials, private histories or unrelated raw output.
 
 Inspect only structured redacted diagnostics. Group causes and verify repeated failures against
-current project commands. Prefer a small project AGENTS.md rule for a lasting fact; report
+current project commands. Prefer a small rule in the project instruction file the active
+runtime loads (CLAUDE.md for Claude Code, AGENTS.md for Codex) for a lasting fact; report
 one-offs. Do not copy secrets, token-bearing commands or build-output bodies.
 When the redacted records provide them, compare diagnostic signatures and distinct session
 counts so repeated retries in one session are not mistaken for a recurring cross-project rule.

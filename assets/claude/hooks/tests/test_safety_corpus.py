@@ -381,6 +381,88 @@ class ReviewRegressions(_Base):
         self.assertLess(time.perf_counter() - start, 0.15)
 
 
+class SecondReviewRegressions(_Base):
+    """Misses reproduced on 2026-11-10 (second review of the lexer): every case returned []."""
+
+    def test_shell_keywords_do_not_hide_the_command(self):
+        for command in ("if true; then rm -rf build; fi", "for d in a b; do rm -rf $d; done",
+                        'while read d; do rm -rf "$d"; done < list.txt',
+                        "if [ -d build ]; then echo keep; else rm -rf build; fi",
+                        "if rm -rf build; then echo done; fi", "! rm -rf build"):
+            with self.subTest(command=command):
+                self.assertIn("remove.recurse", shell_guard.classify(command, shell="bash"))
+        self.assertClean("if [ -d build ]; then echo ok; else echo missing; fi")
+        self.assertClean("for f in *.py; do echo $f; done")
+
+    def test_eval_runs_its_arguments(self):
+        self.assertIn("remove.recurse", shell_guard.classify('eval "rm -rf build"', shell="bash"))
+        self.assertIn("remove.recurse", shell_guard.classify("eval rm -rf build", shell="bash"))
+        self.assertIn("dynamic-execution", shell_guard.classify("eval $cmd", shell="bash"))
+        for command in ('eval "$(ssh-agent -s)"', "eval $(ssh-agent -s)", 'eval "$(direnv hook bash)"'):
+            with self.subTest(command=command):
+                self.assertEqual(shell_guard.classify(command, shell="bash"), [])
+
+    def test_powershell_positional_command(self):
+        for command in ('powershell "Remove-Item build -Recurse -Force"',
+                        'powershell -NoProfile "Remove-Item build -Recurse"',
+                        'powershell -ExecutionPolicy Bypass "Remove-Item build -Recurse"',
+                        'powershell.exe -NoLogo -ExecutionPolicy Bypass -Command "Remove-Item build -Recurse"',
+                        'powershell -Unlisted value -Command "Remove-Item build -Recurse"'):
+            with self.subTest(command=command):
+                self.assertIn("remove.recurse", shell_guard.classify(command, shell="bash"))
+        # A switch that looks like a value parameter (-i is Interactive in pwsh) must not eat -c.
+        for command in ('pwsh -i -c "Remove-Item build -Recurse"', 'powershell -w -Command "Remove-Item build -Recurse"'):
+            with self.subTest(command=command):
+                self.assertIn("remove.recurse", shell_guard.classify(command, shell="bash"))
+        self.assertIn("dynamic-execution", shell_guard.classify("powershell $script", shell="bash"))
+        for command in ("powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Clean",
+                        "powershell ./build.ps1 -Clean", 'powershell "Get-ChildItem build"',
+                        'pwsh "Remove-Item build -Recurse"'):  # pwsh reads a positional as -File
+            with self.subTest(command=command):
+                self.assertEqual(shell_guard.classify(command, shell="bash"), [])
+
+    def test_msys_escaped_cmd_switch(self):
+        self.assertIn("cmd.recursive-delete", shell_guard.classify('cmd //c "rd /s /q build"', shell="bash"))
+        self.assertIn("cmd.recursive-delete", shell_guard.classify("cmd.exe //C rd /s /q build", shell="bash"))
+        self.assertClean('cmd //c "dir build"')
+
+    def test_only_a_real_heredoc_hides_the_following_lines(self):
+        for first in ("echo $((a << b))", "grep -c '<<EOF' notes.md", "wc -l <<< hello",
+                      'echo "see <<EOF in the docs"'):
+            with self.subTest(first=first):
+                self.assertIn("remove.recurse", shell_guard.classify(first + "\nrm -rf build", shell="bash"))
+        # A heredoc body fed to a non-shell command is still data; one fed to a shell still runs.
+        self.assertEqual(shell_guard.classify("cat <<EOF > notes.txt\nrm -rf build\nEOF", shell="bash"), [])
+        self.assertEqual(shell_guard.classify("cat <<'EOF' > notes.txt\nrm -rf build\nEOF\ngit status",
+                                              shell="bash"), [])
+        self.assertIn("remove.recurse",
+                      shell_guard.classify("cat <<EOF > notes.txt\nhello\nEOF\nrm -rf build", shell="bash"))
+        self.assertIn("remove.recurse", shell_guard.classify("bash <<EOF\nrm -rf build\nEOF", shell="bash"))
+
+    def test_commit_message_heredoc_inside_command_substitution_is_data(self):
+        # The usual agent commit form. The message may mention destructive commands and
+        # carry stray quotes; it must stay data, as it was before the quote-aware scan.
+        for body in ("fix: flag rm -rf build after then",
+                     "fix: don't miss `rm -rf build`; see \"docs\" (and others)",
+                     "docs: Remove-Item src -Recurse is flagged; git commit --no-verify too"):
+            command = "git commit -m \"$(cat <<'EOF'\n" + body + "\nEOF\n)\""
+            with self.subTest(body=body):
+                self.assertEqual(shell_guard.classify(command, shell="bash"), [])
+        self.assertIn("remove.recurse", shell_guard.classify(
+            "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\" && rm -rf build", shell="bash"))
+
+    def test_heredoc_opened_on_the_line_that_closes_a_multiline_string(self):
+        # Independent review 2026-11-10: with per-line quote tracking the closing quote
+        # read as an opening one, the heredoc was missed and its body flagged.
+        for command in ("gh pr create --title t --body \"line1\nline2\" && cat > notes.md <<'EOF'\nrm -rf build\nEOF",
+                        "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\" && cat > f <<EOF2\nrm -rf build\nEOF2",
+                        "# don't forget the notes\ncat > notes.md <<EOF\nrm -rf build\nEOF"):
+            with self.subTest(command=command):
+                self.assertEqual(shell_guard.classify(command, shell="bash"), [])
+        self.assertIn("remove.recurse", shell_guard.classify(
+            "echo \"line1\nline2\" && cat > notes.md <<'EOF'\ntext\nEOF\nrm -rf build", shell="bash"))
+
+
 class ReviewSecretScanRegressions(unittest.TestCase):
     BENIGN = ['py -3 -c "k = obj.key; print(k)"', 'node -e "x = cfg.key"', "print(cfg['a'].key)",
               "Sort-Object -Property Value.Key", "gh api repos/o/r/keys --jq '.[].key'",
@@ -429,6 +511,39 @@ class HandlerContract(unittest.TestCase):
         self.assertEqual((clean.returncode, clean.stderr), (0, ""))
         other = self._run("enforce", bad, tool="Write")
         self.assertEqual(other.returncode, 0)
+
+    def test_payload_is_read_as_utf8_whatever_the_console_codepage(self):
+        # Under cp949 the last byte of some Hangul syllables pairs with the next ASCII
+        # letter and swallows it, so the key below lost its first character and passed.
+        import os
+        import subprocess
+        key = "AKIA" + "ABCDEFGHIJKLMNOP"
+        # Force the Korean codepage on the child's stdin so this fails without the fix on
+        # any machine, not only on a cp949 console.
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
+        env.update(CLAUDE_SECRET_SCAN_MODE="enforce", PYTHONIOENCODING="cp949")
+        handler = Path(__file__).resolve().parents[1] / "handlers" / "secret_scan.py"
+        for content in ("값" + key, "키 " + key, "# 설정 파일\nkey = " + key):
+            payload = {"tool_name": "Write", "tool_input": {"file_path": "C:/proj/a.txt", "content": content}}
+            with self.subTest(content=content[:6]):
+                result = subprocess.run([sys.executable, str(handler)], capture_output=True, env=env,
+                                        input=json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+                self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_hooks_tree_is_protected_as_a_whole(self):
+        # handlers put hooks/ first on sys.path; a stray hooks/traceback.py made every
+        # guard exit 1 (not a block), so the root must not be writable either.
+        rules = json.loads((Path(__file__).resolve().parents[1] / "rules" / "scope_protect.json")
+                           .read_text(encoding="utf-8"))
+        self.assertIn({"match": "prefix", "path": "hooks/"}, rules["always_block"])
+
+    def test_launchers_run_the_handler_next_to_them(self):
+        launchers = Path(__file__).resolve().parents[1] / "launchers"
+        for launcher in sorted(launchers.glob("*.cmd")):
+            with self.subTest(launcher=launcher.name):
+                text = launcher.read_text(encoding="utf-8")
+                self.assertIn(f'"%~dp0..\\handlers\\{launcher.stem}.py"', text)
+                self.assertNotIn("USERPROFILE", text)
 
     def test_settings_template_wires_shell_guard_in_dryrun(self):
         template = json.loads(_TEMPLATE.read_text(encoding="utf-8"))
