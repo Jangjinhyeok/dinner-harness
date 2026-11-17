@@ -36,7 +36,8 @@ send a disputed finding to a fresh reviewer with the counter-evidence.
 
 Record who actually reviewed and the evidence. If delegation cannot run, record
 `independent_review=not_run`; self-review does not satisfy HIGH independent review.
-HIGH remains pending human acceptance. Builder `panel=PASS` is not proof of a reviewer.
+HIGH remains pending human acceptance. Where a headless Builder ran, its `panel=PASS` is not proof
+of a reviewer.
 REQUEST CHANGES/FAIL fixes are an author's response, not a re-review PASS. Record the original
 verdict and `fixes applied; re-review pending` until an independent reviewer examines the changed
 artifact and evidence. Keep design review separate from post-implementation review.
@@ -45,5 +46,5 @@ Check that evidence targets the reviewed state; stale, blank or uninspected prev
 visual PASS. Keep that check not_run unless the actual target was observed failing (FAIL).
 Use the latest requested outcome: compile success does not justify retaining a removed feature
 as hidden bindings/widgets or placeholders without a required compatibility contract.
-Preserve controller repo/task challenge caps. Do not repeat review without relevant new changes
+Where the controller is installed, preserve its repo/task challenge caps. Do not repeat review without relevant new changes
 or missing evidence to resolve.

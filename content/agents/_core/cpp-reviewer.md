@@ -1,7 +1,7 @@
 ---
 name: cpp-reviewer
 description: Read-only C++ reviewer for memory safety, lifetime, ownership, concurrency and performance risks when independent specialist review adds value.
-tools: ["Read", "Grep", "Glob", "Bash"]
+tools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"]
 model: fable
 effort: high
 ---

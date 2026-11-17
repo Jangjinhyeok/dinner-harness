@@ -1,7 +1,7 @@
 # Cross-Vendor Two-CLI Orchestrator
 
 
-> 2026-09-10 correction: Codex inline is the default. The historical/compatibility material below is superseded by source `content/rules/two-cli-reference.md` and ADR-0022 for current operation. `run` is experimental with explicit vendor/model options and refuses real HIGH implementation. `challenge/build` uses a numeric prefix, bound evidence, and JSON result contract. Builder panel=PASS is not independent review. Consult the dated CODEX-COVERAGE matrix for actual native hook measurements.
+> 2026-09-10 correction: Codex inline is the default. The historical/compatibility material below is superseded by source `content/rules/two-cli-reference.md` and ADR-0022 for current operation. `run` is experimental with explicit vendor/model options and refuses real HIGH implementation. `challenge/build` uses a numeric prefix, bound evidence, and JSON result contract. Builder panel=PASS is not independent review. Consult the dated CODEX-COVERAGE matrix for actual native hook measurements. 2026-10-11 (ADR-0023): the Claude install is 1-CLI inline and no longer installs the orchestrator; `challenge/build` run from a Codex-target install or a repo checkout.
 
 [한국어](README.ko.md) | **English**
 
@@ -16,40 +16,50 @@ The human is invoked only at the three boundaries risk-tiered autonomy keeps:
 
 Everything between (Architect design, Builder implement, panel review, Architect
 review, cycle looping) is automated. Stdlib only; mirrors the `install.py` /
-`check.py` / `adapters/` toolchain. Design rationale: this conversation's design
-section (a future `docs/architecture/` ADR).
+`check.py` / `adapters/` toolchain. Design rationale: the ADRs under
+`docs/architecture/` (notably ADR-0007 net, ADR-0019 baseline, ADR-0020 routing,
+ADR-0021 challenge cap, ADR-0022/0023 current operation).
 
 ## Why this restores cross-vendor Two-CLI
 
-The codex adapter marks Two-CLI roles **STILL-DEGRADED — 세션페어 없음**
-(`CODEX-RECON.md`): Codex has no session-pair concept. The orchestrator manages
+The 2026-06 codex adapter recon marked Two-CLI roles **STILL-DEGRADED — 세션페어 없음**
+(`CODEX-RECON.md`): Codex has no session-pair concept. (The Codex target now
+installs `roles/` and the two-cli/routing references — `harness.toml [targets.codex]`.) The orchestrator manages
 the pairing **externally** — each "session" is one headless invocation
 (`codex exec` / `claude -p`) the controller makes — so "Two-CLI" here is **two
 roles / two CLI engines, not two interactive terminals**. Because the harness
 mandates self-contained HANDOFF/RESULT, turns are **stateless** (each reads the
 bus + repo fresh), so no session-resume is needed.
 
-Two entry points, with different support tiers:
-- **`build`** — **Primary / production.** Single-shot Builder pass from an existing
-  `HANDOFF.md` (no headless Architect). This is what an **interactive Claude
-  Architect auto-dispatches** after an in-session HANDOFF approval (orchestrated
-  single-pane — the default pairing's flow); it runs the Codex Builder + the hard
-  safety net, then the in-session Claude reviews `RESULT.md` and, for a HIGH gate,
-  a human signs off. **HIGH acceptance authority is the Claude diff review + human
-  sign-off, not the Builder's self-reported panel** — `run_from_handoff()` treats
-  the verdict-based tier gate as advisory (emit-only) for exactly this reason. See
-  `roles/ROLE_ARCHITECT.md` "Builder 자동 dispatch".
-- **`run`** — **Experimental.** Fully headless: the controller drives *both*
-  Architect and Builder (`claude -p` / `codex exec`) through the whole loop with no
-  human or Claude reviewer in between gates. Because that topology has no other
-  reviewer, `run()` keeps the verdict-based tier gate **hard** — a HIGH gate's
-  acceptance rests entirely on the Builder's own self-reported `panel`. This is a
-  materially weaker guarantee than `build`'s, especially when the Builder vendor
-  has no jury skill available (Codex — `adversarial-review` is in
-  `harness.toml [targets.codex].skills_drop`), in which case the self-report is an
-  unverified single self-review. Prefer a Claude-vendor Builder for `run()`'s HIGH
-  gates, or treat a Codex-Builder `run()` HIGH result as needing additional human
-  scrutiny before accepting it. See `controller.py`'s `_build_and_gate` docstring.
+`orchestrate.py --help` lists three subcommands, with different support tiers:
+- **`build`** — Single-shot Builder pass from an existing handoff file
+  (`--handoff`, default `HANDOFF.md`; no headless Architect). It is an **opt-in**
+  dispatch run from the session that owns the HANDOFF, using a Codex-target
+  install (`<HARNESS_HOME>/orchestrate.py`) or a repo checkout; the Claude install
+  is 1-CLI (ADR-0023) and does not ship the orchestrator. The Builder
+  vendor/model/effort come from the active routing preset (`routing.toml`, or
+  `--routing-preset` for one dispatch) unless `--builder` / `--builder-model` /
+  `--builder-effort` override them (model/effort overrides are refused on a HIGH
+  gate, ADR-0020). It runs the hard safety net; the dispatching session then
+  reviews `RESULT.md` and the diff, and a HIGH gate additionally needs independent
+  review and human acceptance. **HIGH acceptance authority is that review + human
+  acceptance, not the Builder's self-report** — `run_from_handoff()` treats the
+  verdict-based tier gate as advisory (emit-only) for exactly this reason. See
+  `content/roles/ROLE_ARCHITECT.md` and `content/rules/two-cli-reference.md`.
+- **`challenge`** — Single-shot, read-only `challenger_high` dispatch against a
+  draft HANDOFF/ADR (ADR-0020). It writes `CHALLENGE.md` plus a receipt that a
+  HIGH `build` checks (see "HIGH pre-design challenge freshness" below), and is
+  capped by `--max-challenge-rounds` (default 3, ADR-0021).
+- **`run`** — **Experimental legacy loop.** Fully headless: the controller drives
+  *both* Architect and Builder (`claude -p` / `codex exec`) through the whole loop
+  with explicit `--architect/--builder` vendors and models only (no routing preset
+  or effort). `run()` keeps the verdict-based tier gate **hard**, but with
+  `--backend real` it **blocks** as soon as the Architect's `tiers` fence is
+  missing or declares any HIGH gate ("use challenge/build"), so a real `run` only
+  starts on all-LOW declared work. The effective tier still includes the Builder's
+  self-report: if the Builder reports a LOW-declared gate as HIGH, the hard gate and
+  the HIGH human end sign-off run in real mode too (a Codex JSON result carries no
+  panel, so that case is BLOCKED).
 
 For interactive use, launch ordinary `claude` from the work repository. It implements inline by
 default (ADR-0023); the `build` path is an opt-in dispatch for bounded work that needs controller checks.
@@ -60,20 +70,32 @@ default (ADR-0023); the `build` path is an opt-in dispatch for bounded work that
 # Offline smoke — no CLIs needed. Drives a full LOW cycle against a mock vendor.
 py -3 orchestrate.py run --goal "add a feature flag reader" --backend mock --yes --repo /path/to/scratch
 
-# Real cross-vendor run (default: Claude=Architect, Codex=Builder).
+# Experimental real legacy loop (vendors are explicit; both default to codex).
+# Blocks on any HIGH gate.
 py -3 orchestrate.py run --goal "..." --architect claude --builder codex \
     --backend real --repo /path/to/work-repo
 
-# Single-shot Builder from an existing HANDOFF.md (what the interactive Claude
-# Architect auto-dispatches — orchestrated single-pane). Codex builds headless;
-# the in-session Claude then reviews RESULT.md.
+# Read-only HIGH pre-design challenge of a draft HANDOFF.md.
+py -3 orchestrate.py challenge --repo /path/to/work-repo --backend real
+
+# Single-shot Builder from an existing HANDOFF.md; vendor/model/effort come from
+# the active routing preset. The dispatching session then reviews RESULT.md + diff.
 py -3 orchestrate.py build --repo /path/to/work-repo --backend real
 ```
 
-Flags: `--architect/--builder {codex,claude}`, `--architect-model/--builder-model`,
-`--max-cycles N`, `--no-confirm-handoff`, `--yes` (auto-approve all human gates),
-`--net-dryrun` (safety net warns instead of blocks), and `--timeout-s N` (per
-headless vendor turn; default 1800). Vendor stdout/stderr is streamed while the
+Flags (see `py -3 orchestrate.py <sub> --help`):
+- `run`: `--goal`, `--architect/--builder {codex,claude}` (both default `codex`),
+  `--architect-model/--builder-model`, `--max-cycles N` (default 5),
+  `--no-confirm-handoff`, `--yes` (auto-approve all human gates),
+  `--dangerously-auto-approve-real`, `--net-dryrun` (safety net warns instead of blocks).
+- `build`: `--handoff NAME`, `--task-id`, `--builder {codex,claude}`,
+  `--builder-model`, `--builder-effort`, `--routing-preset`, `--net-dryrun`.
+- `challenge`: `--handoff NAME`, `--task-id`, `--routing-preset`,
+  `--max-challenge-rounds N` (default 3), `--acknowledge-challenge-round-cap`.
+- All three: `--repo` (default cwd), `--backend {mock,real}` (default `mock`),
+  `--audit-dir`, and `--timeout-s N` (per headless vendor turn; default 1800).
+
+Vendor stdout/stderr is streamed while the
 turn runs and captured for parsing. A timeout kills the child and remains
 `BLOCKED`; inspect the dispatch repository for surviving output before retrying or
 starting a manual fallback.
@@ -82,8 +104,9 @@ starting a manual fallback.
 
 `build` writes two content-free JSONL events to the harness-side
 `logs/build-audit.jsonl` by default: `attempted` before the Builder work and a
-terminal `built`, `blocked`, `timeout`, or `builder_bailed` event after the
-controller decides the outcome. Pass `--audit-dir <path>` to move that runtime
+terminal `built`, `blocked`, or `timeout` event after the controller decides the
+outcome (the audit vocabulary still maps a legacy `builder_bailed` code, but no
+current path produces it). Pass `--audit-dir <path>` to move that runtime
 log; do not place it inside `--repo`, because it would pollute the repository
 delta the safety net judges. A terminal event records dispatch id, UTC timestamp,
 vendor/backend, attempt count, duration, a fixed reason code, and SHA-256 hashes of
@@ -111,24 +134,29 @@ or state-binding failure. No private rollout or transcript collection is used.
 
 ## Dispatch the Builder in place
 
-Dispatch from the original repository. Before dispatch, commit the approved
-baseline so the tree is clean; `HANDOFF.md` is already available as the local
-bus artifact and does not need copying. ADR-0007's before/after snapshots judge
-the Builder turn's delta. Do not edit that repository while the Builder runs.
+Dispatch from the original repository. A baseline commit is optional
+(ADR-0019): the controller takes a pre-turn snapshot (`git stash create`, or
+`HEAD` on a clean tree) and ADR-0007's before/after snapshots judge only the
+Builder turn's delta, so existing dirt is preserved and not charged to the
+Builder. `HANDOFF.md` is already available as the local bus artifact and does not
+need copying. Do not edit that repository while the Builder runs.
+
+`<HARNESS_HOME>` is the Codex-target install (`~/.codex`, or `CODEX_HOME`) or this
+repository checkout, as in `content/rules/two-cli-reference.md`.
 
 ```powershell
-# Run from the original repository after HANDOFF.md is approved and the baseline is committed.
-$claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
+# Run from the original repository after HANDOFF.md is approved.
+$harnessHome = ($env:USERPROFILE -replace '\\', '/') + '/.codex'   # or CODEX_HOME / repo checkout
 $repoPath = (Get-Location).Path -replace '\\', '/'
-py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real
+py -3 "$harnessHome/orchestrate.py" build --repo "$repoPath" --backend real
 
 # Review the Builder's bus and diff in the original repository.
 Get-Content -Raw .\RESULT.md
 git diff
 ```
 
-The clean baseline also makes an unsuccessful run cheap to discard under the
-existing `/delegate` rule. The snapshot delta is not a concurrency boundary, so
+Committing a baseline first still makes an unsuccessful run cheap to discard,
+but it is not required. The snapshot delta is not a concurrency boundary, so
 the Architect must leave the repository untouched until the Builder finishes.
 
 ## The machine-readable bus
@@ -139,21 +167,28 @@ blocks it parses deterministically:
 
 | fence | written by | in | content |
 |---|---|---|---|
-| ` ```tiers ` | Architect | HANDOFF | `gate N: LOW\|HIGH` per gate |
+| ` ```tiers ` | Architect | HANDOFF | `gate N: risk=LOW\|HIGH compute=LOW\|NORMAL\|HIGH` per gate (bare `gate N: LOW\|HIGH` still accepted) |
 | ` ```scope ` | Architect | HANDOFF | files the Builder may edit (already read by `scope_check`) |
-| ` ```verdicts ` | Builder | RESULT | `gate N: status=… tier=LOW\|HIGH panel=PASS\|FAIL\|BLOCK` |
-| ` ```control ` | Architect (review) | stdout | `verdict: DONE\|NEXT_CYCLE\|BLOCKED` |
+| result JSON | Builder (Codex, `--backend real`) | final message | output-schema JSON: `schema_version`, `summary`, `gates[]` of `gate`, `status=completed\|blocked\|pending\|needs_review`, `tier`, `self_review`, `verification_claim` |
+| ` ```verdicts ` | Builder (compatibility only) | final message | exactly one fence, `gate N: status=completed\|blocked\|pending\|needs_review tier=LOW\|HIGH panel=PASS\|FAIL\|BLOCK` |
+| ` ```control ` | Architect (`run` review) | stdout | `verdict: DONE\|NEXT_CYCLE\|BLOCKED` |
 
-**Fail-closed everywhere**: a missing/garbled tier → HIGH; a missing `control`
-fence → BLOCKED; a HIGH gate with no `PASS` verdict → blocked.
+The controller renders `RESULT.md` from the parsed Builder result; it is a
+human-readable report, not acceptance evidence.
 
-For the single-shot `build` path only, a Builder that made an in-scope,
-net-scanned implementation change but omitted ` ```verdicts ` receives one
-**verdict-only recovery turn**. It may not change files; its fence is appended
-to the already-written human-readable `RESULT.md` and is itself safety-scanned.
-Any recovery implementation delta, no initial implementation delta, a safety-net
-hit, or a second malformed recovery still
-returns `BLOCKED`.
+**Fail-closed everywhere**: in `run`, a missing/garbled tier → HIGH; in `build`, a
+missing or duplicate `tiers` fence, a duplicate gate or malformed fields is a
+handoff contract error → BLOCKED; a missing `control` fence → BLOCKED. A HIGH gate
+with no `PASS` verdict blocks only in `run` (hard tier gate); in `build` the tier gate is
+advisory and only logs `tier-gate(advisory)`, since review and acceptance belong to the
+calling session.
+
+For the single-shot `build` path only, any output-contract error (invalid result
+JSON, or a missing/duplicate compatibility `verdicts` fence) gets exactly one
+**read-only result-format recovery turn**. It may not edit files or rerun
+implementation; its report is appended after the preserved `RESULT.md`, and the
+turn is net-scanned like any other. Any implementation delta during recovery, a
+safety-net hit, or a second contract error returns `BLOCKED`.
 
 ## Safety model (the non-negotiable part)
 
@@ -163,8 +198,10 @@ wired into the controller — and every ambiguity fails **closed**:
 - **Controller-side deterministic net** — after the Builder turn, the controller
   reruns the harness `scope_check` + `secret_scan` handlers **verbatim** (as
   subprocesses, fed a synthesized payload per changed file) in `enforce`. This
-  holds **regardless of which vendor built** — Codex 0.147.0 native hooks are
-  advisory, so their PreToolUse exit 2 cannot veto an edit. A hook block (exit
+  holds **regardless of which vendor built** — Codex native hooks were measured
+  advisory on 0.147–0.151 (`CODEX-COVERAGE.md` §6: PreToolUse exit 2 did not veto
+  `apply_patch`), and the net does not depend on native-hook enforcement either
+  way. A hook block (exit
   2) fails the cycle; in
   `enforce` a handler that is **missing or cannot launch also fails the cycle**
   (a net you cannot run is not a pass), and a changeset that cannot be
@@ -254,19 +291,22 @@ report `node_modules` and refuse every dispatch — so ignore rules remain part
 of the safety boundary. Ignored files are not included by `git stash create`:
 they can be detected and blocked, but cannot be rolled back by that snapshot.
 A fence that names a large ignored directory can also hit the existing
-`max_files` ceiling. And a block is a **refusal, not a rollback**: an
-out-of-fence deletion is reported, not undone.
+`max_files` ceiling. And a block is only a **partial rollback**: on a scope
+block the controller restores the scope-blocked **tracked** paths from the
+pre-turn snapshot; paths the snapshot lacks (untracked, ignored) and
+secret-blocked paths are left in place and reported.
 
 - **Tier-gate enforcement (`run()` only — hard)** — effective tier = the higher of
   the Architect's declared tier and the Builder's self-reported tier; a
   **missing/garbled ```tiers``` fence makes every gate HIGH**. Any `FAIL`/`BLOCK`
   panel fails any tier; a HIGH gate needs an explicit `panel=PASS`; a declared gate
-  with no verdict — or no gates at all — fails closed. **In `build`/
-  `run_from_handoff()` (the primary path) this same gate is advisory
-  (emit-only)** — a HIGH gate's real acceptance authority is the dispatching
-  Claude session's diff review plus human sign-off, not this panel value. See
-  "Two entry points" above.
-- **END boundary, tier-driven** — the Architect review runs **first**; on `DONE`
+  with no verdict — or no gates at all — fails closed. With `--backend real`,
+  `run()` blocks before the Builder on any declared HIGH gate; this HIGH branch still
+  runs in real mode when the Builder self-reports HIGH on a LOW-declared gate. **In `build`/`run_from_handoff()` this
+  same gate is advisory (emit-only)** — a HIGH gate's real acceptance authority is
+  the dispatching session's review, independent review and human acceptance, not
+  this panel value. See the subcommand list above.
+- **END boundary, tier-driven (`run`)** — the Architect review runs **first**; on `DONE`
   a **LOW** cycle auto-completes (result reported, no human gate, per
   autonomy-policy), while a **HIGH** cycle stops for a human end sign-off before
   the change is accepted. The human never signs off on a cycle the Architect then
@@ -276,13 +316,16 @@ out-of-fence deletion is reported, not undone.
 
 **One of the two layers, not both.** The handlers carry an `always_block` layer
 protecting the harness install itself (`settings.json`, `hooks/`). It is
-anchored on the **live install** (`~/.claude`), while the net normally submits
+anchored on the **live installs** (`~/.claude`, `CODEX_HOME` or `~/.codex`, and the
+working directory's `.codex`), while the net normally submits
 only paths inside the work repo — so in a typical controller dispatch that layer
 never fires and the fence is the whole of the scope enforcement. **Not
-universal:** `git status` reports the whole git repo, so when the git root sits
-ABOVE the work repo, paths outside it are submitted in absolute form (that is
-`_repo_relative`'s deliberate behaviour) and the always-block layer can match
-after all. The direction is safe — it only ever adds a block — but "exactly one
+universal:** the working directory's `.codex` sits inside the work repo, so a Builder
+edit to protected `<repo>/.codex/` paths (`hooks.json`, `config.toml`, `rules/`) is
+blocked by always-block even when the fence lists it. Also, `git status` reports the
+whole git repo, so when the git root sits ABOVE the work repo, paths outside it are
+submitted in absolute form (that is `_repo_relative`'s deliberate behaviour) and the
+always-block layer can match there as well. The direction is safe — it only ever adds a block — but "exactly one
 layer is live here" is a rule of thumb, not an invariant. That is deliberate: the
 alternatives anchor it on the work repo (making any target repo with a root
 `settings.json` undispatchable) or on the handler's own directory (making the
@@ -290,22 +333,25 @@ harness repo unable to edit its own hooks). It does mean "reruns the handlers
 verbatim" above describes the *mechanism*, not two live layers.
 
 > **Install after every change here.** After touching anything under
-> `assets/claude/hooks/`, `orchestrator/`, or `orchestrate.py`, re-run
-> `py -3 install.py --target claude --allow-live` (and `--target codex`). All
-> three are installed, and the live dispatch
-> (`py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`) runs the **installed** copy — so a fix
-> that stays in the repo is a fix that is not in force. `py -3 check.py` will
+> `assets/claude/hooks/`, `orchestrator/`, or `orchestrate.py`, refresh the live
+> installs: `py -3 refresh.py --apply`, or `py -3 install.py --target codex --allow-live`
+> (plus `--target claude --allow-live` for hook changes). The orchestrator is
+> installed only by the Codex target (`harness.toml [targets.codex].copy`); the
+> Claude target retires it (`retired_dests`). A live dispatch
+> (`py -3 "<HARNESS_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`) runs the copy
+> under `<HARNESS_HOME>` — so a fix that stays in the repo is not in force there
+> unless `<HARNESS_HOME>` is the repo checkout. `py -3 check.py` will
 > tell you: its install-drift axis lists every file whose live copy differs from
 > the repo. It reports, it does not install.
 >
 > **To back out**, re-install from the previous commit — `install.py` overwrites
 > in place and keeps no backup, so there is no other undo:
-> `git stash && py -3 install.py --target claude --allow-live && git stash pop`
+> `git stash && py -3 install.py --target <claude|codex> --allow-live && git stash pop`
 > (or check out the previous commit and install from there). This matters more
 > than usual for changes touching `hooks/lib/common.py`, which **every** handler
 > imports: a bad copy there breaks every interactive hook at once. Copying the
-> live tree aside first (`cp -r ~/.claude ~/.claude.bak`) is the cheap
-> insurance.
+> live tree aside first (`cp -r ~/.claude ~/.claude.bak`, likewise `~/.codex`) is
+> the cheap insurance.
 
 ## Status & build-time verification
 
@@ -320,7 +366,8 @@ verbatim" above describes the *mechanism*, not two live layers.
   - `codex exec` sandbox/approval flags (`--full-auto` etc.) and `--cd`.
   - **Precondition**: cross-vendor Codex work wants **Codex ≥0.140** (0.111 lacks
     hooks/subagents — `CODEX-RECON.md` §b). The controller net covers the Builder
-    diff regardless, but Codex-side native safety only exists on 0.140+.
+    diff regardless; Codex-side native hooks need 0.140+ and were measured
+    advisory on 0.147–0.151 (`CODEX-COVERAGE.md` §6).
 
 ## HIGH pre-design challenge freshness
 
@@ -371,12 +418,17 @@ orchestrator/
   vendors.py              Backend interface + Mock + Claude/Codex (real)
   safety.py               controller-side net (reuses harness hook handlers)
   config.py               config dataclass + defaults
+  routing.py              routing.toml preset → builder/challenger profile resolution
+  receipt.py              content-free dispatch audit receipts
   tests/                  offline unittest (mock + real handlers)
 ```
 
-`orchestrate.py` and this package **are** installed into `~/.claude` by
-`install.py` (see `harness.toml`), because the default dispatch documented in
-`ROLE_ARCHITECT.md` runs the quoted absolute-path `orchestrate.py build` form. They are not
-skills/agents/hooks, so they do not appear in the harness capability catalog and
-`check.py` does not look at them — which is exactly why a change here can sit in
-the repo, unnoticed, while the live lane keeps running the old copy.
+`orchestrate.py` and this package are installed only by the Codex target
+(`harness.toml [targets.codex].copy`, into `<HARNESS_HOME>` = `~/.codex` or
+`CODEX_HOME`); the Claude target is 1-CLI (ADR-0023) and lists them in
+`retired_dests`, so `check.py` reports any leftover copy under `~/.claude`.
+Dispatch runs the quoted absolute-path `<HARNESS_HOME>/orchestrate.py build` form
+(or a repo checkout; see `content/rules/two-cli-reference.md`). They are not
+skills/agents/hooks, so they do not appear in the harness capability catalog, but
+`check.py`'s install-drift axis does compare them for the Codex target — so a
+change that sits in the repo uninstalled shows up there as drift.

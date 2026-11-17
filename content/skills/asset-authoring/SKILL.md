@@ -67,7 +67,8 @@ identifier and fetch/inspect the saved result. A queued/completed job alone does
 
 Python/code execution through a DCC MCP may use the DCC process's OS permissions. Tool allowlists,
 path-checking helpers and file hooks are not containment for every MCP/Add-on write or DCC cache.
-Keep the assigned write scope and required controller path; do not claim inline MCP equals
+Keep the assigned write scope (and the controller path where one is installed and required);
+do not claim inline MCP equals
 headless baseline/delta enforcement. Use actual tool availability rather than promising hot reload.
 
 ## Preserve source and iterate

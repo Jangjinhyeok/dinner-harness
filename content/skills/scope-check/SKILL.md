@@ -4,15 +4,15 @@ description: "Audit a feature or work cycle for scope creep by comparing current
 argument-hint: "[feature-name or cycle/milestone]"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash
-model: haiku
-context: fork
-agent: Explore
 ---
 
 # Scope Check
 
-> **Not the `scope_check` PreToolUse hook.** That hook enforces *file-level* edit
-> scope during Builder cycles (settings.json wiring). This `/scope-check` skill is a
+> **Not the `scope_check` PreToolUse hook.** That hook blocks structured edits to protected
+> harness-install paths (`settings.json`, `hooks/`, `rules/`, `agents/`). As a hook it checks
+> file-level scope only when the harness home's HANDOFF has a `scope` block, and then only in
+> dryrun (warn); on the headless path (Codex target) the controller net re-runs the same handler
+> in enforce mode to judge file-level scope. This `/scope-check` skill is a
 > manually-invoked *feature/cycle-level* scope-creep audit. Different mechanism, same
 > spirit (it reinforces the surgical-changes principle).
 
@@ -28,7 +28,8 @@ Apply [autonomy policy](../../rules/autonomy-policy.md) for the separate LOW/HIG
 
 Locate the baseline scope for the given argument, in this order:
 
-- The accepted user request and corrections in the current conversation (ordinary inline work needs no HANDOFF).
+- The accepted user request and corrections in the current conversation, or a baseline passed
+  in the invocation arguments (ordinary inline work needs no HANDOFF).
 
 - The feature's **HANDOFF.md** spec (the `scope` codeblock / task description), if this
   was a Two-CLI cycle.

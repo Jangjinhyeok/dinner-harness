@@ -19,30 +19,31 @@
 │   ├── verification-loop/
 │   ├── ue-umg-review/         # 본인 자작 (구 _personal/ — 2026-06-10 직하 이동, 나머지 둘은 중복 삭제)
 │   └── harness-review/        # 본인 자작 (2026-06-16 — harness 구조 정합 리뷰, propose+apply)
-├── hooks/                     # PreToolUse(secret_scan, scope_check, suggest_compact) + PostToolUse(learning_log) + UserPromptSubmit(route_nudge)
+├── hooks/                     # PreToolUse(secret_scan, shell_guard, scope_check, suggest_compact) + PostToolUse·PostToolUseFailure(learning_log) + UserPromptSubmit(route_nudge)
 │   ├── launchers/             # 인자 없는 절대경로 BAT wrapper
-│   ├── handlers/              # Python 핸들러 (secret_scan·scope_check·suggest_compact·learning_log·route_nudge)
+│   ├── handlers/              # Python 핸들러 (secret_scan·shell_guard·scope_check·suggest_compact·learning_log·route_nudge)
 │   ├── lib/                   # fail-open / timeout 공통 wrapper
 │   ├── rules/                 # 패턴·스코프 룰셋 JSON
-│   ├── tests/                 # run_handler 안전 계약 unittest (stdlib only)
-│   └── logs/                  # JSON-lines 로그 (동기화·git 제외)
+│   └── logs/                  # JSON-lines 로그 (동기화·git 제외). repo의 hooks/tests/는 설치 제외
 ├── rules/                     # auto-load 영역 (paths 없으면 매 세션 로드)
 │   ├── agent-routing.md       # 위임 판단 규칙 (always-on)
 │   └── autonomy-policy.md     # Risk LOW/HIGH와 수용 경계 (always-on)
 ├── templates/                 # 프로젝트로 복사하는 템플릿 (agent·skill이 참조하는 컨벤션)
-│   ├── AGENTS.md              # project-root용 cross-tool 에이전트 진입점 (Codex/Gemini CLI 등 → CLAUDE.md 참조)
+│   ├── AGENTS.md              # project-root용 self-contained 에이전트 지침 템플릿 (CLAUDE.md에 의존하지 않음)
 │   ├── mcp.json               # project-root .mcp.json 템플릿 — UE/Unity 엔진 MCP 등록 (project scope)
-│   ├── engine-reference/      # unreal/·unity/ VERSION.md — "Engine Version Safety" ground truth
-│   └── architecture/          # ADR 템플릿 (Architect 세션 산출물)
+│   ├── machine-env.example.md # 머신별 환경 사실 rule 예시
+│   ├── README.md              # 템플릿 사용법·Engine MCP 등록 안내
+│   ├── engine-reference/      # unreal/·unity/ VERSION.md — 엔진 버전 기록용
+│   └── architecture/          # ADR 템플릿 (메인 세션 산출물)
 ├── docs/                      # 참조 문서 — auto-load 밖, agent·세션이 필요 시 Read
 │   └── specialists/           # 구 엔진 leaf specialist 8종 (2026-07-02 agent→문서 강등, 허브가 소비)
 └── ecc-reference/             # ECC 룰셋 카탈로그 — auto-load 영역 밖, 필요 시 Read만
     └── common/                # coding-style, security, testing 등 10개
 ```
 
-**1-CLI 설치다(ADR-0023 addendum).** 평범한 `claude` 세션이 직접 설계·구현·검증하고, 위임은 native subagent(`agents/`)로 한다. Two-CLI/headless 인프라(`orchestrate.py`·`orchestrator/`·`routing.toml`·`roles/`·`rules/_mode/`·HANDOFF/RESULT 템플릿·`delegate` skill)는 이 설치에 포함되지 않으며 harness repo의 Codex target에만 남아 있다.
+**1-CLI 설치다(ADR-0023 addendum).** 평범한 `claude` 세션이 직접 설계·구현·검증하고, 위임은 native subagent(`agents/`)로 한다. Two-CLI/headless 인프라는 이 설치에 포함되지 않는다. `orchestrate.py`·`orchestrator/`·`routing.toml`·`roles/`·two-cli/routing reference는 harness repo의 Codex target용으로 유지되고, `rules/_mode/`·HANDOFF/RESULT 템플릿은 어느 target에도 설치되지 않는 source-only다. `delegate` skill은 2026-11-18 소스에서 삭제했다.
 
-`templates/`는 `~/.claude/` 동작과 무관한 **프로젝트 복사용 템플릿**이다. `_gamedev` agent들("Engine Version Safety" → `docs/engine-reference/<engine>/VERSION.md`)과 `architect`·`arch-review`(ADR → `docs/architecture/`)가 이미 참조하지만 비어 있던 프로젝트 컨벤션을 채운다. 새 프로젝트에서 해당 파일을 프로젝트 `docs/`로 복사해 쓴다. 상세는 `templates/README.md` 참조.
+`templates/`는 `~/.claude/` 동작과 무관한 **프로젝트 복사용 템플릿**이다. 프로젝트에 엔진 버전 기록(`engine-reference/<engine>/VERSION.md`)이나 ADR 컨벤션(`architecture/`)이 필요할 때 프로젝트 `docs/`로 복사해 쓴다(agent는 특정 VERSION.md 경로를 요구하지 않는다). 상세는 `templates/README.md` 참조.
 
 ## 작동 방식 — 무엇이 어떻게 켜지는가
 
@@ -52,19 +53,19 @@
 |---|---|---|
 | ① 항상 자동 로드 | `CLAUDE.md`, `rules/` 중 `paths` 없는 파일 | 매 세션 시작 시 context에 박힘 |
 | ② 명시 호출 | `skills/`, `agents/` | `/명령` · Task 위임으로 직접 부름 |
-| ③ 도구 호출 시 자동 발화 | `hooks/` | hook별 matcher에 따라 자동 검사: secret_scan은 Edit/Write/NotebookEdit/Bash/PowerShell, scope_check은 Edit/Write/NotebookEdit, learning_log은 Bash/PowerShell |
+| ③ 도구 호출·프롬프트 제출 시 자동 발화 | `hooks/` | hook별 matcher에 따라 자동 검사: secret_scan은 Edit/Write/NotebookEdit/Bash/PowerShell, shell_guard는 Bash/PowerShell, scope_check은 Edit/Write/NotebookEdit, learning_log은 Bash/PowerShell, route_nudge는 프롬프트 제출 |
 
 > **핵심 — `rules/`는 auto-load 영역이다.** `paths` 필드가 없으면 매 세션 무조건 로드, `paths: [글로브]`면 매칭 시에만 로드된다 (`paths: []` 빈 배열은 미정의 동작이라 의존 금지). 따라서 "매 세션 로드하지 않는 lookup-only 참고자료"는 `rules/` **밖**에 둬야 한다 — ECC 카탈로그를 `ecc-reference/`로 옮긴 이유다 (필요할 때만 Read).
 
 **② 명시 호출 심화:**
-- **skills** — `/이름`으로 직접 부르거나, description의 트리거 문구를 모델이 인식하면 자동 발동. SKILL.md 본문은 호출 시점에만 context로 들어온다 (평소엔 이름·description만 인덱스). heavy-read 분석 skill(`scope-check`·`perf-profile`)은 frontmatter `context: fork`로 별도 subagent context에서 실행돼 대량 파일 읽기가 메인 context를 오염시키지 않는다.
+- **skills** — `/이름`으로 직접 부르거나, description의 트리거 문구를 모델이 인식하면 자동 발동. SKILL.md 본문은 호출 시점에만 context로 들어온다 (평소엔 이름·description만 인덱스). heavy-read 분석 skill `perf-profile`은 frontmatter `context: fork`로 별도 subagent context(`performance-analyst`, agent 모델 설정 그대로)에서 실행돼 대량 파일 읽기가 메인 context를 오염시키지 않는다. `scope-check`는 대화 속 원래 요청을 baseline으로 써야 해서 2026-11-18부터 fork 없이 inline으로 실행한다.
 - **agents** — Task 도구로 별도 context 세션에 위임 → 결과만 회수해 메인 context를 아낀다. 독립 작업은 병렬 호출. 코드 작성 agent는 frontmatter `skills:`로 메타 원칙(`simplicity-first`·`surgical-changes`)을 시작 시점에 preload해, trigger 인식 의존 없이 항상 적재되도록 보장한다.
 
 **매일 관점**: 평소엔 ①(CLAUDE.md·rules)과 ③(hooks)만 백그라운드로 돈다. ②는 필요할 때만 등장한다. 가벼운 질문은 일반 모드(필요하면 Plan Mode read-only)로 충분하다.
 
 ## hooks (PreToolUse + PostToolUse + UserPromptSubmit 안전망)
 
-`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 둘(`secret_scan`, `scope_check`)과 advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다. Builder-first 전용 `builder_guard`는 ADR-0023으로 폐기되었다.
+`hooks/`는 Claude Code가 도구 실행 직전(PreToolUse)·직후(PostToolUse) 및 프롬프트 제출 시(UserPromptSubmit)에 끼어드는 자작 안전망이다. 현재 차단형 hook 셋(`secret_scan`, `shell_guard`, `scope_check`)과 advisory-only hook 셋(`suggest_compact`, `learning_log`, `route_nudge`)이 있다. Builder-first 전용 `builder_guard`는 ADR-0023으로 폐기되었다.
 
 ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로, 여기엔
 없다 — 배경은 docs/architecture/ADR-0006-option-a.md의 Context 절 참조.
@@ -72,16 +73,17 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 | hook | 이벤트·matcher | 역할 | 출처 |
 |---|---|---|---|
 | `secret_scan` | Pre · Edit·Write·NotebookEdit·Bash·PowerShell | 입력에서 AWS key·GitHub PAT·`.env`/`.credentials` 류 시크릿·민감 파일경로를 regex로 검출 | ADR-0001 |
+| `shell_guard` | Pre · Bash·PowerShell | 파괴 셸 명령(재귀 삭제 등)·git hook 우회(`--no-verify`, `core.hooksPath` 등)를 내장 lexer·규칙으로 검출. enforce | ADR-0024 |
 | `scope_check` | Pre · Edit·Write·NotebookEdit | cycle 스코프 밖 파일 수정 차단. always-block(보호 인프라 파일 블랙리스트) + scope codeblock(HANDOFF.md 화이트리스트) 2 layer | ADR-0005 |
 | `suggest_compact` | Pre · Edit·Write | Edit·Write 누적(기본 50회, `COMPACT_THRESHOLD`) 시 `systemMessage`로 사용자에게 `/compact` 제안. 룰셋·차단 없음, 항상 exit 0 (advisory) | strategic-compact skill (ECC), 2026-06-01 |
 | `learning_log` | Post·PostFailure · Bash·PowerShell | Bash/PowerShell 출력의 강한 실패 신호(컴파일/링크/빌드 에러 등)만 포착 → `learning_log.log`. `learnings-review` skill이 반복 항목을 CLAUDE.md로 승격. 차단 없음, 항상 exit 0 (advisory) | ADR-0004 / gap #4, 2026-06-01 |
-| `route_nudge` | UserPromptSubmit | 구현 의도마다 inline 기본 실행 route(ADR-0023)를 context에 주입하고, UE 도메인 신호에는 focused reference consult 권고도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0) | 2026-06-16, 2026-08-07 auto-route protocol |
+| `route_nudge` | UserPromptSubmit | 구현 의도마다 inline 기본 실행 route(ADR-0023)와 `[risk]`(첫 수정 전 Risk 보고)·`[language]`(한국어 고정) 지시를 한국어로 context에 주입하고, UE 도메인 신호에는 focused reference consult 권고도 덧붙임. 차단·직접 dispatch 없음(항상 exit 0) | 2026-06-16, 2026-08-07 auto-route protocol, 2026-11-17 한국어화 |
 
 공통 인프라: `settings.json` → 인자 없는 절대경로 BAT(`launchers/`) → `py -3` 핸들러(`handlers/`) → `lib/common.py`의 `run_handler` fail-open wrapper(200ms timeout, 예외 전건 catch, exit 0 기본). 정책 차단만 exit 2. 인자 없는 BAT 절대경로 패턴은 Claude Code Windows 빌드의 hook command argument escaping 결함 회피책이다.
 
 모드는 각 환경변수(`CLAUDE_SECRET_SCAN_MODE` / `CLAUDE_SCOPE_WHITELIST_MODE` / `CLAUDE_SHELL_GUARD_MODE`)로 `off`/`dryrun`/`enforce`를 정하며 새 세션부터 적용된다. **현재 `secret_scan`·`shell_guard`는 enforce, `scope_check`는 dryrun.** `shell_guard`(ADR-0024)는 Bash/PowerShell의 파괴 명령·git hook 우회를 검사하며 2026-11-10 enforce로 승격했다(ADR-0024 addendum). `secret_scan`은 1주 관찰(실사용 false-positive 0건) 후 2026-05-31 enforce로 승격했다(ADR-0001 Gate 4). `scope_check`의 always-block은 Edit/Write/NotebookEdit/apply_patch payload에 대해서만 dryrun에서도 즉시 차단되며, Bash/PowerShell write는 의도적으로 이 workflow guard 밖이고 containment는 sandbox가 맡는다(native Windows에는 sandbox가 없다 — ADR-0024). scope codeblock enforce는 ad-hoc 편집 마찰이 커서 **dryrun을 영구 유지**한다. 로그는 `hooks/logs/*.log`(JSON-lines, git·동기화 제외).
 
-`suggest_compact`는 위 두 차단형과 달리 룰셋·모드·차단이 없는 advisory-only hook이다 — Edit·Write 호출이 누적되면 stdout의 JSON `systemMessage`로 `/compact`를 제안만 하고 항상 exit 0이다. 핸들러·런처(`hooks/handlers/suggest_compact.py`·`hooks/launchers/suggest_compact.cmd`)가 배치됐고 `settings.json.template`·로컬 `settings.json`(`PreToolUse`) 양쪽에 등록 완료다(새 머신은 template로 자동 적용). `settings.json`은 scope_check always-block 대상이라, 활성화는 본인이 직접 hand-edit하거나(에디터로 직접 수정 시 hook이 발화하지 않음) off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 추가했다 — 추가 즉시 hot-reload된다. (출처: `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅. 결정 이력은 `hooks/README.md` 참조.)
+`suggest_compact`는 위 세 차단형과 달리 룰셋·모드·차단이 없는 advisory-only hook이다 — Edit·Write 호출이 누적되면 stdout의 JSON `systemMessage`로 `/compact`를 제안만 하고 항상 exit 0이다. 핸들러·런처(`hooks/handlers/suggest_compact.py`·`hooks/launchers/suggest_compact.cmd`)가 배치됐고 `settings.json.template`·로컬 `settings.json`(`PreToolUse`) 양쪽에 등록 완료다(새 머신은 template로 자동 적용). `settings.json`은 scope_check always-block 대상이라, 활성화는 본인이 직접 hand-edit하거나(에디터로 직접 수정 시 hook이 발화하지 않음) off ceremony(`CLAUDE_SCOPE_WHITELIST_MODE=off` 새 세션)로 추가했다 — 추가 즉시 hot-reload된다. (출처: `strategic-compact` skill의 stderr-only 로직을 `run_handler` fail-open 계약으로 포팅. 결정 이력은 `hooks/README.md` 참조.)
 
 `learning_log`은 첫 **PostToolUse** hook이다(예약돼 있던 ADR-0004 활성화 — gap #4). Bash/PowerShell 호출 직후 출력에서 강한 실패 신호만 골라 `learning_log.log`에 포착하고, `learnings-review` skill이 반복 항목을 CLAUDE.md 규칙/메모리로 **승격**한다(포착≠학습). advisory(항상 exit 0). off-ceremony로 `hooks/handlers/`·`hooks/launchers/`에 설치 + 로컬 `settings.json`의 `PostToolUse`에 등록 완료(2026-06-01). 새 머신은 `settings.json.template`의 `PostToolUse`로 자동 적용된다. 2026-10-11부터 exit≠0 명령이 발화시키는 `PostToolUseFailure`(출력은 `error` 필드)에도 같은 런처를 등록한다 — 그 전에는 실제 실패 대부분이 포착되지 않았다.
 
@@ -89,12 +91,12 @@ ADR-0001~0005는 이 repo(dinner-harness) 이전 dinner-claude 시절 문서로,
 
 ## MCP (외부 도구 연결)
 
-MCP는 위 "작동 방식"의 4가지(①auto-load ②조건부 inject ③명시 호출 ④hook) 어디에도 안 들어가는 **별도 축 = tool layer**다. 외부 도구·데이터(문서 서버, 엔진 에디터 등)를 표준 프로토콜로 연결한다. 설정은 콘텐츠 레이어(L0–L5)와 무관하게 `~/.claude.json`(user scope) 또는 프로젝트 루트 `.mcp.json`(project scope)에 저장되며, **둘 다 토큰·절대경로를 포함해 git 제외**(project scope는 해당 프로젝트 repo에서 관리)다.
+MCP는 위 "작동 방식"의 3가지(①자동 로드 ②명시 호출 ③hook) 어디에도 안 들어가는 **별도 축 = tool layer**다. 외부 도구·데이터(문서 서버, 엔진 에디터 등)를 표준 프로토콜로 연결한다. 설정은 콘텐츠 레이어(L0–L5)와 무관하게 `~/.claude.json`(user scope) 또는 프로젝트 루트 `.mcp.json`(project scope)에 저장되며, **둘 다 토큰·절대경로를 포함해 git 제외**(project scope는 해당 프로젝트 repo에서 관리)다.
 
 | scope | 적용 범위 | 저장 위치 | 예 | 등록 / 상세 |
 |---|---|---|---|---|
-| **user** | 모든 세션 (항상-on) | `~/.claude.json` | `context7` (버전별 최신 API 문서 → research-first §1.5 백킹) | 아래 설치 §6, `claude mcp add --scope user …` |
-| **project** | 특정 프로젝트 (에디터 실행 전제) | `<프로젝트 루트>/.mcp.json` | UE/Unity 엔진 MCP (에디터 액터·BP·빌드·테스트 조작) | `templates/mcp.json` 복사 + `templates/README.md` "엔진 MCP 등록" / UE 구체 walkthrough는 `MCP-UNREAL-SETUP.md` |
+| **user** | 모든 세션 (항상-on) | `~/.claude.json` | `context7` (버전별 최신 API 문서 → research-first §1.5 백킹) | 아래 설치 5단계, `claude mcp add --scope user …` |
+| **project** | 특정 프로젝트 (에디터 실행 전제) | `<프로젝트 루트>/.mcp.json` | UE/Unity 엔진 MCP (에디터 액터·BP·빌드·테스트 조작) | `templates/mcp.json` 복사 + `templates/README.md`의 Engine MCP 문단 / UE 구체 walkthrough는 `MCP-UNREAL-SETUP.md` |
 
 **원칙**: 항상-on 원격 서버는 user scope, 특정 프로젝트·에디터에 묶이는 서버는 project scope. user scope에 엔진 MCP를 넣으면 다른 모든 세션에서 죽은 tool이 뜬다.
 
@@ -114,7 +116,7 @@ MCP는 위 "작동 방식"의 4가지(①auto-load ②조건부 inject ③명시
    ```
    py -3 install.py --target claude --allow-live
    ```
-   `~/.claude/`를 생성·갱신한다. `settings.json`은 template에서 `<USERNAME>` 치환 후 기존 파일과 **merge**된다(hooks/permissions는 template, `skipWorkflowUsageWarning` 같은 runtime키는 보존). 라이브 `HANDOFF.md`/`RESULT.md`는 skip(비클로버). 기존 `~/.claude/`가 있으면 install 전에 백업 권장.
+   `~/.claude/`를 생성·갱신한다. `settings.json`은 template의 `<CLAUDE_HOME>`을 설치 경로로 치환한 뒤 기존 파일과 **merge**된다(`hooks`·`env` 등 template 소유 키는 template 값, permission rule 목록은 합집합, `skipWorkflowUsageWarning` 같은 runtime 키는 보존). HANDOFF/RESULT는 설치하지 않으며, 이전 설치가 남긴 파일은 `check.py`가 leftover로 보고한다. 기존 `~/.claude/`가 있으면 install 전에 백업 권장.
 4. Claude Code 재시작.
 5. **(선택) Context7 MCP** — `research-first`(CLAUDE.md §1.5)를 버전별 최신 API 문서로 강화한다. machine-specific이라 repo엔 없으니 새 머신마다 등록한다:
    ```
@@ -148,7 +150,7 @@ L4 (프로젝트 특화)는 이 repo에 포함되지 않는다. 각 프로젝트
 
 Two-CLI workflow 인프라(`roles/`, `rules/_mode/`, HANDOFF/RESULT)는 이 1-CLI 설치에 포함되지 않는다 (위 "구조" 절 참조).
 
-**디렉터/리드 계층 비설치 — 조합 정합 모델.** Game Studios 원본의 Tier-1(creative/technical-director, producer)·Tier-2(lead-programmer, game-designer, art-director) 계층은 의도적으로 가져오지 않았다. **사람 + Architect 세션이 그 역할**(설계·아키텍처 결정·검토)을 한다. 이에 맞춰 ① specialist agent들의 보고·에스컬레이션 문구, ② gamedev skill의 `agent:` 바인딩(`code-review`→`code-reviewer`, `perf-profile`→`performance-analyst`), ③ skill·agent 본문의 명령/agent 참조가 모두 **실존 대상(사용자·Architect·설치된 agent)만** 가리키도록 정합돼 있다. 라우팅 진입 규칙은 `rules/agent-routing.md`. ECC 쪽도 같은 원칙으로 정리됐다 — research-first는 `CLAUDE.md §1.5`로 always-on 복원, 미설치 ECC skill·command·MCP를 가리키던 dangling 참조는 제거했다.
+**디렉터/리드 계층 비설치 — 조합 정합 모델.** Game Studios 원본의 Tier-1(creative/technical-director, producer)·Tier-2(lead-programmer, game-designer, art-director) 계층은 의도적으로 가져오지 않았다. **사람 + 메인 세션이 그 역할**(설계·아키텍처 결정·검토)을 한다. 이에 맞춰 ① specialist agent들의 보고·에스컬레이션 문구, ② skill의 `agent:` 바인딩(`perf-profile`→`performance-analyst`), ③ skill·agent 본문의 명령/agent 참조가 모두 **실존 대상(사용자·메인 세션·설치된 agent)만** 가리키도록 정합돼 있다. 라우팅 진입 규칙은 `rules/agent-routing.md`. ECC 쪽도 같은 원칙으로 정리됐다 — research-first는 `CLAUDE.md §1.5`로 always-on 복원, 미설치 ECC skill·command·MCP를 가리키던 dangling 참조는 제거했다.
 
 ## 진화
 
@@ -166,10 +168,10 @@ Two-CLI workflow 인프라(`roles/`, `rules/_mode/`, HANDOFF/RESULT)는 이 1-CL
 |---|---|---|---|
 | 메타 원칙 skills | `simplicity-first`, `surgical-changes`, `think-before-coding`, `goal-driven-execution`, `search-first` | 모델이 과설계·범위이탈·추측·research 생략을 기본값으로 함 | base 모델이 prompting 없이도 최소·외과적·research-first를 기본으로 행동 → preload(`skills:` frontmatter) 먼저 해제, 그 다음 skill 본문 축소 |
 | 컨텍스트·검증 skills | `verification-loop`, `eval-harness`, `strategic-compact`, `iterative-retrieval`, `scope-check`, `perf-profile`, `tech-debt` | 유한 context window + 내장 검증/압축 부재 | context가 사실상 무한 + 하네스가 검증·압축을 자동 수행 → 해당 skill 우선 일몰 |
-| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: **필수 규칙 하에서도** 허브 자체가 미사용이면 허브 축소 검토 |
-| Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소; architect-route(다파일·구조 결정·HIGH)에서 도메인 매칭 시 HANDOFF 전 consult가 누락되면 ADR-0011 규칙 점검 |
+| Engine specialist agents | `agents/_ue/*`, `agents/_unity/*` (허브 2개) + `docs/specialists/*` (leaf 참조 문서 8개) | 모델이 현행 버전 UE5/Unity API를 hallucination 없이 신뢰성 있게 모름 | base 모델이 타깃 엔진 버전 API를 안정적으로 정확히 다룸 → 허브만 남기고 하위 specialist 축소. **2026-07-02 1단계 실행됨** — 양 머신 conformance 감사(leaf 실사용 6주 1세션)로 leaf 8개를 agent→참조 문서로 강등, 허브가 Read로 소비. 다음 신호: consult가 선택 사항인 현재도 허브 자체가 계속 미사용이면 허브 축소 검토 |
+| Domain agents | `agents/_gamedev/*`, `agents/_core/*` | 멀티도메인 대형 작업이 단일 context를 오염시킴 (token economy·역할 분리) | 단일 context가 대형 다영역 작업을 오염 없이 처리 → Task 위임 라우팅 축소; 도메인 매칭 작업에서 agent 위임이 계속 0이면 라우팅 규칙 축소 검토 |
 | Orchestration rules | `rules/agent-routing.md` | 모델이 적합한 specialist topology를 자동 선택 못 함 | 모델이 최적 sub-agent 조합을 self-route → 라우팅 규칙 축소 |
-| hooks (enforcement) | `secret_scan`, `scope_check`, `suggest_compact`, `learning_log`, `route_nudge` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`, 적합 specialist를 self-route→`route_nudge`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
+| hooks (enforcement) | `secret_scan`, `shell_guard`, `scope_check`, `suggest_compact`, `learning_log`, `route_nudge` | 결정론적 안전망을 모델이 self-guarantee 못 함 | 부품별 개별 판정: 모델이 시크릿을 절대 방출 안 함→`secret_scan`, 파괴 명령·hook 우회를 절대 시도 안 함→`shell_guard`, 범위를 절대 안 벗어남→`scope_check`, auto-compaction 신뢰→`suggest_compact`, 학습을 self-persist→`learning_log`, 적합 specialist를 self-route→`route_nudge`. (단 `scope_check`는 always-block layer 가치가 모델 개선과 무관하므로 dryrun 영구 유지 — 위 "hooks" 절 참조) |
 
 ### 주요 변경 이력
 
@@ -203,7 +205,7 @@ Two-CLI workflow 인프라(`roles/`, `rules/_mode/`, HANDOFF/RESULT)는 이 1-CL
 
 **2026-06-07 — 일몰 기준(Sunset Criteria) 도입.** 구조가 추가 기준만 갖고 제거 기준이 없어 단조 증가하던 문제를 보강했다. `awesome-harness-engineering`의 `HARNESS_CHECKLIST.md` "Removal Criteria Table"을 분석해, 7개 부품군별로 "왜 존재(모델 한계) + 제거·축소 검토 신호"를 README "진화" 절에 중앙 테이블로 추가했다. 40여 개 파일에 개별 sunset note를 산포하는 대안 대신, 제거 조건이 부품군별로 공유된다는 점·`simplicity-first` 원칙에 따라 중앙 1곳(lookup-only, auto-load 밖)에 집약했다. (출처: harness engineering 제1원칙을 본인 `tech-debt`·`scope-check` 철학으로 자기 구조에 적용.)
 
-**2026-06-01 (후속) — skill 활성화 메커니즘 강화 (preload + fork 격리).** Claude Code의 두 메커니즘(`skills:` frontmatter preload, skill `context: fork`)을 검증한 뒤 채택해, 원칙 적재와 컨텍스트 격리를 강화했다. (출처: "A mental model for Claude Code skills, subagents, and plugins" — Dean Blank 검토 → 실재·syntax 검증된 둘만 선별 채택. 커밋 `0025716`·`ef5cbec`.)
+**2026-06-01 (후속) — skill 활성화 메커니즘 강화 (preload + fork 격리).** Claude Code의 두 메커니즘(`skills:` frontmatter preload, skill `context: fork`)을 검증한 뒤 채택해, 원칙 적재와 컨텍스트 격리를 강화했다. (출처: "A mental model for Claude Code skills, subagents, and plugins" — Dean Blank 검토 → 실재·syntax 검증된 둘만 선별 채택. 커밋 `0025716`·`ef5cbec`, dinner-claude repo 시절 commit.)
 
 - **메타 원칙 preload** — 코드 작성 agent 17개(`_core` 2·`_gamedev` 5·`_ue` 5·`_unity` 5)에 `skills: [simplicity-first, surgical-changes]` 추가. §1.2·§1.3 원칙을 auto-trigger 인식 의존이 아닌 **시작 시점 보장**으로 전환. reviewer/architect/planner는 코드 작성 권한이 없어 제외, `search-first`는 자체적으로 research subagent를 spawn(1-level nesting 충돌)하므로 제외.
 - **분석 skill fork 격리** — `scope-check`→`context: fork`+`agent: Explore`(CLAUDE.md 불필요한 read-only), `perf-profile`→`context: fork`(기존 `agent: performance-analyst` 유지 — CLAUDE.md §4 frame-budget 컨텍스트 보존). heavy-read가 메인 세션 context를 오염시키지 않게 분리.

@@ -27,8 +27,9 @@ vendor_dirs = ["skills/synced"]
 # src may be a file or a directory (recursive). Directories honor the exclude lists below.
 # The Claude target is a 1-CLI install (ADR-0023 addendum): headless/Two-CLI
 # infrastructure is not installed here. The orchestrator, routing.toml, roles and
-# two-cli/routing references stay for the Codex target; the delegate skill, _mode
-# reminders and HANDOFF/RESULT templates are now source-only (no target installs them).
+# two-cli/routing references stay for the Codex target; the _mode reminders and
+# HANDOFF/RESULT templates are source-only (no target installs them). The delegate skill
+# was deleted from source on 2026-11-18.
 copy = [
   ["content/rules/agent-routing.md",      "rules/agent-routing.md"],
   ["content/rules/autonomy-policy.md",    "rules/autonomy-policy.md"],
@@ -44,7 +45,7 @@ copy = [
 ]
 
 # Dest paths (file or directory, target-root-relative) pruned from bulk copies.
-drop_dests = ["skills/delegate"]
+drop_dests = []
 
 # Paths earlier manifests installed outside owned dirs. check.py reports any that still
 # exist as blocking leftovers (rules/*.md would keep auto-loading); nothing deletes them.
@@ -114,10 +115,9 @@ routing_dest = "routing.toml"
 routing_preset = "codex_only"
 
 # Neutral skill bodies retain engine reference entry points and optional review.
-# delegate is source-only: neither target installs it (ADR-0023 addendum).
 skills_src = "content/skills"
 skills_dest = "skills"
-skills_drop = ["delegate"]
+skills_drop = []
 required_references = [
   "rules/agent-routing.md", "rules/autonomy-policy.md",
   "rules/routing-reference.md", "rules/two-cli-reference.md",

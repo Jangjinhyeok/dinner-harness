@@ -3,7 +3,8 @@
 State of in-flight harness work, written so another machine can `git pull` this
 branch and continue without the originating session's context.
 
-Last updated: 2026-08-06.
+Last updated: 2026-11-17 (status corrections in §0 install gate, §1, §3; the
+rest is the 2026-08-06 record).
 
 ---
 
@@ -31,7 +32,7 @@ Verification as of the merge:
   glob `*` no longer crosses `/`), both warn-only in interactive sessions
   because `scope_check` runs permanently in `dryrun` there
 
-### Merged, not installed — the remaining gate
+### Merged, not installed — the remaining gate (install gate closed; see item 2)
 
 The change is **HIGH tier** per `~/.claude/rules/autonomy-policy.md`: it is the
 only automatic defense against a headless Codex Builder, which fires no Claude
@@ -62,10 +63,14 @@ hooks. Where the two gates actually stand:
    the round-10 fixes.** They are again the jurors' own prescriptions, verified
    by test and mutation, and again unjuried. This closes when a panel passes or
    the user accepts it explicitly — not by being documented.
-2. **Install gate: still standing.** Merging changed nothing at runtime.
-   `~/.claude` still runs the previous handler, so the `/delegate` scope fence is
-   **live-inert** — that lane's protection depends on the Builder complying, not
-   on enforcement. Human end sign-off, then
+2. **Install gate: CLOSED (status 2026-11-17).** The live trees have since been
+   refreshed: `py -3 check.py` on 2026-11-17 reports no hook-handler or
+   orchestrator drift for either target (the only drift is uncommitted doc/skill
+   edits in progress). `/delegate` is no longer installed by either target
+   (dropped by the ADR-0023 addendum, then deleted from source on 2026-11-18), so the lane described
+   below no longer exists. Original 2026-08-06 text: Merging changed nothing at
+   runtime. `~/.claude` still ran the previous handler, so the `/delegate` scope
+   fence was **live-inert**. Human end sign-off, then
    `py -3 install.py --target claude --allow-live` (and `--target codex`).
 3. `py -3 check.py` now reports the staleness (item A below, landed) — eleven
    claude-target and three codex-target files, from this work plus `7d1f874`.
@@ -78,10 +83,11 @@ overwrites in place and keeps no backup. See the note in
 
 ---
 
-## 1. Queued harness improvements (A/B/C/F) — NOT STARTED
+## 1. Queued harness improvements (A/B/C/F) — A/F done, B done then abolished (ADR-0009), C audited (prune pending)
 
-Four items picked from the Claude Code 70-tips document on 2026-08-05. **A is
-done** (2026-08-06); B/C/F are not started.
+Four items picked from the Claude Code 70-tips document on 2026-08-05. A and F are
+done; B was completed and later abolished by ADR-0009; C was audited and its prune is
+pending (see each subsection).
 
 ### A — add an install-drift axis to `check.py` — DONE
 
@@ -102,6 +108,8 @@ cosmetic — the axis is worthless if a stale tree hides in noise:
   to every **generated** dest, not just `template`: codex `hooks.json` embeds
   absolute handler paths the same way. Verbatim `copy` dests stay byte-exact.
 - `skip_if_exists` dests (`HANDOFF.md`, `RESULT.md`) are live workflow state.
+  (2026-11-17: no target declares `skip_if_exists` any more; `HANDOFF.md` /
+  `RESULT.md` are Claude-target `retired_dests`.)
 - a `merge` JSON dest is compared **key-wise on template-owned keys** — keeping
   live-only keys is what `merge` means, so a whole-text compare would flag every
   machine.
@@ -119,11 +127,14 @@ Verification: 15 cases against a scratch install tree (never the live one),
 has none and adding one changes the repo's test topology (the documented entry
 point is `orchestrator.tests.test_orchestrator`). **That is a real gap**: the
 mutation evidence is in a session scratchpad, not in the repo. If this axis is
-worth keeping, give it a test module.
+worth keeping, give it a test module. (2026-11-17: gap closed —
+`orchestrator/tests/test_installer_migration.py` and `test_harness_cli.py` now
+test the install-drift axis.)
 
 Not taken: the `SessionStart`-hook alternative — note the harness still uses only
-`PreToolUse` / `PostToolUse` / `UserPromptSubmit`, so `SessionStart`, `Stop`,
-`SubagentStop` and `PreCompact` remain unused.
+`PreToolUse` / `PostToolUse` / `UserPromptSubmit` (2026-11-17: plus
+`PostToolUseFailure`), so `SessionStart`, `Stop`, `SubagentStop` and
+`PreCompact` remain unused.
 
 ### B — isolate the Builder in a git worktree (tip §5.2) — completed 2026-08-06
 
@@ -197,7 +208,14 @@ G (plugin marketplace), H (thinking budget).
 
 ---
 
-## 3. Builder-first dispatch actuation ??implemented in canonical source, not installed
+## 3. Builder-first dispatch actuation — SUPERSEDED (ADR-0023, removed in `09bce9a`)
+
+**2026-11-17 status:** ADR-0023 (2026-10-11) replaced Builder-first with a 1-CLI
+inline Claude default. `builder_guard`, `claude-direct.cmd`, `dh.cmd` /
+`dh-architect.cmd` and `DINNER_EXECUTION_MODE` were removed in `09bce9a`; the
+launchers are Claude-target `retired_dests`. The Builder-bail refusal had already
+been dropped from `build` in `6c06b4b` (2026-09-10); no current path emits the
+`builder_bailed` receipt code. The text below is the historical record.
 
 **2026-08-07 operating-default update (canonical source; pending merge and live refresh):**
 ordinary `claude` is now the daily Builder-first entrypoint, so every structured

@@ -1,7 +1,7 @@
 ---
 name: unreal-specialist
 description: "Focused Unreal Engine expertise in UObject/GC lifetime, reflection, gameplay framework, replication, loading, threading, packaging and measured performance. Evaluate engine-specific trade-offs against project requirements; use relevant specialist references on demand. Native consultation is optional."
-tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
+tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill, WebFetch, WebSearch
 model: fable
 effort: medium
 maxTurns: 20
@@ -78,8 +78,9 @@ active harness install only for the subsystems involved. Apply their heuristics 
 context, preserving engine invariants. Verify uncertain/version-dependent APIs with the pinned
 version's official documentation or engine source.
 Use the project's build/automation and relevant PIE, multiplayer, loading or packaging checks.
-Engine MCP use follows actual availability, assigned permissions and live-asset scope under
-rules/agent-routing.md; do not infer editor verification from generated code.
+This agent's tool list carries no engine MCP tools in the Claude install; return the needed
+editor/MCP steps to the parent, which runs them under actual availability, assigned permissions
+and live-asset scope (rules/agent-routing.md). Do not infer editor verification from generated code.
 For authored meshes, textures or UI icons, read skills/asset-authoring/SKILL.md under the active
 harness install. Verify units/pivot, materials, collision behavior and save/reload with the pinned
 importer; test a source edit reimported into the same asset before claiming iteration works.

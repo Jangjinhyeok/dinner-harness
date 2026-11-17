@@ -568,14 +568,13 @@ class TestBuilderFirstGuard(unittest.TestCase):
             self.assertEqual(check.main([]), 0)
         self.assertEqual(stdout.getvalue().count("— skip"), 2)
 
-    def test_architect_and_delegate_document_an_unpiped_absolute_dispatch_shape(self):
+    def test_architect_documents_an_unpiped_absolute_dispatch_shape(self):
         root = Path(__file__).resolve().parents[2]
         reference = (root / "content/rules/two-cli-reference.md").read_text(encoding="utf-8")
         command = 'py -3 "<HARNESS_HOME>/orchestrate.py" build --repo "<REPO>" --backend real'
         self.assertIn(command, reference)
-        for rel in ("content/roles/ROLE_ARCHITECT.md", "content/skills/delegate/SKILL.md"):
-            text = (root / rel).read_text(encoding="utf-8")
-            self.assertIn("two-cli-reference.md", text)
+        text = (root / "content/roles/ROLE_ARCHITECT.md").read_text(encoding="utf-8")
+        self.assertIn("two-cli-reference.md", text)
         for line in reference.splitlines():
             if line.startswith("py -3 "):
                 self.assertNotIn("|", line)
@@ -711,7 +710,6 @@ class TestBuilderFirstGuard(unittest.TestCase):
             "content/roles/ROLE_ARCHITECT.md",
             "content/rules/_mode/architect.md",
             "content/rules/two-cli-reference.md",
-            "content/skills/delegate/SKILL.md",
             "assets/claude/README.md",
             "assets/codex/AGENTS.md",
             "README.md",

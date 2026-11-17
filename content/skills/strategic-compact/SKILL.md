@@ -5,8 +5,10 @@ description: Preserve concise task state across genuine context compaction or se
 
 # Context Continuity
 
-Prefer native compaction. Edit-count reminders do not measure context and are disabled by
-default for Codex; do not add a periodic hook based on call counts.
+Prefer native compaction. Edit-count reminders do not measure context. The Claude install
+registers the advisory `suggest_compact` hook (Edit/Write count, `COMPACT_THRESHOLD` default 50,
+then every 25); the Codex install does not. Treat its message as a prompt to assess state, not a
+measurement; do not add further call-count hooks.
 
 For a genuine transition preserve goal, accepted decisions, unfinished work, verification and
 next action in the available summary or an authorized project note. Do not require a specific
@@ -22,7 +24,8 @@ does not establish that. After compaction/context loss or scope/instruction chan
 parts. Do not add per-call hash hooks or a persistent cache. Prior approval does not authorize new work;
 never retain sensitive log bodies or credentials in the summary.
 
-A continuing implementation may resume an explicit thread ID bound to repo/task. Never use
-`--last` as concurrent-task identity. Independent review requires fresh context.
-Experimental Astra context management is optional and must not be auto-enabled.
+Where the headless orchestrator is installed (Codex target), a continuing implementation may
+resume an explicit thread ID bound to repo/task; never use `--last` as concurrent-task identity.
+Independent review requires fresh context. Experimental vendor context-management features are
+optional and must not be auto-enabled.
 Never preserve credentials or private prompt dumps as continuity notes.

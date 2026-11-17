@@ -19,6 +19,7 @@ RESULT.md
 # investigation: Codex Windows sandbox denies deleting real-OS-temp files,
 # which can redirect Python's tempfile fallback into the repo root)
 /tmp????????/
+orchestrator/tmp????????/
 .tmp-builder-guard-tests/
 .tmp-orchestrator-tests/
 .tmp-tests/

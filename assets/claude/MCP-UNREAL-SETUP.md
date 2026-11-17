@@ -1,6 +1,6 @@
 # mcp-unreal 셋업 가이드 (UE 5.7)
 
-이 문서는 `~/.claude`의 MCP 인프라 중 **엔진 MCP(Unreal)** 의 구체 셋업 walkthrough다. 루트 `README.md`의 "MCP (외부 도구 연결)" 절과 `templates/README.md`의 "엔진 MCP 등록"이 개념·등록 레시피를 다루고, 이 문서는 **실제로 진행한 UE 5.7 + [remiphilippe/mcp-unreal](https://github.com/remiphilippe/mcp-unreal) 셋업 전 과정과 트러블슈팅**을 남긴다.
+이 문서는 `~/.claude`의 MCP 인프라 중 **엔진 MCP(Unreal)** 의 구체 셋업 walkthrough다. 루트 `README.md`의 "MCP (외부 도구 연결)" 절과 `templates/README.md`의 Engine MCP 문단이 개념·등록 레시피를 다루고, 이 문서는 **실제로 진행한 UE 5.7 + [remiphilippe/mcp-unreal](https://github.com/remiphilippe/mcp-unreal) 셋업 전 과정과 트러블슈팅**을 남긴다.
 
 > 경로는 **placeholder**다 — 본인 환경에 맞게 치환한다:
 > - `<USERNAME>` = Windows 사용자명 (`C:\Users\<USERNAME>\…`)
@@ -168,7 +168,7 @@ tool은 49개(v0.2.0 기준): 빌드/테스트(headless), 액터·속성, Bluepr
 
 - 메인 프로젝트엔 변경을 감독하며, **테스트 브랜치/사본에서 먼저** 검증.
 - `execute_script`(임의 Python)·`blueprint_modify`는 특히 영향이 크다.
-- **역할 분리**: `ue-*` specialist agent = 코드·설계 산출물(텍스트), MCP = 라이브 에디터 조작·빌드·검증(실행). 섞지 않는다.
+- **역할 분리**: `unreal-specialist` agent(+ `docs/specialists/ue-*.md` 참조 문서) = 코드·설계 산출물(텍스트), MCP = 라이브 에디터 조작·빌드·검증(실행). 섞지 않는다.
 
 ---
 

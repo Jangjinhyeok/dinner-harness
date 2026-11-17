@@ -2,6 +2,14 @@
 
 [한국어](README.md) | **English**
 
+## At a glance
+
+- **What**: a personal development harness built while using AI coding agents (Claude Code, Codex) on real work, to stop out-of-scope edits and unverified "done" reports.
+- **Core features**: verification and approval scaled by change risk (LOW/HIGH), a fresh-context independent review agent, and hooks that block scope violations, secret exposure and dangerous shell commands up front.
+- **History**: started as a single Claude Code session → added a 2-CLI structure to cut subscription cost (Claude design/review, Codex implementation, HANDOFF/RESULT file handoff, git delta checks before and after each turn) → now 1-CLI (Claude) by default, with 2-CLI kept as an optional path.
+- **Evidence**: structural decisions are recorded as ADRs (`docs/architecture/`); per-role models are chosen by comparing quality, cost and time on public benchmarks.
+- **Use**: used directly on personal projects and professional development.
+
 Source of truth for a Claude-first personal harness (ADR-0023). Main owns requirements, decomposition,
 design, integration and final responsibility. Delegate useful bounded implementation to named native
 roles; do small work directly when context-transfer/review overhead is greater. Choose by uncertainty,
@@ -32,9 +40,9 @@ claude --model claude-fable-5-2 --effort high
 ```
 
 The Claude install is 1-CLI: the orchestrator, `routing.toml`, roles, `rules/_mode`, HANDOFF/RESULT
-templates, two-cli/routing references and the `delegate` skill are not installed (the orchestrator,
-routing, roles and references stay for the Codex target; `delegate`, `_mode` and the HANDOFF/RESULT
-templates are source-only). The Claude adapter has no retire logic, so those files from older installs,
+templates and two-cli/routing references are not installed (the orchestrator, routing, roles and
+references stay for the Codex target; `_mode` and the HANDOFF/RESULT templates are source-only; the
+`delegate` skill was deleted on 2026-11-18). The Claude adapter has no retire logic, so those files from older installs,
 plus `claude-direct.cmd`, `dh*.cmd`, `watch-builder.ps1`, the `builder_guard` files and the settings
 `orchestrate.py` allow rule, may remain in `~/.claude`. `check.py --target claude` reports the leftover
 files but never deletes them. Remove leftover `rules/` files by hand: Claude Code auto-loads them.
@@ -45,13 +53,14 @@ Per-machine environment facts (CLI tools, console encoding, computer-use quirks)
 If needed, copy the installed `~/.claude/templates/machine-env.example.md` to
 `~/.claude/rules/machine-env.md` and fill in facts verified on that machine; install never touches
 that local file and check.py does not report it as a leftover.
-Use --target codex or --target all only when intended. A plain `claude` session is the direct-edit
+For Codex, run `install.py --target codex` separately; `--target all` is supported only by
+`check.py` and `refresh.py`. A plain `claude` session is the direct-edit
 session. App users select the interactive model in the supported model picker. Routing updates do
 not change an already open session.
 
 ## Workflow and policy
 
-Request → necessary exploration/short plan → main-session implementation → project verification →
+Request → necessary exploration/short plan → direct or delegated implementation → project verification →
 useful independent review → report. Ordinary work needs no HANDOFF/RESULT/CHALLENGE or Builder mode.
 Do not delegate based on file count or downgrade a task solely because of risk.
 Parallel writers require explicit ownership, isolation and parent integration; avoid concurrent
@@ -119,8 +128,8 @@ See dated [coverage](CODEX-COVERAGE.md) and historical [recon](CODEX-RECON.md) e
 [manifest](harness.toml) and the [Claude](adapters/claude.py)/[Codex](adapters/codex.py) adapters generate selected targets.
 
 Domain skills read relevant UE references without forcing delegation. Important review uses
-concrete evidence rather than fixed judge counts. Learning logs are opt-in and redacted;
-Codex installs neither learning-log collection nor edit-count compact reminders by default.
+concrete evidence rather than fixed judge counts. Learning logs are redacted. The Claude install
+registers `suggest_compact` (advisory) and `learning_log`; the default Codex install registers neither.
 Prefer native compaction; experimental context management is optional.
 
 Use actual UE/Unity/Python/project build and test procedures. No universal 80% coverage, fixed
@@ -133,7 +142,7 @@ Historical ADR/capability observations remain dated records.
 
 Source catalog. The manifest and generated checks determine Codex installation coverage.
 
-### Skills (31)
+### Skills (30)
 
 - `adversarial-review`
 - `arch-review`
@@ -144,7 +153,6 @@ Source catalog. The manifest and generated checks determine Codex installation c
 - `changelog`
 - `cli-update`
 - `codebase-onboarding`
-- `delegate`
 - `eval-harness`
 - `gas`
 - `goal-driven-execution`

@@ -24,8 +24,8 @@ Sources: [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagent
 [Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox).
 Documentation support, offline/fake tests and live runtime measurement are separate evidence classes.
 
-Current target policy restores portable domain/review/management skills; delegate remains an
-optional compatibility skill outside the Codex install. Common skill bodies are tool-neutral;
+Current target policy restores portable domain/review/management skills; the delegate skill was
+deleted from source on 2026-11-18 (it had been outside both installs since ADR-0023). Common skill bodies are tool-neutral;
 the Codex adapter renders discovery frontmatter and logical native model/effort/sandbox profiles.
 Native review is recorded only when actually run. Learning-log collection and edit-count compact
 reminders are disabled by default; scope/secret hooks remain. Existing user hooks are preserved,
@@ -47,7 +47,7 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 
 **헤드라인: 메커니즘을 따라잡았고 시맨틱도 대부분 맞다 — 잔존 한계는 depth-2 다중hop·세션페어뿐.** 아래 Cycle-1 본문이 "Codex가 hooks/subagent를 못 한다"고 한 것은 **아키텍처 불가가 아니라 당시 버전(0.111.0) 기준의 미지원**이었다. 현행 Codex(`0.140.0`)는 hooks·subagents가 **stable**이고 orchestration이 hub→leaf를 커버한다.
 
-> **추후 갱신 — 세션페어(Two-CLI) 한계는 해소됨:** 아래 매트릭스가 "Two-CLI roles STILL-DEGRADED — 세션페어 없음"이라 한 것은 codex *adapter* 한계였다. 이후 추가된 **cross-vendor orchestrator**(`orchestrate.py` + `orchestrator/`)가 세션페어링을 외부에서 관리해 이를 복원했다 — 각 "세션"은 controller가 만드는 headless 호출(`codex exec`/`claude -p`)이다. 기본 운용은 인터랙티브 Claude(Architect)가 Codex Builder를 `orchestrate.py build`로 headless 자동 dispatch하는 **single-pane** 모드. 상세 = `orchestrator/README.md`.
+> **추후 갱신 — 세션페어(Two-CLI) 한계는 해소됨:** 아래 매트릭스가 "Two-CLI roles STILL-DEGRADED — 세션페어 없음"이라 한 것은 codex *adapter* 한계였다. 이후 추가된 **cross-vendor orchestrator**(`orchestrate.py` + `orchestrator/`)가 세션페어링을 외부에서 관리해 이를 복원했다 — 각 "세션"은 controller가 만드는 headless 호출(`codex exec`/`claude -p`)이다. 기본 운용은 인터랙티브 Claude(Architect)가 Codex Builder를 `orchestrate.py build`로 headless 자동 dispatch하는 **single-pane** 모드. 상세 = `orchestrator/README.md`. **※ 2026-10-11 ADR-0023으로 supersede:** Claude 설치는 1-CLI inline이 기본이며 orchestrator를 설치하지 않는다. `challenge/build`는 Codex target 설치본(`~/.codex`)이나 repo checkout에서 쓰는 opt-in dispatch다(ADR-0022/0023, `content/rules/two-cli-reference.md`).
 
 ### (a) Codex 현행 native capability (0.140.0 기준)
 - **hooks** — `~/.codex/hooks.json` / config.toml `[hooks]`. 이벤트: PreToolUse·PostToolUse·UserPromptSubmit·SessionStart·SubagentStart/Stop 등. stdin JSON, exit 0/2, `type:"command"` + `commandWindows`. UserPromptSubmit는 `hookSpecificOutput.additionalContext`(+ plain stdout)로 context 주입. → Claude hook contract와 거의 동형(`lib/common.py` 재사용 가능).
@@ -92,7 +92,7 @@ codex adapter feasibility recon + adopt-vs-build decision. Feeds Cycle 2 scope.
 2. hub→leaf — prompt-driven spawn→wait→synthesise 실동작(depth-1).
 3. depth-2 차단 확인 — grandchildren 거부.
 
-**Phase A — portable safety hooks (GO)**: `assets/claude/hooks/handlers/*.py` 전부와 `lib/common.py`·`rules/*.json` → `~/.codex/hooks/` 복사; `codex.py`가 그중 `secret_scan`·`scope_check`·`suggest_compact`·`learning_log` 4개만 `~/.codex/config.toml [hooks]`(or hooks.json)에 등록한다(matcher per hook·`commandWindows`). Claude 전용 `route_nudge`와 `builder_guard`는 파일만 복사되고 Codex hooks에는 등록하지 않는다. stdin 필드 교집합이라 핸들러 거의 무변경(검증). 비파괴+백업.
+**Phase A — portable safety hooks (GO)**: `assets/claude/hooks/handlers/*.py` 전부와 `lib/common.py`·`rules/*.json` → `~/.codex/hooks/` 복사; `codex.py`가 그중 `secret_scan`·`scope_check`·`suggest_compact`·`learning_log` 4개만 `~/.codex/config.toml [hooks]`(or hooks.json)에 등록한다(matcher per hook·`commandWindows`; 당시 계획 — 현행 등록은 `secret_scan`·`scope_check`·`shell_guard` 3개, CODEX-COVERAGE 참조). Claude 전용 `route_nudge`는 파일만 복사되고 Codex hooks에는 등록하지 않는다. stdin 필드 교집합이라 핸들러 거의 무변경(검증). 비파괴+백업.
 
 **Phase B — agents (PORTABLE-WITH-CAVEAT)**: `content/agents/**.md` → `~/.codex/agents/*.toml`(body→developer_instructions·model·sandbox_mode·mcp_servers). hub agent는 developer_instructions에 "언제 어떤 leaf를 spawn"을 enumerate(prompt-driven, depth-1).
 

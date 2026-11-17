@@ -1,7 +1,7 @@
 # Cross-Vendor Two-CLI Orchestrator
 
 
-> 2026-09-10 정정: 기본은 Codex inline이다. 아래는 legacy orchestration의 역사/호환 설명이며 현재 실행 계약은 source `content/rules/two-cli-reference.md`와 ADR-0022를 따른다. `run`은 explicit vendor/model을 쓰는 experimental 경로이고 real HIGH는 거부한다. `challenge/build`는 numeric prefix·bound evidence·JSON 결과 계약을 사용한다. Builder panel=PASS는 독립 review 증거가 아니다. 실제 native hook 실측은 CODEX-COVERAGE의 날짜별 표를 확인한다.
+> 2026-09-10 정정: 기본은 Codex inline이다. 아래는 legacy orchestration의 역사/호환 설명이며 현재 실행 계약은 source `content/rules/two-cli-reference.md`와 ADR-0022를 따른다. `run`은 explicit vendor/model을 쓰는 experimental 경로이고 real HIGH는 거부한다. `challenge/build`는 numeric prefix·bound evidence·JSON 결과 계약을 사용한다. Builder panel=PASS는 독립 review 증거가 아니다. 실제 native hook 실측은 CODEX-COVERAGE의 날짜별 표를 확인한다. 2026-10-11(ADR-0023): Claude 설치는 1-CLI inline이며 orchestrator를 더 이상 설치하지 않는다. `challenge/build`는 Codex target 설치본이나 repo checkout에서 실행한다.
 
 **한국어** | [English](README.md)
 
@@ -17,11 +17,14 @@ autonomy가 사람에게 남기는 경계는 세 곳뿐입니다.
 그 사이의 Architect 설계, Builder 구현, panel review, Architect review, cycle
 반복은 자동화됩니다. 외부 의존성 없이 Python standard library만 사용하며,
 `install.py` / `check.py` / `adapters/` toolchain과 같은 방식으로 구성됩니다.
+설계 근거는 `docs/architecture/`의 ADR들입니다(특히 ADR-0007 net, ADR-0019 baseline,
+ADR-0020 routing, ADR-0021 challenge cap, ADR-0022/0023 현행 운용).
 
 ## Cross-vendor Two-CLI를 복원하는 방식
 
-Codex adapter는 session-pair 개념이 없으므로 Two-CLI 역할을 여전히 일부
-degraded로 표시합니다(`CODEX-RECON.md`). orchestrator는 이 pairing을 외부에서
+2026-06 codex adapter recon은 Codex에 session-pair 개념이 없어 Two-CLI 역할을
+**STILL-DEGRADED**로 표시했습니다(`CODEX-RECON.md`). (현재 Codex target은 `roles/`와
+two-cli/routing reference를 설치합니다 — `harness.toml [targets.codex]`.) orchestrator는 이 pairing을 외부에서
 관리합니다. 여기서 각 "session"은 controller가 실행하는 headless invocation
 하나(`codex exec` 또는 `claude -p`)입니다. 즉 Two-CLI는 인터랙티브 터미널 두 개가
 아니라 **두 역할과 두 CLI engine**을 뜻합니다.
@@ -29,26 +32,34 @@ degraded로 표시합니다(`CODEX-RECON.md`). orchestrator는 이 pairing을 �
 HANDOFF/RESULT가 self-contained여야 하므로 각 turn은 repo와 bus를 매번 새로
 읽는 stateless 실행입니다. session resume은 필요 없습니다.
 
-진입점은 두 가지이며, 지원 등급이 다릅니다.
+`orchestrate.py --help`에는 subcommand 세 개가 있으며, 지원 등급이 다릅니다.
 
-- **`build`** — **Primary / production.** 기존 `HANDOFF.md`로 Builder만 한 번
-  실행합니다. interactive Claude Architect가 세션 안에서 HANDOFF를 승인받은 뒤
-  auto-dispatch하는 기본 orchestrated single-pane 경로입니다. Codex Builder와
-  hard safety net이 실행되고, 같은 Claude 세션이 `RESULT.md`를 검토하며 HIGH
-  게이트는 사람이 서명합니다. **HIGH 수용 권한은 Builder의 자기보고 panel이
-  아니라 Claude의 diff 리뷰 + 사람 종단 서명입니다** — `run_from_handoff()`는
-  바로 이 이유로 verdict 기반 tier gate를 advisory(emit-only)로 취급합니다.
-  상세는 `roles/ROLE_ARCHITECT.md`의 "Builder 자동 dispatch"를 참조하세요.
-- **`run`** — **Experimental.** 완전 headless 모드. controller가 Architect와
-  Builder 모두를 전체 loop 동안 사람이나 Claude의 게이트 사이 리뷰 없이
-  실행합니다. 그 topology엔 다른 리뷰어가 없어서 `run()`은 verdict 기반 tier
-  gate를 **hard**로 유지합니다 — HIGH 게이트의 수용이 전적으로 Builder의
-  자기보고 `panel`에 의존합니다. 이는 `build`보다 명백히 약한 보증이며, 특히
-  Builder vendor에 jury skill이 없을 때(Codex — `adversarial-review`는
-  `harness.toml [targets.codex].skills_drop`) 자기보고는 검증되지 않은
-  단일 self-review에 불과합니다. `run()`의 HIGH 게이트엔 Claude vendor
-  Builder를 쓰거나, Codex Builder의 `run()` HIGH 결과는 추가 사람 검토가
-  필요하다고 보는 걸 권장합니다.
+- **`build`** — 기존 handoff 파일(`--handoff`, 기본 `HANDOFF.md`)로 Builder만 한 번
+  실행합니다(headless Architect 없음). HANDOFF를 소유한 세션이 Codex target
+  설치본(`<HARNESS_HOME>/orchestrate.py`)이나 repo checkout에서 실행하는 **opt-in**
+  dispatch입니다. Claude 설치는 1-CLI(ADR-0023)라 orchestrator를 포함하지 않습니다.
+  Builder vendor/model/effort는 active routing preset(`routing.toml`, 1회는
+  `--routing-preset`)에서 정해지며 `--builder` / `--builder-model` /
+  `--builder-effort`로 override할 수 있습니다(model/effort override는 HIGH gate에서
+  거부, ADR-0020). hard safety net이 실행되고, dispatch한 세션이 `RESULT.md`와 diff를
+  검토하며 HIGH gate는 추가로 독립 review와 사람 수용이 필요합니다. **HIGH 수용
+  권한은 Builder 자기보고가 아니라 그 review + 사람 수용입니다** —
+  `run_from_handoff()`는 바로 이 이유로 verdict 기반 tier gate를 advisory(emit-only)로
+  취급합니다. `content/roles/ROLE_ARCHITECT.md`와 `content/rules/two-cli-reference.md`를
+  참조하세요.
+- **`challenge`** — draft HANDOFF/ADR에 대한 단일 read-only `challenger_high`
+  dispatch입니다(ADR-0020). `CHALLENGE.md`와 HIGH `build`가 확인하는 receipt를
+  남기며(아래 "HIGH 사전 challenge 증거의 최신성"), `--max-challenge-rounds`(기본 3,
+  ADR-0021)로 횟수를 제한합니다.
+- **`run`** — **Experimental legacy loop.** 완전 headless 모드. controller가
+  Architect와 Builder 모두(`claude -p` / `codex exec`)를 전체 loop 동안 실행하며,
+  vendor·model은 `--architect/--builder`로 명시한 값만 씁니다(routing preset·effort
+  미지원). `run()`은 verdict 기반 tier gate를 **hard**로 유지하지만, `--backend real`
+  에서는 Architect의 `tiers` fence가 없거나 HIGH gate가 하나라도 있으면 즉시
+  **BLOCKED**("use challenge/build")이므로 real `run`은 선언이 all-LOW인 작업만 시작합니다.
+  effective tier에는 Builder self-report도 들어가므로, Builder가 LOW로 선언된 gate를 HIGH로
+  보고하면 real에서도 hard gate와 HIGH human end sign-off가 실행됩니다(Codex JSON 결과에는
+  panel이 없어 이 경우 BLOCKED).
 
 interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한다. 기본은 inline 구현(ADR-0023)이며
 `build` 경로는 controller 검사가 필요한 경계 작업을 위한 opt-in dispatch다.
@@ -59,18 +70,32 @@ interactive 사용에서는 작업 repository에서 일반 `claude`를 실행한
 # Offline smoke: CLI 인증 없이 mock vendor로 LOW cycle 전체를 실행한다.
 py -3 orchestrate.py run --goal "add a feature flag reader" --backend mock --yes --repo /path/to/scratch
 
-# 실제 cross-vendor 실행. 기본값은 Claude=Architect, Codex=Builder.
+# Experimental real legacy loop. vendor는 명시값이며 둘 다 기본값은 codex.
+# HIGH gate가 있으면 BLOCKED.
 py -3 orchestrate.py run --goal "..." --architect claude --builder codex \
     --backend real --repo /path/to/work-repo
 
-# 기존 HANDOFF.md로 Builder만 한 번 실행한다.
+# draft HANDOFF.md에 대한 read-only HIGH 사전 challenge.
+py -3 orchestrate.py challenge --repo /path/to/work-repo --backend real
+
+# 기존 HANDOFF.md로 Builder만 한 번 실행한다. vendor/model/effort는 active routing
+# preset에서 정해지며, dispatch한 세션이 RESULT.md와 diff를 검토한다.
 py -3 orchestrate.py build --repo /path/to/work-repo --backend real
 ```
 
-주요 flag는 `--architect/--builder {codex,claude}`, `--architect-model`,
-`--builder-model`, `--max-cycles N`, `--no-confirm-handoff`, `--yes`,
-`--net-dryrun`, `--timeout-s N`입니다. `--timeout-s`의 기본값은 headless vendor
-turn당 1800초입니다. vendor stdout/stderr는 실행 중 stream되고 parsing용으로
+flag(`py -3 orchestrate.py <sub> --help` 참조):
+- `run`: `--goal`, `--architect/--builder {codex,claude}`(둘 다 기본 `codex`),
+  `--architect-model/--builder-model`, `--max-cycles N`(기본 5),
+  `--no-confirm-handoff`, `--yes`(모든 human gate auto-approve),
+  `--dangerously-auto-approve-real`, `--net-dryrun`(safety net이 block 대신 warn).
+- `build`: `--handoff NAME`, `--task-id`, `--builder {codex,claude}`,
+  `--builder-model`, `--builder-effort`, `--routing-preset`, `--net-dryrun`.
+- `challenge`: `--handoff NAME`, `--task-id`, `--routing-preset`,
+  `--max-challenge-rounds N`(기본 3), `--acknowledge-challenge-round-cap`.
+- 공통: `--repo`(기본 cwd), `--backend {mock,real}`(기본 `mock`), `--audit-dir`,
+  `--timeout-s N`(headless vendor turn당, 기본 1800초).
+
+vendor stdout/stderr는 실행 중 stream되고 parsing용으로
 capture됩니다. timeout은 child를 종료하고 `BLOCKED`로 남습니다. 재시도나 수동
 fallback 전에 dispatch repository에 남아 있는 Builder 출력을 먼저 확인하세요.
 
@@ -78,7 +103,8 @@ fallback 전에 dispatch repository에 남아 있는 Builder 출력을 먼저 �
 
 `build`는 기본으로 harness 측 `logs/build-audit.jsonl`에 content-free JSONL event
 두 개를 기록합니다. Builder 실행 전의 `attempted`와 controller 판단 뒤의
-`built`, `blocked`, `timeout`, `builder_bailed` 중 하나입니다. `--audit-dir <path>`로
+`built`, `blocked`, `timeout` 중 하나입니다(audit vocabulary에는 legacy `builder_bailed`
+code mapping이 남아 있지만 현재 이를 만드는 경로는 없습니다). `--audit-dir <path>`로
 runtime log 위치를 바꿀 수 있지만, safety net이 판단하는 repository delta를 오염시키므로
 `--repo` 아래에는 두지 마세요.
 
@@ -88,26 +114,47 @@ prompt, HANDOFF/RESULT 본문, 변경 파일 경로·내용은 기록하지 않�
 `[receipt]` 출력은 audit 증거일 뿐이며 Architect의 RESULT/diff review나 HIGH human
 end sign-off를 대체하지 않습니다.
 
+build와 challenge의 terminal record에는 `turns`가 있습니다. backend invocation마다
+observation 하나이며(format recovery는 별도 invocation), 바깥 `dispatch_id`는 controller
+audit를, 각 turn의 `dispatch_id`는 가능할 때 backend invocation과 그 watch marker를
+식별합니다. 두 수준을 모두 유지합니다. `usage_source`는 public event source를 나타내고,
+`usage_status`는 `reported`, 명시적으로 표시된 경우 `estimated`, 없으면 `unknown`입니다.
+reported 값은 backend 관측값이지 검증된 billing/quota 합계가 아닙니다. estimator는 추가하지
+않습니다. 제공된 token field만 보존하며 누락된 세부값은 0이 아니라 unknown입니다. cached
+input은 input에 포함되고, reasoning(이 collector는 노출하지 않음)을 output에 다시 더하면
+안 됩니다. collector는 반복 event를 합산하지 않고 최신 completion snapshot만 보존하며,
+provider snapshot이 request-local인지 resume된 작업 전체의 누적인지는 판정하지 않습니다.
+attempted/terminal event, 필수 receipt 사본, watch marker를 별도 usage로 합산하지 마세요.
+집계 시에는 audit ID와 backend invocation ID로 terminal observation을 dedupe하고 snapshot
+범위를 먼저 확정합니다. 이 관측은 호출된 headless 경로만 다룹니다. interactive parent,
+native child, 자동 approval의 usage/포함 여부는 unknown이며 작업 전체 합계가 아닙니다.
+usage 누락은 관측만 제한하며, 필수 challenge 증거는 저장 또는 state-binding 실패 시 여전히
+fail-closed입니다. private rollout이나 transcript 수집은 사용하지 않습니다.
+
 ## Builder를 원본 repository에서 dispatch
 
-Builder는 원본 repository에서 dispatch합니다. dispatch 전에 승인된 baseline을 commit해
-tree를 clean하게 둡니다. `HANDOFF.md`는 같은 repository의 local bus artifact이므로 복사할
-필요가 없습니다. ADR-0007의 before/after snapshot은 Builder turn의 delta만 판정합니다.
-Builder 실행 중에는 해당 repository를 편집하지 마세요.
+Builder는 원본 repository에서 dispatch합니다. baseline commit은 선택 사항입니다
+(ADR-0019). controller가 turn 전 snapshot(`git stash create`, clean tree면 `HEAD`)을 만들고
+ADR-0007의 before/after snapshot은 Builder turn의 delta만 판정하므로, 기존 dirt는 보존되며
+Builder 책임으로 계산되지 않습니다. `HANDOFF.md`는 같은 repository의 local bus artifact이므로
+복사할 필요가 없습니다. Builder 실행 중에는 해당 repository를 편집하지 마세요.
+
+`<HARNESS_HOME>`은 `content/rules/two-cli-reference.md`와 같이 Codex target
+설치본(`~/.codex` 또는 `CODEX_HOME`)이나 이 repository checkout입니다.
 
 ```powershell
-# HANDOFF.md 승인과 baseline commit 뒤 원본 repository에서 실행한다.
-$claudeHome = ($env:USERPROFILE -replace '\\', '/') + '/.claude'
+# HANDOFF.md 승인 뒤 원본 repository에서 실행한다.
+$harnessHome = ($env:USERPROFILE -replace '\\', '/') + '/.codex'   # 또는 CODEX_HOME / repo checkout
 $repoPath = (Get-Location).Path -replace '\\', '/'
-py -3 "$claudeHome/orchestrate.py" build --repo "$repoPath" --backend real
+py -3 "$harnessHome/orchestrate.py" build --repo "$repoPath" --backend real
 
 # 원본 repository에서 bus와 diff를 검토한다.
 Get-Content -Raw .\RESULT.md
 git diff
 ```
 
-clean baseline이면 기존 `/delegate` 규율처럼 실패한 run의 delta도 저비용으로 폐기할 수
-있습니다. snapshot delta는 동시성 경계가 아니므로 Architect는 Builder가 끝날 때까지
+baseline을 먼저 commit하면 실패한 run을 저비용으로 폐기하기 쉽지만 필수는 아닙니다.
+snapshot delta는 동시성 경계가 아니므로 Architect는 Builder가 끝날 때까지
 repository를 건드리지 않아야 합니다.
 
 ## Machine-readable bus
@@ -118,20 +165,26 @@ repository를 건드리지 않아야 합니다.
 
 | fence | 작성자 | 위치 | 내용 |
 |---|---|---|---|
-| ` ```tiers ` | Architect | HANDOFF | gate별 `gate N: LOW\|HIGH` |
+| ` ```tiers ` | Architect | HANDOFF | gate별 `gate N: risk=LOW\|HIGH compute=LOW\|NORMAL\|HIGH` (bare `gate N: LOW\|HIGH`도 허용) |
 | ` ```scope ` | Architect | HANDOFF | Builder가 수정 가능한 파일 목록 (`scope_check`도 사용) |
-| ` ```verdicts ` | Builder | RESULT | `gate N: status=… tier=LOW\|HIGH panel=PASS\|FAIL\|BLOCK` |
-| ` ```control ` | Architect review | stdout | `verdict: DONE\|NEXT_CYCLE\|BLOCKED` |
+| result JSON | Builder (Codex, `--backend real`) | final message | output-schema JSON: `schema_version`, `summary`, `gates[]`(`gate`, `status=completed\|blocked\|pending\|needs_review`, `tier`, `self_review`, `verification_claim`) |
+| ` ```verdicts ` | Builder (compatibility 전용) | final message | fence 정확히 하나, `gate N: status=completed\|blocked\|pending\|needs_review tier=LOW\|HIGH panel=PASS\|FAIL\|BLOCK` |
+| ` ```control ` | Architect (`run` review) | stdout | `verdict: DONE\|NEXT_CYCLE\|BLOCKED` |
 
-모호성은 모두 **fail-closed**입니다. 누락되거나 깨진 tier는 HIGH이고, `control` fence가
-없으면 `BLOCKED`이며, HIGH gate에 `PASS` verdict가 없으면 block됩니다.
+`RESULT.md`는 controller가 parse한 Builder 결과로 render하는 사람용 보고서이며 수용
+증거가 아닙니다.
 
-single-shot `build` 경로에서만, Builder가 in-scope implementation delta를 만들고 net
-scan을 통과했지만 ` ```verdicts `를 누락한 경우 한 번의 **verdict-only recovery turn**을
-시도합니다. 이 turn은 파일을 바꾸면 안 됩니다. controller는 기존의 사람이 읽는
-`RESULT.md`에 fence를 덧붙이고, recovery 자체도 safety scan합니다. recovery 중 source
-delta, 최초 implementation delta 부재, safety-net hit, 두 번째 malformed recovery는 모두
-`BLOCKED`입니다.
+모호성은 모두 **fail-closed**입니다. `run`에서 누락되거나 깨진 tier는 HIGH이고, `build`
+에서 `tiers` fence 누락·중복, 중복 gate, 잘못된 field는 handoff contract error로
+`BLOCKED`입니다. `control` fence가 없으면 `BLOCKED`입니다. HIGH gate에 `PASS` verdict가
+없을 때 막는 것은 `run`뿐이고(hard tier gate), `build`의 tier gate는 advisory라
+`tier-gate(advisory)` 로그만 남깁니다. 검토와 수용은 호출한 세션의 몫이기 때문입니다.
+
+single-shot `build` 경로에서만, output-contract error(잘못된 result JSON, 또는
+compatibility `verdicts` fence 누락·중복)가 나면 정확히 한 번의 **read-only result-format
+recovery turn**을 시도합니다. 이 turn은 파일을 편집하거나 구현을 다시 실행하면 안 됩니다.
+보고는 보존된 `RESULT.md` 뒤에 덧붙고, turn은 다른 turn과 같이 net scan됩니다. recovery 중
+implementation delta, safety-net hit, 두 번째 contract error는 모두 `BLOCKED`입니다.
 
 ## Safety model (협상 불가)
 
@@ -140,7 +193,9 @@ relay 자동화는 사람의 우연한 확인을 제거하므로 tier gate는 co
 
 - **Controller-side deterministic net** — Builder turn 뒤 controller가 harness의
   `scope_check`와 `secret_scan` handler를 변경 없이 subprocess로 다시 실행합니다.
-  vendor와 무관하게 적용되며, Codex 0.147.0의 native hook이 발화해도 PreToolUse exit 2로 edit을 직접 막지 못하는 advisory 동작을 보완합니다.
+  vendor와 무관하게 적용됩니다. Codex native hook은 0.147–0.151에서 advisory로
+  실측되었고(`CODEX-COVERAGE.md` §6: PreToolUse exit 2가 `apply_patch`를 막지 못함),
+  net은 어느 경우든 native hook enforcement에 의존하지 않습니다.
   handler block(exit 2), handler 누락·실행 실패, changeset 판별 실패는 모두 cycle을
   block합니다. non-repository에서 `git status`가 128로 끝나 빈 output을 내는 경우도
   clean tree가 아니라 failure입니다. fence는 hardcoded `HANDOFF.md`가 아니라 실제
@@ -200,44 +255,53 @@ write는 여전히 보이지 않으므로 **scope 축**은 닫지 않습니다. 
 매번 거부할 수 있기 때문입니다. 따라서 target repo의 ignore rule도 safety boundary의
 일부입니다. ignored file은 `git stash create`에도 들어가지 않으므로 탐지·차단은 가능하지만
 그 snapshot으로 rollback할 수 없고, fence가 큰 ignored directory를 명시하면 기존
-`max_files` ceiling에 걸릴 수 있습니다. 또한 block은 rollback이 아니라 **거부**입니다.
-out-of-fence deletion은 보고되지만 되돌려지지 않습니다.
+`max_files` ceiling에 걸릴 수 있습니다. 또한 block은 **부분 rollback**일 뿐입니다. scope
+block 시 controller는 scope-blocked **tracked** path를 turn 전 snapshot에서 복원하고,
+snapshot에 없는 path(untracked, ignored)와 secret-blocked path는 그대로 두고 보고합니다.
 
 - **Tier-gate enforcement (`run()` only — hard)** — effective tier는 Architect 선언과
   Builder self-report 중 더 높은 값입니다. ` ```tiers ` fence가 누락되거나 깨지면 모든
   gate가 HIGH입니다. 모든 tier에서 panel `FAIL`/`BLOCK`은 fail이고, HIGH는 명시적
   `panel=PASS`가 필요합니다. 선언된 gate에 verdict가 없거나 gate가 전혀 없어도
-  fail-closed 합니다. **`build`/`run_from_handoff()` (primary path)에서는 이 gate가
-  advisory(emit-only)**입니다 — HIGH gate의 실제 수용 권한은 이 panel 값이 아니라
-  dispatch한 Claude session의 diff review와 사람 종단 서명에 있습니다. 위의
-  "진입점은 두 가지" 절을 참조하세요.
-- **tier-driven END boundary** — Architect review가 먼저 실행됩니다. `DONE`이면 LOW cycle은
+  fail-closed 합니다. `--backend real`에서 `run()`은 선언된 HIGH gate가 있으면 Builder
+  전에 block합니다. 다만 Builder가 LOW 선언 gate를 HIGH로 self-report하면 이 HIGH 분기는
+  real에서도 실행됩니다.
+  **`build`/`run_from_handoff()`에서는 이 gate가 advisory(emit-only)**입니다 — HIGH
+  gate의 실제 수용 권한은 이 panel 값이 아니라 dispatch한 세션의 review, 독립 review,
+  사람 수용에 있습니다. 위의 subcommand 목록을 참조하세요.
+- **tier-driven END boundary (`run`)** — Architect review가 먼저 실행됩니다. `DONE`이면 LOW cycle은
   autonomy-policy에 따라 report만 남기고 자동 완료되며, HIGH cycle은 변경 수용 전에
   human end sign-off에서 멈춥니다. Architect가 거부한 cycle에 사람이 sign-off하지 않습니다.
 - **`--yes` guard** — `--backend real`에서는 `--dangerously-auto-approve-real`을 명시하지
   않으면 모든 gate를 auto-approve하는 `--yes`를 거부합니다.
 
 handler의 `always_block` layer는 harness 설치본(`settings.json`, `hooks/`)을 보호하지만,
-live install `~/.claude`에 anchor됩니다. controller는 보통 work repo 안 path만 제출하므로
-일반 dispatch에서는 scope fence가 scope enforcement의 전부입니다. 단 git root가 work
-repo보다 상위이면 repo 밖 path가 absolute form으로 제출되어 always-block layer도 match할 수
-있습니다. 이는 block만 추가하므로 안전합니다. handler를 verbatim으로 재실행한다는 말은
+live install(`~/.claude`, `CODEX_HOME` 또는 `~/.codex`, working directory의 `.codex`)에
+anchor됩니다. controller는 보통 work repo 안 path만 제출하므로
+일반 dispatch에서는 scope fence가 scope enforcement의 전부입니다. 예외가 두 가지 있습니다.
+working directory의 `.codex`는 work repo 안이라, Builder가 보호 대상인 `<repo>/.codex/`
+경로(`hooks.json`, `config.toml`, `rules/`)를 고치면 fence에 있어도 always-block에 걸립니다.
+또 git root가 work repo보다 상위이면 repo 밖 path가 absolute form으로 제출되어 always-block
+layer가 match할 수 있습니다. 이는 block만 추가하므로 안전합니다. handler를 verbatim으로 재실행한다는 말은
 mechanism 설명이지 두 layer가 항상 동시에 active라는 뜻은 아닙니다.
 
 > **이 영역을 바꾸면 반드시 install합니다.** `assets/claude/hooks/`, `orchestrator/`,
-> `orchestrate.py` 아래를 바꾼 뒤에는
-> `py -3 install.py --target claude --allow-live`(필요하면 `--target codex`)를 다시
-> 실행하세요. live dispatch는 `py -3 "<CLAUDE_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`로 **설치본**을
-> 실행하므로 repo에만 있는 수정은 runtime에 적용되지 않습니다. `py -3 check.py`의
+> `orchestrate.py` 아래를 바꾼 뒤에는 live 설치본을 갱신하세요:
+> `py -3 refresh.py --apply`, 또는 `py -3 install.py --target codex --allow-live`
+> (hook 변경이면 `--target claude --allow-live`도). orchestrator는 Codex target만
+> 설치하며(`harness.toml [targets.codex].copy`), Claude target은 이를 retire합니다
+> (`retired_dests`). live dispatch는 `py -3 "<HARNESS_HOME>/orchestrate.py" build --repo "<ABSOLUTE_REPO_PATH>"`로
+> `<HARNESS_HOME>` 아래 사본을 실행하므로, `<HARNESS_HOME>`이 repo checkout이 아니면
+> repo에만 있는 수정은 거기에 적용되지 않습니다. `py -3 check.py`의
 > install-drift axis가 repo와 설치본의 차이를 보고합니다. 이것은 report일 뿐 install하지는
 > 않습니다.
 >
 > **되돌리기:** `install.py`는 제자리 덮어쓰기만 하고 backup을 남기지 않습니다. 이전
 > commit에서 다시 install하는 것이 유일한 undo입니다.
-> `git stash && py -3 install.py --target claude --allow-live && git stash pop`
+> `git stash && py -3 install.py --target <claude|codex> --allow-live && git stash pop`
 > 또는 이전 commit을 checkout해 거기서 install하세요. 모든 handler가 import하는
-> `hooks/lib/common.py` 변경은 특히 위험합니다. live tree를 먼저 복사해 두는 것도 좋은
-> 보험입니다.
+> `hooks/lib/common.py` 변경은 특히 위험합니다. live tree(`~/.claude`, `~/.codex`)를 먼저
+> 복사해 두는 것도 좋은 보험입니다.
 
 ## 상태와 build-time 검증
 
@@ -249,8 +313,10 @@ mechanism 설명이지 두 layer가 항상 동시에 active라는 뜻은 아닙�
   확인하세요.
   - autonomous Builder에서 `claude -p` output format과 `--permission-mode`
   - `codex exec` sandbox/approval flag(`--full-auto` 등)와 `--cd`
-  - 전제 조건: cross-vendor Codex 작업에는 Codex 0.140 이상이 필요합니다. controller net은
-    version과 무관하게 Builder diff를 보지만, Codex native safety는 0.140+에서만 있습니다.
+  - 전제 조건: cross-vendor Codex 작업에는 Codex 0.140 이상이 필요합니다(0.111은
+    hooks/subagents 없음 — `CODEX-RECON.md` §b). controller net은 version과 무관하게
+    Builder diff를 보며, Codex native hook은 0.140+가 필요하고 0.147–0.151에서 advisory로
+    실측되었습니다(`CODEX-COVERAGE.md` §6).
 
 ## HIGH 사전 challenge 증거의 최신성
 
@@ -297,11 +363,16 @@ orchestrator/
   vendors.py              Backend interface, Mock, Claude/Codex real backend
   safety.py               controller-side net (harness hook handler 재사용)
   config.py               config dataclass와 기본값
+  routing.py              routing.toml preset → builder/challenger profile 해석
+  receipt.py              content-free dispatch audit receipt
   tests/                  offline unittest (mock + real handler)
 ```
 
-`orchestrate.py`와 이 package는 `install.py`가 `~/.claude`에 설치합니다
-(`harness.toml` 참조). 기본 dispatch가 quoted absolute-path `orchestrate.py build`를
-실행하기 때문입니다. 이들은 skill/agent/hook이 아니므로 harness capability catalog에
-나타나지 않으며, 설치본 대조가 없던 예전 `check.py`에서는 보지도 않았습니다. 따라서 이
-영역의 수정이 repo에만 남고 live lane은 구버전을 계속 실행할 수 있습니다.
+`orchestrate.py`와 이 package는 Codex target만 설치합니다(`harness.toml
+[targets.codex].copy`, `<HARNESS_HOME>` = `~/.codex` 또는 `CODEX_HOME`). Claude target은
+1-CLI(ADR-0023)이며 이들을 `retired_dests`에 두므로 `check.py`가 `~/.claude`에 남은 사본을
+보고합니다. dispatch는 quoted absolute-path `<HARNESS_HOME>/orchestrate.py build` 형식(또는
+repo checkout, `content/rules/two-cli-reference.md` 참조)으로 실행합니다. 이들은
+skill/agent/hook이 아니므로 harness capability catalog에 나타나지 않지만, `check.py`의
+install-drift axis는 Codex target에 대해 이들을 대조합니다. 따라서 repo에만 남은 미설치
+수정은 그 axis에 drift로 나타납니다.

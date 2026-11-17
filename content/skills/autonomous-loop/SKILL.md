@@ -10,7 +10,8 @@ The user's request supplies the implementation authority already granted. Define
 completion criteria and explain important risk. Main owns decomposition, design decisions,
 integration and final responsibility; it need not write every implementation itself.
 Before nontrivial implementation, read [agent routing](../../rules/agent-routing.md) and choose
-direct work, a named native implementation role, or existing headless dispatch. Delegate a
+direct work, a named native implementation role, or, only where the orchestrator is installed
+(Codex target; not the Claude 1-CLI install), headless dispatch. Delegate a
 bounded implementation with clear acceptance/verification when separation is useful; do small
 work directly when context-transfer/review cost is greater. Consider uncertainty, impact,
 verifiability and dependencies, not just file count. Record the choice briefly in the existing plan.
@@ -34,6 +35,6 @@ and report reasons. When blocked by unavailable scope/authority, preserve partia
 LOW completion needs a result report. Authorized HIGH local implementation can proceed, then
 requires independent review and human acceptance. Commit/push/deploy need their own authority.
 
-Explicit headless dispatch retains its pinned HANDOFF/scope and controller delta checks.
-Native hooks are capability-dependent and do not cover all I/O; inline is not automatically
-equivalent to the controller net. Codex is not permanently missing native delegation.
+Where installed, explicit headless dispatch retains its pinned HANDOFF/scope and controller delta
+checks. Native hooks are capability-dependent and do not cover all I/O; inline is not automatically
+equivalent to the controller net.

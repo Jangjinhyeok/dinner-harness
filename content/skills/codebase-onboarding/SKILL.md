@@ -23,10 +23,11 @@ and summarize directly. Cite concrete files, distinguish inferred conventions fr
 and record unknown build/test commands rather than inventing them.
 
 A request to understand the repository is read-only. Create a concise onboarding guide when
-requested. Create or update project-root AGENTS.md only when project instructions are requested,
-using [the template](../../templates/AGENTS.md). A guide-only request does not authorize executable
-project policy changes. Preserve existing files; enhance only the requested scope.
-No mandatory CLAUDE.md/global Claude dependency or per-file consent is needed.
+requested. Create or update the project instruction file the active runtime loads (project-root
+CLAUDE.md for Claude Code, AGENTS.md for Codex) only when project instructions are requested;
+[the template](../../templates/AGENTS.md) is the AGENTS.md starting point and its sections can be
+reused for CLAUDE.md. A guide-only request does not authorize executable project policy changes.
+Preserve existing files; enhance only the requested scope. No per-file consent is needed.
 For dual-vendor use, an explicitly chosen common project document can serve both entrypoints.
 
 Use Korean technical discussion, English identifiers/comments and type-prefixed Korean commit

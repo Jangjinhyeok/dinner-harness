@@ -55,8 +55,8 @@ py -3 check.py --target claude
 ```
 
 Claude 설치는 1-CLI 구성이다. orchestrator·`routing.toml`·roles·`rules/_mode`·HANDOFF/RESULT 템플릿·
-two-cli/routing reference·`delegate` skill은 설치하지 않는다(orchestrator·routing·roles·reference는
-Codex target용으로 유지, `delegate`·`_mode`·HANDOFF/RESULT 템플릿은 source-only).
+two-cli/routing reference는 설치하지 않는다(orchestrator·routing·roles·reference는
+Codex target용으로 유지, `_mode`·HANDOFF/RESULT 템플릿은 source-only, `delegate` skill은 2026-11-18 삭제).
 Claude adapter에는 retire 로직이 없어 이전 설치의 해당 파일과 `claude-direct.cmd`, `dh*.cmd`,
 `watch-builder.ps1`, `builder_guard` 파일, settings의 `orchestrate.py` allow 규칙이 `~/.claude`에 남을 수 있다.
 `check.py --target claude`가 남은 파일을 leftover로 보고하지만 자동 삭제하지 않는다. 특히 `rules/`의 남은 파일은
@@ -66,7 +66,7 @@ Claude adapter에는 retire 로직이 없어 이전 설치의 해당 파일과 `
 컴퓨터별 환경 사실(CLI 도구 유무, 콘솔 인코딩, computer use 대처 등)은 설치 대상이 아니다.
 필요하면 설치된 `~/.claude/templates/machine-env.example.md`를 `~/.claude/rules/machine-env.md`로 복사해
 그 컴퓨터에서 확인한 사실로 고친다. install은 이 로컬 파일을 건드리지 않고 check.py도 leftover로 보지 않는다.
-Codex가 필요하면 `--target codex`, 양쪽을 의도한 경우만 `--target all`을 쓴다.
+Codex가 필요하면 `install.py --target codex`를 따로 실행한다. `--target all`은 `check.py`·`refresh.py`에서만 지원한다.
 Codex 설치 절차와 기존 사용자 config 보존 규칙은 [전환 결과](docs/codex-migration-2026-09-10.md)에 있다.
 
 새 프로젝트에서 평소처럼 `claude`를 열고 요청한다. 평범한 `claude` 세션이 직접 수정 세션이다.
@@ -143,7 +143,7 @@ Controller net은 사후 delta 검사로 역할이 다르다. 엄격한 scope �
 
 bp/gas/repl/umg/ue는 전문 문서를 읽는 작은 진입점이며 별도 agent를 강제하지 않는다.
 autonomous-loop/adversarial-review는 고정 judge 수 대신 실제 evidence와 독립 검토를 사용한다.
-learnings-review는 opt-in redacted 로그를 읽으며 logging이 없으면 no-data다.
+learnings-review는 redacted 로그(Claude 설치는 기본 수집, Codex는 opt-in)를 읽으며 logging이 없으면 no-data다.
 Claude 설치는 `suggest_compact`(advisory)와 `learning_log` hook을 등록하며, Codex 기본 설치는 둘 다 등록하지 않는다.
 native compaction을 우선하고 experimental context management는 자동 활성화하지 않는다.
 
@@ -157,7 +157,7 @@ native compaction을 우선하고 experimental context management는 자동 활�
 
 Source catalog입니다. Codex 설치 대상과 설정은 `harness.toml`과 생성 검증으로 확인합니다.
 
-### Skills (31)
+### Skills (30)
 
 - `adversarial-review`
 - `arch-review`
@@ -168,7 +168,6 @@ Source catalog입니다. Codex 설치 대상과 설정은 `harness.toml`과 생�
 - `changelog`
 - `cli-update`
 - `codebase-onboarding`
-- `delegate`
 - `eval-harness`
 - `gas`
 - `goal-driven-execution`

@@ -24,11 +24,12 @@ Sources: [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagent
 [Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox).
 Documentation support, offline/fake tests and live runtime measurement are separate evidence classes.
 
-Current target policy restores portable domain/review/management skills; delegate remains an
-optional compatibility skill outside the Codex install. Common skill bodies are tool-neutral;
+Current target policy restores portable domain/review/management skills; the delegate skill was
+deleted from source on 2026-11-18 (it had been outside both installs since ADR-0023). Common skill bodies are tool-neutral;
 the Codex adapter renders discovery frontmatter and logical native model/effort/sandbox profiles.
 Native review is recorded only when actually run. Learning-log collection and edit-count compact
-reminders are disabled by default; scope/secret hooks remain. Existing user hooks are preserved,
+reminders are disabled by default; scope/secret hooks remain, and `shell_guard` (ADR-0024) is also
+registered (dryrun unless `CLAUDE_SHELL_GUARD_MODE` overrides it). Existing user hooks are preserved,
 and legacy adoption is explicit with a backup. See the migration report for final integrated
 offline tests and temporary-install results; no live home installation is part of this migration.
 
@@ -36,6 +37,15 @@ Native hooks are not containment for all I/O. Controller delta checks operate af
 remain distinct from hook preflight, and inspect partial edits after errors/timeouts.
 Inline does not automatically provide equivalent scope guarantees. BUILT, Builder self-report
 and independent review/human acceptance are separate states.
+
+> **2026-11-17 — §1–§5는 historical accounting (superseded).** 아래 표와 수치는 Cycle 2/3
+> 시점 기록이며 현재 매핑은 `harness.toml [targets.codex]`와 `adapters/codex.py`가 정한다.
+> 현재 기준: `rules/agent-routing.md`·`autonomy-policy.md`·routing/two-cli reference와 `roles/`가
+> 설치되고, `hooks.json`은 PreToolUse에 `secret_scan`·`scope_check`·`shell_guard` 3개만 등록한다
+> (`route_nudge`·`suggest_compact`·`learning_log`는 미등록). `builder_guard`는 삭제되어 더 이상 없다.
+> `assets/codex/AGENTS.md`에는 §7(cross-vendor Two-CLI)이나 "Codex 환경 안전 노트" 섹션이 없다.
+> source skill 30개가 모두 설치된다(`delegate`는 2026-11-18 소스에서 삭제, `skills_drop = []`).
+> 확인은 `py -3 check.py --target codex`.
 
 codex 타깃 설치의 콘텐츠 회계. 각 콘텐츠 타입을 **native / degraded / dropped**로 분류하고
 Codex 표현 위치 또는 drop 사유를 기록한다. **무음 소실 0**이 목표 — 모든 항목이 여기 명시된다.

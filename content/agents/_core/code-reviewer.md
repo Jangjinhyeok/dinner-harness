@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Read-only independent reviewer for important code changes, focusing on correctness, security and maintainability when a separate review adds value.
-tools: ["Read", "Grep", "Glob", "Bash"]
+tools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"]
 model: fable
 effort: high
 ---
