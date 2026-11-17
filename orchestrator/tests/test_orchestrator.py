@@ -775,20 +775,41 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["default"])
-        self.assertIn("implement in this session", message)
+        self.assertIn("이 세션에서 구현", message)
         self.assertIn("native subagent", message)
-        self.assertIn("no HANDOFF/Builder dispatch", message)
+        self.assertIn("HANDOFF/Builder dispatch가 없다", message)
         self.assertNotIn("goes through Codex", message)
         self.assertNotIn("delegate workflow", message)
         self.assertIn("[language]", message)
         self.assertIn("세션 끝까지 한국어", message)
+        self.assertIn("짧은 진행 문장", message)
+
+    def test_default_nudge_asks_for_risk_line_before_first_edit(self):
+        message, _ = route_nudge.message_for_prompt("Fix a typo in this document.")
+        self.assertIn("[risk]", message)
+        self.assertIn("늦어도 첫 파일 수정 전에", message)
+        self.assertIn("Risk: LOW|HIGH / 근거 / 검증 / 수용 조건", message)
+        self.assertIn("HIGH 신호가 없는 1~2줄", message)
+
+    def test_hook_writes_utf8_under_a_cp949_console(self):
+        env = dict(os.environ, PYTHONIOENCODING="cp949")
+        env.pop("PYTHONUTF8", None)
+        proc = subprocess.run(
+            [sys.executable, route_nudge.__file__],
+            input=json.dumps({"prompt": "인벤토리 정렬 기능 구현해줘"}).encode("utf-8"),
+            capture_output=True, env=env, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = proc.stdout.decode("utf-8")
+        self.assertIn("[language] 사용자에게 보이는 모든 문장", out)
+        self.assertNotIn("�", out)
 
     def test_ordinary_write_intent_gets_inline_route_in_any_repo(self):
         route = route_nudge.message_for_prompt("Implement a local date formatter.")
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["default"])
-        self.assertIn("independent review", message)
+        self.assertIn("독립 리뷰", message)
 
     def test_korean_jja_intent_requires_a_request_form(self):
         self.assertIsNotNone(route_nudge.message_for_prompt("파서 코드 짜줘"))
@@ -803,8 +824,8 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg", "repl"])
-        self.assertIn("HIGH-signal work", message)
-        self.assertIn("design-care signal", message)
+        self.assertIn("HIGH 신호", message)
+        self.assertIn("설계 주의 신호", message)
         self.assertNotIn("orchestrate.py build --repo", message)
 
     def test_single_subsystem_ue_work_requires_consult_before_handoff(self):
@@ -813,10 +834,9 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg"])
-        self.assertIn("should consult `/umg`", message)
-        self.assertIn("before implementing", message)
-        self.assertIn("incorporate the consult's design decisions", message)
-        self.assertIn("genuine 1-2-line changes are exceptions", message)
+        self.assertIn("구현 전에 `/umg`", message)
+        self.assertIn("설계 결정·anti-pattern·검증 포인트를 반영", message)
+        self.assertIn("실제 1~2줄 수정은 예외", message)
 
     def test_multi_subsystem_ue_work_requires_consult_before_handoff(self):
         route = route_nudge.message_for_prompt(
@@ -826,9 +846,9 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["umg", "repl"])
-        self.assertIn("should consult it before implementing", message)
-        self.assertIn("incorporate the consult's design decisions", message)
-        self.assertIn("genuine 1-2-line changes are exceptions", message)
+        self.assertIn("구현 전에 `/ue`를 consult", message)
+        self.assertIn("설계 결정·anti-pattern·검증 포인트를 반영", message)
+        self.assertIn("실제 1~2줄 수정은 예외", message)
 
     def test_generic_ue_work_requires_consult_before_handoff(self):
         route = route_nudge.message_for_prompt("Implement UE5 packaging support.")
@@ -836,9 +856,9 @@ class TestDefaultSessionRouting(unittest.TestCase):
         self.assertIsNotNone(route)
         message, domains = route
         self.assertEqual(domains, ["hub_generic"])
-        self.assertIn("should consult it before implementing", message)
-        self.assertIn("incorporate the consult's design decisions", message)
-        self.assertIn("genuine 1-2-line changes are exceptions", message)
+        self.assertIn("구현 전에 `/ue`를 consult", message)
+        self.assertIn("설계 결정·anti-pattern·검증 포인트를 반영", message)
+        self.assertIn("실제 1~2줄 수정은 예외", message)
 
     def test_read_only_or_meta_prompt_does_not_inject_a_write_route(self):
         self.assertIsNone(route_nudge.message_for_prompt("Explain this function."))

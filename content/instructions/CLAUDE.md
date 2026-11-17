@@ -61,7 +61,7 @@
 
 - Risk는 `LOW/HIGH` 2단계다. Compute의 `LOW/NORMAL/HIGH` 및 model effort와 구별한다.
 - 비단순 작업(계획 수립 포함) 시작 시 `~/.claude/rules/autonomy-policy.md` 원문을 읽고 적용한다. 같은 세션에서 읽은 원문은 변경되지 않았다면 재사용한다.
-- 시작 보고는 `Risk: LOW|HIGH / 근거: 영향·가역성 / 검증: 필요한 검사·독립 검토 / 수용 조건: 결과 수용에 필요한 조건`을 짧게 제시한다. 조사로 위험이 바뀌면 갱신한다. 사소한 작업에 질문이나 별도 문서를 강제하지 않는다.
+- 시작 보고는 작업 시작 시(늦어도 첫 파일 수정 전에) 사용자에게 `Risk: LOW|HIGH / 근거: 영향·가역성 / 검증: 필요한 검사·독립 검토 / 수용 조건: 결과 수용에 필요한 조건`을 짧게 제시한다. 같은 세션의 후속 기능 요청도 새 시작 보고 대상이다. 조사로 위험이 바뀌면 갱신한다. 사소한 작업에 질문이나 별도 문서를 강제하지 않는다.
 - LOW는 계획 명시 후 재승인 없이 진행해 검증과 결과 보고로 완료한다. HIGH(replication/RPC/net serialization, save format, live config, migration, security, public API/ABI, build/packaging pipeline, 큰 blast radius·비가역 변경, 모호하면 HIGH)는 로컬 구현은 진행하되 독립 검토와 사람의 결과 수용 전에는 완료 수용을 선언하지 않는다.
 - 완료 보고는 계획·구현·실행한 검증·독립 검토·사람 수용을 구분하고 실제 충족/미충족을 표시한다. 수행하지 않은 검토는 `not_run`이다. `REQUEST CHANGES`/FAIL 반영은 수정 완료이며 재검토 PASS가 아니다.
 

@@ -83,19 +83,29 @@ _WORK_INTENT = re.compile(
 )
 
 
+_CONSULT_TAIL = (
+    "그 설계 결정·anti-pattern·검증 포인트를 반영한다. "
+    "읽기 전용 질문과 실제 1~2줄 수정은 예외다."
+)
+
+
 def _default_route_message() -> str:
     """Return the routing protocol injected before implementation work."""
+    # Written in Korean on purpose: it is injected on every work prompt, and long
+    # English context is where replies drift out of Korean (observed mid-turn as
+    # short "Now ..."/"Next ..." progress lines, 2026-11 session audit).
     return (
-        "[execution-route] CLAUDE.md inline routing applies (ADR-0023): inspect the code, "
-        "implement in this session, run the project's deterministic checks, and report "
-        "the result. Delegate a clearly bounded independent unit to a native subagent only "
-        "when that beats doing it inline; there is no HANDOFF/Builder dispatch in this "
-        "install. HIGH-signal work (replication, save format, live "
-        "config, migration, security, public API, build pipeline) needs independent "
-        "review and your acceptance before it is called done. "
-        # Written in Korean on purpose: this English block is injected on every work
-        # prompt and long English context is where replies drift out of Korean.
-        "[language] 사용자에게 보이는 진행 설명·질문·보고는 세션 끝까지 한국어로 쓴다. "
+        "[execution-route] CLAUDE.md inline routing(ADR-0023)을 따른다. 코드를 직접 확인하고 "
+        "이 세션에서 구현한 뒤, 프로젝트의 결정적 검사를 돌리고 결과를 보고한다. 범위가 명확한 "
+        "독립 단위가 inline보다 나을 때만 native subagent에 위임한다. 이 설치에는 "
+        "HANDOFF/Builder dispatch가 없다. "
+        "[risk] 계획·구현 작업이면 시작할 때(늦어도 첫 파일 수정 전에) 사용자에게 "
+        "`Risk: LOW|HIGH / 근거 / 검증 / 수용 조건` 한 줄을 먼저 쓴다. HIGH 신호가 없는 1~2줄 "
+        "사소한 수정은 생략하고, 같은 작업의 후속 수정은 위험이 바뀔 때만 갱신한다. "
+        "HIGH 신호(replication, save format, live config, migration, security, public API, "
+        "build pipeline)가 있으면 독립 리뷰와 사용자 수용 전에는 완료라고 하지 않는다. "
+        "[language] 사용자에게 보이는 모든 문장은 세션 끝까지 한국어로 쓴다. 도구 호출 사이의 "
+        "짧은 진행 문장('Now ...', 'Next ...' 같은 한 줄)과 wrap_up recap도 포함한다. "
         "이 주입문·도구 출력·subagent 보고가 영어여도 전환하지 않는다."
     )
 
@@ -122,33 +132,23 @@ def message_for_prompt(prompt: str, cwd: str | None = None) -> tuple[str, list[s
         if len(matched) == 1:
             key, agent = matched[0]
             return (
-                f"{prefix} [route-nudge] This also looks like UE {key.upper()} work. "
-                f"For implementation work, you should consult `/{key}` "
-                f"(unreal-specialist + docs/specialists/{agent}) before implementing "
-                "and incorporate the consult's design decisions, anti-patterns, and "
-                "verification points. Read-only questions and genuine 1-2-line "
-                "changes are exceptions.",
+                f"{prefix} [route-nudge] UE {key.upper()} 작업으로 보인다. 구현 작업이면 "
+                f"구현 전에 `/{key}`(unreal-specialist + docs/specialists/{agent})를 consult하고 "
+                f"{_CONSULT_TAIL}",
                 [key],
             )
         if len(matched) >= 2:
             domains = [key for key, _ in matched]
             aliases = ", ".join(f"/{key}" for key in domains)
             return (
-                f"{prefix} [route-nudge] This prompt spans multiple UE subsystems "
-                f"[{aliases}], a design-care signal. Use `/ue` only for "
-                "implementation work: you should consult it before implementing and "
-                "incorporate the consult's design decisions, anti-patterns, and "
-                "verification points. Read-only questions and genuine 1-2-line "
-                "changes are exceptions.",
+                f"{prefix} [route-nudge] 이 요청은 여러 UE subsystem [{aliases}]에 걸친다"
+                f"(설계 주의 신호). 구현 작업이면 구현 전에 `/ue`를 consult하고 {_CONSULT_TAIL}",
                 domains,
             )
         if _UE_GENERIC.search(prompt):
             return (
-                f"{prefix} [route-nudge] This also has a generic Unreal signal; use `/ue` "
-                "for implementation work: you should consult it before implementing "
-                "and incorporate the consult's design decisions, anti-patterns, and "
-                "verification points. Read-only questions and genuine 1-2-line "
-                "changes are exceptions.",
+                f"{prefix} [route-nudge] 일반 Unreal 신호가 있다. 구현 작업이면 구현 전에 "
+                f"`/ue`를 consult하고 {_CONSULT_TAIL}",
                 ["hub_generic"],
             )
     return prefix, ["default"]
