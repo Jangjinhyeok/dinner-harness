@@ -52,7 +52,7 @@ def validate_profile(profile: ModelProfile) -> ModelProfile:
         raise RoutingConfigError(f"invalid vendor: {profile.vendor!r}")
     if not isinstance(profile.model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", profile.model):
         raise RoutingConfigError("model must be a non-empty model identifier without whitespace")
-    efforts = {"codex": ("low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "max")}
+    efforts = {"codex": ("low", "medium", "high", "xhigh"), "claude": ("low", "medium", "high", "xhigh", "max")}
     if profile.effort not in efforts[profile.vendor]:
         raise RoutingConfigError(f"unsupported effort {profile.effort!r} for vendor {profile.vendor!r}")
     if (profile.vendor == "codex" and profile.model.startswith("claude-")) or (profile.vendor == "claude" and profile.model.startswith("gpt-")):

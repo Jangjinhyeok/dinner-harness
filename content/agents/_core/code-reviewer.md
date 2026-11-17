@@ -2,7 +2,8 @@
 name: code-reviewer
 description: Read-only independent reviewer for important code changes, focusing on correctness, security and maintainability when a separate review adds value.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: opus
+model: fable
+effort: high
 ---
 
 # Evidence-Driven Code Review

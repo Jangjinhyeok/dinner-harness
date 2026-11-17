@@ -39,11 +39,11 @@ class RoutingMigrationTests(unittest.TestCase):
                 self.assertEqual(routing.resolve_profile(self.config, "codex_only", role),
                                  routing.ModelProfile("codex", "gpt-6.1-sol", "xhigh"))
                 self.assertEqual(routing.resolve_profile(self.config, self.preset, role),
-                                 routing.ModelProfile("claude", "claude-opus-5-5", "medium"))
+                                 routing.ModelProfile("claude", "claude-fable-5-2", "medium"))
 
     def test_profiles_reject_empty_invalid_fields_and_vendor_effort(self):
         for key, value in (("model", ""), ("model", " "), ("model", "bad name"),
-                           ("effort", "nonsense"), ("effort", "xhigh"),
+                           ("effort", "nonsense"), ("effort", "extra-high"),
                            ("vendor", "unknown"), ("model", None), ("modle", "typo")):
             with self.subTest(key=key, value=value):
                 config = copy.deepcopy(self.config)
@@ -75,17 +75,33 @@ class RoutingMigrationTests(unittest.TestCase):
 
     def test_claude_only_profiles_follow_adr_0023(self):
         expected = {
-            "architect": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
-            "challenger_high": routing.ModelProfile("claude", "claude-opus-5-5", "high"),
-            "builder_low": routing.ModelProfile("claude", "claude-opus-5-5", "low"),
-            "builder_normal": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
-            "builder_high": routing.ModelProfile("claude", "claude-sonnet-5-5", "max"),
-            "reviewer": routing.ModelProfile("claude", "claude-opus-5-5", "medium"),
+            "architect": routing.ModelProfile("claude", "claude-fable-5-2", "high"),
+            "challenger_high": routing.ModelProfile("claude", "claude-fable-5-2", "high"),
+            "builder_low": routing.ModelProfile("claude", "claude-fable-5-2", "medium"),
+            "builder_normal": routing.ModelProfile("claude", "claude-fable-5-2", "medium"),
+            "builder_high": routing.ModelProfile("claude", "claude-fable-5-2", "xhigh"),
+            "reviewer": routing.ModelProfile("claude", "claude-fable-5-2", "high"),
         }
         self.assertEqual(self.preset, "claude_only")
         for role, profile in expected.items():
             with self.subTest(role=role):
                 self.assertEqual(routing.resolve_profile(self.config, self.preset, role), profile)
+
+    def test_claude_agent_frontmatter_matches_claude_only_profiles(self):
+        agents_dir = Path(__file__).resolve().parent / "content" / "agents"
+        seen = set()
+        for path in sorted(agents_dir.rglob("*.md")):
+            lines = path.read_text(encoding="utf-8").split("\n")
+            end = lines.index("---", 1)
+            meta = dict(line.split(": ", 1) for line in lines[1:end] if ": " in line)
+            name = meta["name"]
+            seen.add(name)
+            with self.subTest(agent=name):
+                profile = routing.resolve_profile(
+                    self.config, "claude_only", self.config["native_agents"][name])
+                self.assertEqual(profile.model, f"claude-{meta['model']}-5-2")
+                self.assertEqual(meta["effort"], profile.effort)
+        self.assertEqual(seen, set(self.config["native_agents"]))
 
     def test_codex_manual_efforts_and_vendor_mismatch_contract(self):
         for model in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol",
@@ -94,6 +110,10 @@ class RoutingMigrationTests(unittest.TestCase):
                 with self.subTest(model=model, effort=effort):
                     profile = routing.ModelProfile("codex", model, effort)
                     self.assertEqual(routing.validate_profile(profile), profile)
+        for effort in ("low", "medium", "high", "xhigh", "max"):
+            with self.subTest(claude_effort=effort):
+                profile = routing.ModelProfile("claude", "claude-fable-5-2", effort)
+                self.assertEqual(routing.validate_profile(profile), profile)
         for profile in (routing.ModelProfile("codex", "gpt-6-astra", "max"),
                         routing.ModelProfile("codex", "gpt-6-astra", "extra-high"),
                         routing.ModelProfile("codex", "claude-opus-5", "high"),

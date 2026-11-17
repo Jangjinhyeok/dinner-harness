@@ -11,7 +11,7 @@
 - **사용**: 개인 프로젝트와 실무 개발에 직접 사용하고 있습니다.
 
 Claude Code 중심으로 설계·구현·검증을 이어가는 개인 harness의 source of truth다(ADR-0023).
-기본은 Claude Opus 5.5 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
+기본은 Claude Fable 5.2 메인 세션이며, 독립 탐색·중요한 review 또는 경계가 명확한 위임에만
 추가 agent를 쓴다. Codex target과 hybrid/codex_only preset은 선택 가능한 호환 경로로 유지한다.
 설치된 `~/.claude`·`~/.codex`는 생성 결과다. canonical source를 수정하고 검증 후 설치한다.
 
@@ -73,7 +73,7 @@ Codex 설치 절차와 기존 사용자 config 보존 규칙은 [전환 결과](
 초기 interactive 권장 실행 예시:
 
 ```text
-claude --model claude-opus-5-5 --effort medium
+claude --model claude-fable-5-2 --effort high
 ```
 
 사용 중인 앱에서는 지원되는 모델 선택기를 쓴다. routing.toml 수정이나 harness 설치는
@@ -82,30 +82,35 @@ claude --model claude-opus-5-5 --effort medium
 ## 모델 정책과 적용 범위
 
 구체적인 profile SSOT는 [content/routing.toml](content/routing.toml)이다(기본 preset `claude_only`).
-근거는 [ADR-0023](docs/architecture/ADR-0023-claude-only-default.md)의 VulcanBench Frontier v4
-(2026-10-08, 23 tasks × 5 efforts) 결과이며 구현 위주 벤치마크의 외삽이라 최적성을 입증한 값이 아니다.
+근거는 [ADR-0023](docs/architecture/ADR-0023-claude-only-default.md) addendum 2026-11-17의 VulcanBench Frontier v4
+Fable 5.2 결과(2026-11-13, 23 tasks × 5 efforts)이며 구현 위주 벤치마크의 외삽이라 최적성을 입증한 값이 아니다.
 
 | 역할 | 모델 / effort | 적용 |
 |---|---|---|
-| Main / architect | Claude Opus 5.5 / medium | interactive 권장값, 실제 선택은 앱/CLI |
-| 작은 명확한 위임 | Claude Opus 5.5 / low | 선택된 headless LOW |
-| 일반 구현 위임 | Claude Opus 5.5 / medium | headless NORMAL/native 구현 profile (agent frontmatter `model: opus`) |
-| 복잡한/HIGH 구현 | Claude Sonnet 5.5 / max | HIGH compute (비용·시간 수용) |
-| 중요한 독립 review | Claude Opus 5.5 / medium | fresh-context reviewer |
-| HIGH design challenge | Claude Opus 5.5 / high | 구현과 별도 read-only 호출 |
+| Main / architect | Claude Fable 5.2 / high | interactive 권장값, 실제 선택은 앱/CLI (native `architect`·`planner`도 동일) |
+| 작은 명확한 위임 | Claude Fable 5.2 / medium | 선택된 headless LOW (low와 비용 동일, 점수 우위) |
+| 일반 구현 위임 | Claude Fable 5.2 / medium | headless NORMAL/native 구현 profile (agent frontmatter `model: fable`, `effort: medium`) |
+| 복잡한/HIGH 구현 | Claude Fable 5.2 / xhigh | HIGH compute (비용·시간 수용) |
+| 중요한 독립 review | Claude Fable 5.2 / high | fresh-context reviewer (frontmatter `effort: high`) |
+| HIGH design challenge | Claude Fable 5.2 / high | 구현과 별도 read-only 호출 |
+
+Fable은 구독 계정에서 별도 주간 사용 한도를 쓴다. 한도가 다 차면 메인 세션은 앱/CLI에서 Opus 5.5로
+바꾸면 되지만, native agent는 frontmatter가 `model: fable`이라 메인 모델을 따라가지 않고 API error로 실패한다.
+이때는 Agent 호출에 `model: "opus"`를 넘기거나, `CLAUDE_CODE_SUBAGENT_MODEL=opus`와
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`을 함께 설정해 frontmatter model을 무시하게 한다
+(`CLAUDE_CODE_SUBAGENT_MODEL`만으로는 frontmatter보다 우선순위가 낮아 효과가 없다).
 
 현재 native 구현 specialist는 `builder_normal`이며 LOW/HIGH를 자동 선택하지 않는다.
 headless는 선택 gate의 risk/compute를 해석한다. 이 지침은 자동 위임 scheduler가 아니다.
 risk와 compute는 별개다. profile 형식 검증, 설치 CLI의 schema/capability,
 계정의 실제 모델 접근성도 별개다. 확인하지 못한 접근은 unknown이다.
-Opus의 높은 effort 구간은 일부 Opus 4.8 fallback을 포함할 수 있다.
 effort 이름을 추측 변환하거나 인증/모델 실패를 다른 vendor·API 과금으로 조용히 fallback하지 않는다.
 구독이 API 비용을 포함한다고 가정하지 않는다. `codex_only`(GPT-6.1 Sol xhigh)와 `hybrid`는 선택 가능한 호환 preset이다.
 
 ## 선택적 headless dispatch (Codex target 전용)
 
 이 경로는 Claude 1-CLI 설치에 포함되지 않으며 Codex target에서만 설치된다. 위 표의 headless/challenge
-profile은 이 경로에만 적용되고, Claude 설치의 위임은 native subagent(frontmatter `model: opus`)를 쓴다.
+profile은 이 경로에만 적용되고, Claude 설치의 위임은 native subagent(frontmatter `model: fable` + `effort`)를 쓴다.
 큰 작업을 다른 모델에 맡기거나 controller의 pinned scope/secret·baseline/delta 검사가 필요하면
 [Two-CLI reference](content/rules/two-cli-reference.md)를 사용한다.
 scope와 검증 기준이 있는 self-contained HANDOFF로 `orchestrate.py challenge/build`를 실행한다.

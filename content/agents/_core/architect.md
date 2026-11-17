@@ -2,7 +2,8 @@
 name: architect
 description: Read-only architecture specialist for significant boundary, ownership and dependency decisions when independent design analysis adds value.
 tools: ["Read", "Grep", "Glob"]
-model: opus
+model: fable
+effort: high
 ---
 
 # Architecture Specialist

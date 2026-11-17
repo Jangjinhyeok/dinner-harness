@@ -2,7 +2,8 @@
 name: unity-specialist
 description: "Focused Unity expertise in object lifecycle, serialization, Jobs/Burst, asset loading, input, UI, rendering and platform builds. Evaluate engine-specific trade-offs against project requirements; use relevant specialist references on demand. Native consultation is optional."
 tools: Read, Glob, Grep, Write, Edit, Bash, Task, Skill
-model: opus
+model: fable
+effort: medium
 maxTurns: 20
 skills:
   - simplicity-first

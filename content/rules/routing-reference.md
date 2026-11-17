@@ -6,8 +6,8 @@
 
 모델 정책 SSOT는 source `content/routing.toml`, 설치본 `routing.toml`이다.
 기본 preset은 claude_only(ADR-0023)이며 codex_only와 hybrid는 선택 가능한 호환 경로다.
-claude_only는 Opus 5.5(architect/challenger/builder_low/builder_normal/reviewer)와
-Sonnet 5.5 max(builder_high)이며 근거와 한계는 ADR-0023에 있다.
+claude_only는 Fable 5.2(architect/challenger/reviewer high, builder_low/builder_normal medium,
+builder_high xhigh)이며 근거와 한계는 ADR-0023(addendum 2026-11-17)에 있다.
 구체적인 모델/effort 값은 TOML에서 읽고 문서나 프롬프트로 덮어쓰지 않는다.
 
 2026-09-10 초기 운영 제안은 main/architect Astra medium, 작은 위임 Luna medium,
@@ -50,7 +50,7 @@ Logical keys는 `architect`, `builder_low`, `builder_normal`, `builder_high`,
 
 직접 수행/native/headless의 판단과 인계 계약은 [agent routing](agent-routing.md)을 따른다.
 Codex native adapter는 `[native_agents]`를 `codex_only` preset으로 생성하고, Claude native agent는
-frontmatter model alias(`opus`)를 쓰며, headless는 active preset을 따른다. 현재 native 구현 specialist는 `builder_normal`에 연결된다.
+frontmatter의 `model: fable`과 `effort`를 쓰며, headless는 active preset을 따른다. 현재 native 구현 specialist는 `builder_normal`에 연결된다.
 native 호출에 LOW/HIGH 자동 분류·승격은 없고, headless는 선택 gate 집합의 risk/compute로
 `builder_low/normal/high`를 결정한다. Risk HIGH는 effective Compute HIGH를 유지한다.
 `default`/일반 worker와 review라는 작업명은 `[native_agents]` 역할 선택을 대신하지 않는다.

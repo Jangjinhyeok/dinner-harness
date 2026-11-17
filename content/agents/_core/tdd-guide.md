@@ -2,7 +2,8 @@
 name: tdd-guide
 description: Read-only test design and regression review specialist for behavior changes and testability risks.
 tools: ["Read", "Grep", "Glob"]
-model: opus
+model: fable
+effort: high
 ---
 
 # Test Design Specialist

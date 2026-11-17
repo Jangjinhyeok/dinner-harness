@@ -70,7 +70,7 @@
 - 비단순 구현 전 `~/.claude/rules/agent-routing.md`를 읽고 직접 수행/native subagent를 고른다. 설계 불확실성·변경 영향·검증 가능성·문맥 전달 비용을 기준으로 하며 파일 수만으로 위임하지 않는다. 작은 작업은 위임 비용이 더 크면 직접 수행한다.
 - 일반 독립 리뷰는 `code-reviewer`, C++ 전문 검토는 `cpp-reviewer` subagent를 명시한다. 엔진 신호가 있으면 `unreal-specialist`/`unity-specialist`와 `docs/specialists/`의 필요한 문서를 활용한다(필수 consult 아님).
 - 동일 tree에서 병렬 구현하지 않는다. 병렬 writer가 필요하면 소유 파일·격리 위치·통합 방식을 먼저 정한다. parent가 검증과 완료 책임을 유지한다.
-- interactive 모델/effort는 앱 모델 선택기나 CLI 옵션으로 사용자가 고른다. native subagent는 frontmatter model alias(`opus`)를 따른다. 선정 근거는 harness repo의 ADR-0023이다.
+- interactive 모델/effort는 앱 모델 선택기나 CLI 옵션으로 사용자가 고른다. native subagent는 frontmatter의 `model: fable`과 `effort`(구현 `medium`, 검토·설계 `high`)를 따른다. Fable 사용 한도로 subagent가 API error로 실패하면 Agent 호출에 `model: "opus"`를 넘겨 재시도한다. 선정 근거는 harness repo의 ADR-0023이다.
 - 이 설치는 1-CLI 구성이다. Architect/Builder 역할 전환, HANDOFF/RESULT 파일 버스, headless `orchestrate.py` dispatch는 설치되지 않는다(필요하면 harness repo의 Codex target이 그 경로를 유지한다). 위임은 native subagent로 한다.
 
 ### `!` shell-output fast path

@@ -28,7 +28,7 @@ separately authorized live install:
 ```text
 py -3 install.py --target claude --allow-live
 py -3 check.py --target claude
-claude --model claude-opus-5-5 --effort medium
+claude --model claude-fable-5-2 --effort high
 ```
 
 The Claude install is 1-CLI: the orchestrator, `routing.toml`, roles, `rules/_mode`, HANDOFF/RESULT
@@ -65,30 +65,35 @@ unperformed review is not_run. Add specialists only for distinct unresolved risk
 ## Models
 
 [content/routing.toml](content/routing.toml) is the profile SSOT; claude_only is the default.
-The basis is the VulcanBench Frontier v4 result recorded in
-[ADR-0023](docs/architecture/ADR-0023-claude-only-default.md) (23 tasks, one attempt per cell,
+The basis is the VulcanBench Frontier v4 Fable 5.2 result (2026-11-13) recorded in
+[ADR-0023](docs/architecture/ADR-0023-claude-only-default.md) addendum 2026-11-17 (23 tasks, one attempt per cell,
 implementation-only, review roles extrapolated); it is a usage policy, not a proven optimum.
 
 | Role | Model / effort | Meaning |
 |---|---|---|
-| Main / architect | Claude Opus 5.5 / medium | Interactive recommendation, selected separately |
-| Small clear delegation | Claude Opus 5.5 / low | Selected headless LOW |
-| General delegation | Claude Opus 5.5 / medium | NORMAL/native implementation (agent frontmatter `model: opus`) |
-| Complex/HIGH implementation | Claude Sonnet 5.5 / max | HIGH compute, higher cost and time accepted |
-| Important independent review | Claude Opus 5.5 / medium | Fresh-context reviewer |
-| HIGH design challenge | Claude Opus 5.5 / high | Separate read-only invocation |
+| Main / architect | Claude Fable 5.2 / high | Interactive recommendation, selected separately (native `architect`/`planner` too) |
+| Small clear delegation | Claude Fable 5.2 / medium | Selected headless LOW (same cost as low, higher score) |
+| General delegation | Claude Fable 5.2 / medium | NORMAL/native implementation (agent frontmatter `model: fable`, `effort: medium`) |
+| Complex/HIGH implementation | Claude Fable 5.2 / xhigh | HIGH compute, higher cost and time accepted |
+| Important independent review | Claude Fable 5.2 / high | Fresh-context reviewer (frontmatter `effort: high`) |
+| HIGH design challenge | Claude Fable 5.2 / high | Separate read-only invocation |
+
+On a subscription, Fable has its own weekly usage limit. When it runs out, switch the main session to
+Opus 5.5 in the app or CLI; native agents pin `model: fable` in frontmatter, so they do not follow the
+main model and fail with an API error. Pass `model: "opus"` on the Agent call, or set
+`CLAUDE_CODE_SUBAGENT_MODEL=opus` together with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` so frontmatter
+models are ignored (`CLAUDE_CODE_SUBAGENT_MODEL` alone ranks below frontmatter and has no effect).
 
 Native implementation specialists currently map to `builder_normal`; they do not automatically select
 LOW/HIGH. Headless resolves the selected gates' risk/compute. These instructions are not an automatic scheduler.
 Risk and compute differ. Static profile validity, CLI capability and actual account model access
-are separate evidence; unknown access stays unknown. Opus high-effort results partly measure an
-Opus 4.8 fallback. Never silently fallback across vendors or billing methods. A subscription does
+are separate evidence; unknown access stays unknown. Never silently fallback across vendors or billing methods. A subscription does
 not imply included API usage. codex_only (GPT-6.1 Sol xhigh) and hybrid stay selectable.
 
 ## Optional dispatch and safety (Codex target only)
 
 This path is not part of the Claude 1-CLI install; only the Codex target installs it. The headless and
-challenge profiles above apply here only; Claude delegation uses native subagents (`model: opus`).
+challenge profiles above apply here only; Claude delegation uses native subagents (`model: fable` plus `effort`).
 Use [headless challenge/build](content/rules/two-cli-reference.md) for substantial bounded delegation
 or controller scope/secret and baseline/delta checks. Explicit
 [Architect](content/roles/ROLE_ARCHITECT.md)/[Builder](content/roles/ROLE_BUILDER.md) contracts do not

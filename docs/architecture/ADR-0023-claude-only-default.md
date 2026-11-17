@@ -97,3 +97,38 @@ Reasons:
 Limits: 23 tasks, one attempt per cell; judge protocols and Claude Code versions differ between columns (Haiku v3.24 on 2.1.293–2.1.296, Opus v3.15 on 2.1.280); Haiku has two price tiers by prompt length (sweep floor $31.10, ceiling $155.50, reported $138.31); API list-price basis, not subscription billing; not UE5/C++ specific.
 
 Revisit when: Claude native agents can set effort, the headless `claude_only` path is used again, or a run with failures scored (or a larger task set) is published. A `builder_low` → `claude-haiku-5-5` / xhigh change would then need fixture updates in `test_migration_routing.py` and an entry here.
+
+## Addendum 2026-11-17: Fable 5.2 becomes the claude_only model; native agents set effort
+
+New data: VulcanBench Frontier v4, "Claude Fable 5.2 across every effort level" (2026-11-13, same 23 tasks × 5 efforts, Claude Code 2.1.321 on a subscription). https://vulcanbench.com/benchmarks/swe-v4-fable52-v330.html
+
+Fable 5.2 is judged by Muse Spark 1.3 + GPT-6.1 Sol; the Opus 5.5 column by Muse + Grok 4.6. The comparison below uses the report's matched panel (Muse + Sol for both) and Muse alone, not the published scores.
+
+| Profile | Matched panel | Muse alone | Passed | $/task | Min/task |
+|---|---|---|---|---|---|
+| Opus 5.5 low | 87.85 | 86.47 | 17/23 | $1.70 | 13.7 |
+| Opus 5.5 medium (previous builder_normal/architect/reviewer) | 92.16 | 91.05 | 23/23 | $2.84 | 18.6 |
+| Fable 5.2 low | 91.92 | 91.09 | 23/23 | $1.72 | 4.6 |
+| Fable 5.2 medium | 92.25 | 91.16 | 23/23 | $1.72 | 4.3 |
+| Fable 5.2 high | 92.76 | 91.53 | 23/23 | $2.86 | 7.8 |
+| Fable 5.2 xhigh | 93.25 | 92.13 | 23/23 | $4.99 | 14.2 |
+| Fable 5.2 max | 93.85 | 92.78 | 23/23 | $10.88 | 37.1 |
+
+Sonnet 5.5 max (previous builder_high) is 92.02, $5.52, 38 min on the Muse + Grok panel; it has no matched-panel score. Fable 5.2 never needed the refusal fallback in 115 runs; Opus 5.5 runs had it answer in 30.
+
+Trigger met: Claude Code subagent frontmatter now supports `effort` (`low|medium|high|xhigh|max`, overriding the session effort; https://code.claude.com/docs/en/sub-agents). Without it, agents inherited the session effort, so the "Opus medium" profile above was not actually enforced.
+
+Decision (user-selected option A):
+
+| Role | Profile | Reason |
+|---|---|---|
+| builder_low | `claude-fable-5-2` / medium | low and medium cost the same ($1.72); medium scores higher |
+| builder_normal | `claude-fable-5-2` / medium | ties Opus medium on score and passes at 60% of the cost and 23% of the time |
+| builder_high | `claude-fable-5-2` / xhigh | above Sonnet max's published score (panels differ) at lower cost and 14 min vs 38; the board's critical-work pick; max adds 0.6 points for 2.2× the cost |
+| architect / reviewer / challenger_high | `claude-fable-5-2` / high | costs what Opus medium did; review/design still extrapolated from implementation |
+
+Native agents: frontmatter `model: opus` → `model: fable` with `effort: medium` for the implementation specialists (`builder_normal`) and `effort: high` for architect, planner, code-reviewer, cpp-reviewer, tdd-guide and performance-analyst. `orchestrator/routing.py` now accepts `xhigh` for the claude vendor (the Claude CLI accepts `--effort xhigh`). `hybrid` keeps its Opus 5.5 Claude roles; `codex_only` is unchanged.
+
+Limits: 23 tasks, one attempt per cell; implementation-only (review/design extrapolated); API list-price cost, not subscription usage; the benchmark run used up the subscription's weekly Fable limit by the end of xhigh, so heavy use can exhaust it. Then the main session can switch back to Opus 5.5 in the app/CLI, but native agents keep requesting Fable (frontmatter `model` outranks `CLAUDE_CODE_SUBAGENT_MODEL`) and end on an API error; the documented overrides are the per-invocation Agent `model: "opus"` parameter or `CLAUDE_CODE_SUBAGENT_MODEL=opus` with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`. Fable 5.2's code quality is level with Fable 5.1 within standard error (above Opus 5.5 at low and high), so its lead is mainly correctness, speed and cost; not UE5/C++ specific.
+
+Revisit when: the Fable weekly limit blocks normal work, a larger or review-specific benchmark appears, or a newer model enters the board.

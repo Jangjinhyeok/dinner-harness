@@ -27,9 +27,10 @@ native/main으로 바꾸지 않는다. 이미 승인된 구현의 위임에 매�
 ## 역할과 모델 선택
 
 구체적인 vendor/model/effort는 설치본에 `routing.toml`과 `rules/routing-reference.md`가 있으면
-거기서 읽는다(Claude 1-CLI 설치는 agent frontmatter alias를 쓴다). main의 interactive 모델 선택은 별개이며 위임 때문에 변경하지 않는다.
+거기서 읽는다(Claude 1-CLI 설치는 agent frontmatter의 model alias와 effort를 쓴다). main의 interactive 모델 선택은 별개이며 위임 때문에 변경하지 않는다.
 Codex native 설정은 `[native_agents]`의 역할을 `codex_only` profile로 생성한다. Claude native agent는
-frontmatter의 model alias(`opus`)를 쓰며 claude_only 기본 profile(Opus 5.5)과 맞춘 값이다.
+frontmatter의 `model: fable`과 `effort`(구현 specialist `medium`, reviewer·architect·planner `high`)를 쓰며
+claude_only 기본 profile(Fable 5.2)과 맞춘 값이다.
 현재 native 구현 specialist는 모두 `builder_normal`이다. 작은 작업이라는 설명이나
 작업 이름만으로 `builder_low`가 되지 않으며, HIGH risk라고 자동 승격되지도 않는다.
 필요한 compute와 native profile이 맞지 않으면 적절한 main profile 또는 (설치된 경우) headless

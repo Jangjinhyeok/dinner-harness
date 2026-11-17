@@ -2,7 +2,8 @@
 name: planner
 description: Read-only planning specialist for complex changes where dependency and verification analysis adds value.
 tools: ["Read", "Grep", "Glob"]
-model: opus
+model: fable
+effort: high
 ---
 
 # Planning Specialist
