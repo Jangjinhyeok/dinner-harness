@@ -10,7 +10,7 @@ Apply [autonomy policy](../../rules/autonomy-policy.md); this skill adds no perm
 Installing a server, editing client MCP config, granting trust or spending credits keeps its own
 authority, and live config/trust changes are HIGH. Do not install anything only because it is listed.
 
-## Catalog snapshot (verified 2026-10-11)
+## Catalog snapshot (verified 2026-10-11; ComfyUI entries 2026-11-19)
 
 Entries change quickly. Re-check the official page, version, license and pricing before
 selecting one; treat this table as candidates, not as installed or connected tools.
@@ -25,13 +25,15 @@ selecting one; treat this table as candidates, not as installed or connected too
 | Meshy skill pack (`meshy-dev/meshy-3d-agent`) | Skill, REST direct | `npx skills add meshy-dev/meshy-3d-agent` | No MCP server; same credits. Prefer one of MCP or skill pack, not both |
 | Tripo MCP (official, `VAST-AI-Research/tripo-mcp`) | Blender-coupled, alpha | `uvx tripo-mcp` plus Tripo Blender add-on | Text to 3D imported into Blender. Alpha; Tripo API key/credits (1 credit = US$0.01 when last checked) |
 | Autodesk Fusion, SketchUp (claude.ai connectors) | Remote connector | Connector directory, account auth | CAD/architectural modeling; not game-mesh pipelines by default |
-| Hunyuan3D | No official MCP found | Via MCP for Blender integration or a third-party wrapper | Check model weight license and regional terms separately |
+| ComfyUI 3D nodes (core `Comfy-Org/ComfyUI`, v0.46.0) | Local nodes + partner API nodes | Via Comfy MCP or the ComfyUI HTTP API (2D table) | Local image-to-3D: Hunyuan3D 2.1, TRELLIS.2 (MIT; README requires ≥24 GB GPU memory), TripoSplat (Gaussian splat, not a game mesh). Mesh post-process: `DecimateMesh`, `RemeshMesh`, `UnwrapMesh`, `FillHoles`, `WeldVertices`, `BakeNormalMapFromMesh`, `BakeAmbientOcclusion`, `BakeTextureFromViews`; saves glb (`SaveGLB`, `Save3DAdvanced`). Partner nodes call Meshy, Tripo, Rodin and Hunyuan3D on Comfy credits instead of separate MCP accounts. Output is a source stage before Blender cleanup, not a `.blend` replacement |
+| Hunyuan3D | No official MCP found | Native ComfyUI nodes, MCP for Blender integration or a third-party wrapper | The Hunyuan3D 2.1 Community License excludes the EU, UK and South Korea from its Territory: do not use the local weights there. Hosted/partner API terms are separate; check them before use |
 
 ### 2D / image
 
 | Tool | Kind | Connect | Notes |
 |---|---|---|---|
-| Comfy MCP local (official, `Comfy-Org/comfy-mcp`, PyPI `comfy-mcp`) | stdio over comfy-cli | `claude mcp add --scope project comfy-mcp -e COMFY_BIN=<path> -- comfy-mcp` | Needs `comfy-cli>=1.14.0`, a ComfyUI workspace and running ComfyUI for execution. `validate_workflow`, `run_workflow`, `fetch_outputs`. Local GPU, model licenses per checkpoint |
+| Comfy MCP local (official, `Comfy-Org/comfy-mcp`, PyPI `comfy-mcp`) | stdio over comfy-cli | `claude mcp add --scope project comfy-mcp -e COMFY_BIN=<path> -- comfy-mcp` | Beta, 42 tools; renamed from `comfy-local-mcp` (remove the old script). Needs `comfy-cli>=1.14.0`, a ComfyUI workspace and running ComfyUI for execution. `server_info`, `validate_workflow`, `run_workflow`, `fetch_outputs`, `search_templates`/`fetch_template`; `partner_generate` spends Comfy credits; `COMFYUI_URL` targets a remote ComfyUI. Repo license not detected by GitHub; check before redistribution. Local GPU, model licenses per checkpoint |
+| ComfyUI HTTP API (core, GPL-3.0) | Local server, no MCP needed | Run ComfyUI, then `POST /prompt` with API-format workflow JSON; poll `/history/{prompt_id}`, fetch via `/view`; `/upload/image`, `/object_info` | Repo `script_examples/` show the calls. Keep workflow JSON and seed with the asset as recipe/provenance. `--offline` or `--disable-partner-nodes` keeps runs local. Built-in `RemoveBackground` (BiRefNet), SAM 3 masks and upscale nodes suit icon alpha/retouch on a preserved render |
 | Comfy MCP cloud | Remote | Comfy Cloud early access | Cloud GPU credits |
 | Krita AI Diffusion (`Acly/krita-ai-diffusion`) | Krita plugin | Not an MCP; uses a ComfyUI backend | Layered inpaint/refine inside `.kra` |
 | krita-codex-mcp (PyPI) | Third-party stdio + Krita plugin | `uvx krita-codex-mcp` | Loopback + shared token; layer/selection/document tools. Tested on Krita 5.3.2.1 |
@@ -50,10 +52,14 @@ Start from the asset-authoring need, not the catalog. Choose the smallest route:
 1. Editable prop and same-model icon: Blender (direct CLI/Python or a Blender MCP) plus Krita.
    An MCP is optional; `blender --background --python` scripts are reproducible and need no server.
 2. Scene inspection/debugging/batch scripting on Blender 5.1+: Blender Lab MCP.
-3. Generated base mesh or reference: Meshy, Tripo, Hyper3D or Hunyuan3D, then explicit cleanup
-   in Blender. Generated topology/UV/materials are a source stage, not a finished asset.
-4. 2D textures/concepts/inpainting: ComfyUI (local) or Krita AI Diffusion; hosted image APIs when
-   no local GPU is available.
+3. Generated base mesh or reference: Meshy, Tripo, Hyper3D or Hunyuan3D (direct or as ComfyUI
+   partner nodes), optionally ComfyUI mesh post-process nodes, then explicit cleanup in Blender.
+   Generated topology/UV/materials are a source stage, not a finished asset.
+4. 2D textures/concepts/inpainting/icon alpha: ComfyUI (local) or Krita AI Diffusion; hosted image
+   APIs when no local GPU is available.
+
+Before choosing a local model, compare its stated GPU memory requirement and weight license
+(including territory exclusions) with the actual machine and user location.
 
 Run only one Blender relay against one Blender socket at a time. The official and community
 servers each need their own add-on; do not point one relay at the other's add-on or port.
