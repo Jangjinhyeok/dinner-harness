@@ -15,8 +15,9 @@ without Two-CLI. Report plan completion separately from implementation, actual v
 independent review and HIGH human acceptance; keep unmet conditions visible.
 
 A bug fix should reproduce failure and check corrected behavior. A refactor should preserve
-relevant observable behavior. Add a useful regression test when justified; small reversible
-changes can use inspection or existing targeted checks. UI/runtime work may need a manual scenario.
+relevant observable behavior. Add a useful regression test when justified, especially for
+parsing/serialization, money or in-game currency, security, or non-trivial branching or state
+logic; small reversible changes can use inspection or existing targeted checks. UI/runtime work may need a manual scenario.
 Compilation is one check, not the outcome itself. When a feature is removed, define the required
 removal boundary across callers, bindings, hierarchy, references and metadata. Update obsolete
 contracts together; keep a placeholder only for a stated compatibility requirement, not merely

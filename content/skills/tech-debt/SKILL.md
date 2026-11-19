@@ -6,9 +6,9 @@ description: Inspect, record or prioritize concrete technical debt while preserv
 # Technical Debt
 
 Infer scan/add/prioritize/report from the request; default to inspection and reporting.
-Read the existing `docs/tech-debt-register.md` if present. Inspect workarounds, duplication,
-compatibility constraints, test gaps and measured performance costs. A long file or TODO alone
-does not prove harmful debt.
+Read the existing `docs/tech-debt-register.md` if present. Inspect workarounds (including
+`shortcut:` comments or the project's equivalent marker), duplication, compatibility
+constraints, test gaps and measured performance costs. A long file or TODO alone does not prove harmful debt.
 
 Record affected files, concrete impact, why accepted (unknown if undocumented), estimated effort
 and confidence. Prioritize by impact/frequency/effort without invented precision. Scans/reports are

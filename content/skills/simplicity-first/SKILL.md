@@ -16,6 +16,8 @@ description: Use when writing new code or refactoring. Triggers when implementin
 - 기존 관례보다 control/data flow가 이해하기 어려워졌는지 검토한다.
 - 명시적 switch/state table, serialization/schema, engine boilerplate는 길어도 읽기 쉬울 수
   있다. line count를 줄이기 위해 압축하거나 분할하지 않는다.
+- 한계를 알고 택한 지름길에는 project의 기존 표기를 따르고, 없으면 한 줄 영어 주석
+  `shortcut: <limit>, <when to replace>`를 남긴다. 한계가 없는 단순 구현에는 붙이지 않는다.
 
 불필요한 계층과 선택지를 덜어내되 correctness, ownership, compatibility를 희생하지 않는다.
 요청이 확장성을 포함하면 그 요구에 필요한 범위까지 구현한다.

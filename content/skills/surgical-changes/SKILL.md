@@ -16,6 +16,12 @@ description: Use when modifying existing code. Critical for live-service project
 - 변경은 요청한 결과에 필요하거나 그 변경으로 직접 발생한 필수 파생 수정이어야 한다.
   signature 변경에 따른 caller, required include/import, regression test, 변경으로 생긴
   dead code 정리와 compilation/build 유지에 필요한 연쇄 수정은 포함한다.
+- 버그 수정은 편집 전에 고칠 함수의 caller를 찾아 결함이 공유 코드에 있는지 확인한다. 원인이
+  공유 코드에 있으면 caller마다 우회하지 않고 원인 지점을 한 번 고치는 것을 기본으로 하고,
+  영향받는 caller를 영향 범위로 보고하고 검증 범위에 넣는다. 그 영향이 요청 범위를 넘거나
+  확인하지 못한 caller가 있으면 편집 전에 국소 수정과 비교해 사용자에게 묻는다. 라이브
+  서비스에서는 아래 추가 원칙이 우선한다. Blueprint·DataTable 같은 `.uasset` 참조나 이름
+  문자열 기반 binding처럼 text 검색에 잡히지 않는 caller는 확인하지 못했다고 밝힌다.
 
 ## 검증 질문
 
