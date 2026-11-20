@@ -22,6 +22,7 @@ import base64
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import NamedTuple, Optional
 
@@ -84,6 +85,10 @@ _PWSH_VALUE_ALIASES = {"ep", "ex", "w", "o", "of", "i", "if", "config", "wd", "w
 _UE_CLEANUP = {"intermediate", "binaries", "deriveddatacache", "saved/logs"}
 _UNITY_CLEANUP = {"library", "temp", "obj", "bin"}
 _ALLOWLISTABLE = {"remove.recurse", "cmd.recursive-delete"}
+# Session scratchpad: <temp>/claude/<project hash>/<session id>/scratchpad (Claude Code layout).
+_SESSION_ID_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z-]{7,63}")
+# Anything the shell expands at run time, or a glob: the literal text is then not the path deleted.
+_NON_LITERAL_RE = re.compile(r"[$~`%(){}\[\]*?]")
 
 _GIT_PROTECTED = {"commit", "push", "merge", "cherry-pick", "rebase", "am"}
 _GIT_GLOBAL_VALUES = {"-c", "-C", "--config-env", "--work-tree", "--git-dir", "--namespace", "--super-prefix"}
@@ -111,10 +116,11 @@ class Tok(NamedTuple):
 
 
 class _State:
-    def __init__(self, cwd: Optional[Path], shell: Optional[str]):
+    def __init__(self, cwd: Optional[Path], shell: Optional[str], session_id: Optional[str] = None):
         self.findings: set[str] = set()
         self.cwd = cwd
         self.shell = shell
+        self.session_id = session_id
         self.cwd_changed = False  # a cd/Set-Location earlier in the command voids the allowlist
         self.env: dict[str, str] = {}
         self._cleanup_names: Optional[set[str]] = None
@@ -506,9 +512,38 @@ def _remove(args, st: _State) -> tuple[set[str], bool]:
                 if not literal and ("*" in part or "?" in part):
                     found.add("remove.wildcard")
     recursive = bool(found & _ALLOWLISTABLE)
-    if found and found <= _ALLOWLISTABLE and targets and all(_allowlisted(t, st) for t in targets):
+    if found and found <= _ALLOWLISTABLE and targets and all(
+            _allowlisted(t, st) or _in_scratchpad(t, st) for t in targets):
         return set(), recursive
     return found, recursive
+
+
+def _in_scratchpad(target: str, st: _State) -> bool:
+    """A literal absolute path strictly inside this session's scratchpad.
+
+    Shell variables are not resolved: an assignment that did not run (``a && S=x``, a
+    subshell, a typo) expands ``"$S/copy"`` to ``/copy``. The path is resolved with
+    realpath, so a junction or symlink that leads out of the scratchpad does not count.
+    """
+    sid = st.session_id
+    if not sid or not _SESSION_ID_RE.fullmatch(sid) or _NON_LITERAL_RE.search(target):
+        return False
+    if st.shell != "powershell":
+        if "\\" in target:  # bash reads an unquoted backslash as an escape
+            return False
+        m = re.match(r"/([A-Za-z])(?=/|$)", target)  # Git Bash /c/... -> C:/...
+        if m:
+            target = m.group(1) + ":" + target[2:]
+    if not os.path.splitdrive(target)[0] or not os.path.isabs(target):
+        return False
+    try:
+        base = os.path.realpath(os.path.join(tempfile.gettempdir(), "claude"))
+        rel = os.path.relpath(os.path.realpath(target), base)
+    except (OSError, ValueError):  # ValueError: different drive
+        return False
+    parts = rel.replace("\\", "/").split("/")
+    return (len(parts) >= 4 and parts[0] not in (".", "..")
+            and parts[1].lower() == sid.lower() and parts[2].lower() == "scratchpad")
 
 
 def _allowlisted(target: str, st: _State) -> bool:
@@ -854,14 +889,15 @@ def _scan(text: str, depth: int, st: _State) -> None:
             st.findings.add("remove.pipeline-recurse")
 
 
-def classify(command: str, cwd=None, shell: Optional[str] = None) -> list[str]:
+def classify(command: str, cwd=None, shell: Optional[str] = None, session_id: Optional[str] = None) -> list[str]:
     """Return the sorted rule ids a shell command triggers ([] = clean).
 
     ``shell`` is "bash" or "powershell" (from the tool name); None reads backticks the bash way.
     Nested ``bash -c`` / ``pwsh -c`` / ``iex`` payloads switch to their own reading.
+    ``session_id`` (from the hook payload) enables the scratchpad exemption for that session.
     """
     command = command if isinstance(command, str) else ""
-    st = _State(Path(cwd) if cwd else None, shell)
+    st = _State(Path(cwd) if cwd else None, shell, session_id)
     st.cwd_changed = bool(_CD_RE.search(command))
     _scan(command, 0, st)
     return sorted(st.findings)
@@ -876,7 +912,8 @@ def main() -> None:
     if tool_name not in _TARGET_TOOLS:
         exit_allow()
     command = (payload.get("tool_input") or {}).get("command", "") or ""
-    findings = classify(command, payload.get("cwd"), "powershell" if tool_name == "PowerShell" else "bash")
+    findings = classify(command, payload.get("cwd"), "powershell" if tool_name == "PowerShell" else "bash",
+                        payload.get("session_id"))
     if not findings:
         exit_allow()
     fields = {"event": _EVENT, "tool_name": tool_name, "rules": findings}
@@ -884,8 +921,13 @@ def main() -> None:
         log_event(_HOOK_NAME, decision="block", **fields)
         # The hint is for the model: a blocked agent tends to retry the same deletion in a
         # form the lexer cannot see (python -c shutil.rmtree, a script on disk).
-        exit_block(f"[shell_guard:block] {', '.join(findings)} - not run. Do not rephrase the command "
-                   "to get past this check; ask the user to run it or to approve another approach.")
+        scratch = ""
+        if set(findings) & _ALLOWLISTABLE:
+            scratch = ("A recursive delete is allowed when every target is a literal absolute path strictly "
+                       "inside this session's scratchpad directory (no variables, globs or ~). Otherwise, ")
+        exit_block(f"[shell_guard:block] {', '.join(findings)} - not run. {scratch}"
+                   f"{'d' if scratch else 'D'}o not rephrase the command to get past this check; "
+                   "ask the user to run it or to approve another approach.")
     log_event(_HOOK_NAME, decision="warn", **fields)
     exit_warn(f"[shell_guard:warn:dryrun] {', '.join(findings)}")
 

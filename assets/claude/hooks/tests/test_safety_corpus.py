@@ -19,6 +19,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+try:
+    import _winapi
+except ImportError:  # not Windows
+    _winapi = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from handlers import secret_scan, shell_guard
@@ -177,6 +183,85 @@ class CleanupAllowlist(_Base):
             with self.subTest(command=command):
                 cwd = self.unity if "Library" in command else self.ue
                 self.assertFlagged(command, cwd)
+
+
+class ScratchpadAllowlist(unittest.TestCase):
+    """Recursive deletes inside this session's Claude scratchpad (2026-11-20).
+
+    Every real ``remove.recurse`` block after the 2026-11-10 enforce promotion was a
+    scratchpad cleanup written through a shell variable. Only literal paths are exempt:
+    variables are not resolved, because a conditional or missing assignment expands
+    ``"$S/copy"`` to ``/copy``.
+    """
+    SID = "76a833a6-7734-42fe-8e5c-22cd35dceca8"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.temp = Path(self._tmp.name)
+        self.pad = self.temp / "claude" / "6316a57f23beff5a" / self.SID / "scratchpad"
+        (self.pad / "copy").mkdir(parents=True)
+        self.p = self.pad.as_posix()
+        self._patch = mock.patch.object(shell_guard.tempfile, "gettempdir", return_value=str(self.temp))
+        self._patch.start()
+
+    def tearDown(self):
+        self._patch.stop()
+        self._tmp.cleanup()
+
+    def classify(self, command, shell="bash", session_id=SID):
+        return shell_guard.classify(command, None, shell, session_id)
+
+    def test_literal_paths_inside_the_scratchpad_are_allowed(self):
+        msys = "/" + self.p[0].lower() + self.p[2:]
+        for command, shell in (
+                (f'rm -rf "{self.p}/install-claude"', "bash"),
+                (f'rm -rf "{self.p}/copy" && mkdir -p "{self.p}/copy"', "bash"),
+                (f"rm -rf {msys}/pilot", "bash"),
+                (f'rm -rf "{self.p}/a" "{self.p}/b/c"', "bash"),
+                (f'Remove-Item -Recurse -Force "{self.pad}\\copy"', "powershell"),
+                (f"Remove-Item -LiteralPath '{self.p}/copy' -Recurse -ErrorAction SilentlyContinue", "powershell"),
+                (f'cmd /c rd /s /q "{self.pad}\\copy"', "powershell")):
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command, shell), [])
+
+    def test_the_blocked_variable_forms_stay_blocked(self):
+        # The four real blocks (2026-11-17..19), with their paths moved under the fake temp dir.
+        for command in (f'S="{self.p}/install-claude"; rm -rf "$S"',
+                        f'SP="{self.p}"; rm -rf "$SP/copy" && mkdir -p "$SP/copy"',
+                        f'SP="{self.p}"; P="$SP/pilot"; rm -rf "$P"'):
+            with self.subTest(command=command):
+                self.assertEqual(self.classify(command), ["remove.recurse"])
+
+    def test_paths_outside_or_ambiguous_are_blocked(self):
+        other = self.temp / "claude" / "6316a57f23beff5a" / "00000000-0000-0000-0000-000000000000" / "scratchpad"
+        for command, shell in (
+                (f'rm -rf "{self.p}"', "bash"), (f'rm -rf "{self.p}/"', "bash"),
+                (f'rm -rf "{self.p}/copy/.."', "bash"), (f'rm -rf "{self.p}/../x"', "bash"),
+                (f'rm -rf "{other.as_posix()}/copy"', "bash"),
+                (f'rm -rf "{self.temp.as_posix()}/claude/x/y"', "bash"),
+                (f'rm -rf "{self.p}/copy" "{self.temp.as_posix()}/other"', "bash"),
+                (f'rm -rf "{self.p}/"*', "bash"), (f"rm -rf {self.p}/{{a,..}}", "bash"),
+                (f"rm -rf {self.p}/[ab]", "bash"), (f'rm -rf "{self.pad}\\copy"', "bash"),
+                ("rm -rf ~/scratchpad/copy", "bash"), (f'rm -rf "{self.p}/$x"', "bash"),
+                ("rm -rf copy", "bash"),
+                (f'Remove-Item -Recurse "{self.p}/$(Get-Date)"', "powershell"),
+                (f'cmd /c rd /s /q "%TEMP%\\claude\\copy"', "powershell")):
+            with self.subTest(command=command):
+                self.assertTrue(self.classify(command, shell), f"not flagged: {command!r}")
+
+    def test_session_id_is_required_and_must_match(self):
+        command = f'rm -rf "{self.p}/copy"'
+        for sid in (None, "", "..", "../x", "00000000-0000-0000-0000-000000000000"):
+            with self.subTest(session_id=sid):
+                self.assertEqual(self.classify(command, session_id=sid), ["remove.recurse"])
+
+    @unittest.skipUnless(hasattr(_winapi, "CreateJunction"), "junctions are Windows-only")
+    def test_a_junction_out_of_the_scratchpad_is_blocked(self):
+        outside = self.temp / "outside"
+        outside.mkdir()
+        _winapi.CreateJunction(str(outside), str(self.pad / "link"))
+        self.assertEqual(self.classify(f'rm -rf "{self.p}/link"'), ["remove.recurse"])
+        self.assertEqual(self.classify(f'rm -rf "{self.p}/link/sub"'), ["remove.recurse"])
 
 
 class SensitivePathTuning(unittest.TestCase):
